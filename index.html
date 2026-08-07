@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>我的世界 - 体素小游戏</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #87CEEB; font-family: -apple-system, "Microsoft YaHei", sans-serif; }
+  canvas { display: block; }
+
+  /* 准星 */
+  #crosshair {
+    position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    width: 22px; height: 22px; pointer-events: none; z-index: 10;
+  }
+  #crosshair::before, #crosshair::after {
+    content: ""; position: absolute; background: rgba(255,255,255,0.95);
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.85), 0 0 3px rgba(0,0,0,0.6);
+  }
+  #crosshair::before { left: 50%; top: 0; width: 2px; height: 100%; transform: translateX(-50%); }
+  #crosshair::after  { top: 50%; left: 0; height: 2px; width: 100%; transform: translateY(-50%); }
+
+  /* 物品栏 */
+  #hotbar {
+    position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+    display: flex; gap: 4px; padding: 4px; z-index: 10;
+    background: rgba(0,0,0,0.35); border-radius: 8px; border: 2px solid rgba(255,255,255,0.25);
+  }
+  .slot {
+    width: 54px; height: 54px; border: 2px solid rgba(255,255,255,0.3);
+    border-radius: 6px; display: flex; align-items: center; justify-content: center;
+    position: relative; cursor: pointer; background: rgba(0,0,0,0.25);
+  }
+  .slot.active { border-color: #fff; box-shadow: 0 0 8px rgba(255,255,255,0.8); background: rgba(255,255,255,0.15); }
+  .slot canvas { width: 40px; height: 40px; image-rendering: pixelated; }
+  .slot .num { position: absolute; top: 1px; left: 4px; font-size: 11px; color: #fff; text-shadow: 1px 1px 1px #000; }
+  .slot .name { position: absolute; bottom: -20px; left: 50%; transform: translateX(-50%); font-size: 11px; color: #fff; text-shadow: 1px 1px 2px #000; white-space: nowrap; opacity: 0; transition: opacity .15s; }
+  .slot.active .name { opacity: 1; }
+  /* 耐久度条(工具) */
+  .slot .dur { position: absolute; left: 4px; right: 4px; bottom: 3px; height: 4px; background: rgba(0,0,0,0.5); border-radius: 2px; overflow: hidden; }
+  .slot .dur span { display: block; height: 100%; transition: width .2s; }
+
+  /* 信息面板 */
+  #info {
+    position: fixed; top: 10px; left: 10px; z-index: 10; color: #fff;
+    font-size: 13px; line-height: 1.6; text-shadow: 1px 1px 2px #000;
+    background: rgba(0,0,0,0.3); padding: 8px 12px; border-radius: 6px;
+  }
+  #info b { color: #ffe66d; }
+
+  /* 开始/暂停遮罩 */
+  #overlay {
+    position: fixed; inset: 0; background: rgba(10,15,25,0.85); z-index: 100;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    color: #fff; text-align: center; cursor: pointer;
+  }
+  #overlay h1 { font-size: 48px; margin-bottom: 8px; letter-spacing: 2px; text-shadow: 3px 3px 0 #2c2c2c; color: #7CFC00; }
+  #overlay h2 { font-size: 18px; font-weight: normal; color: #ccc; margin-bottom: 30px; }
+  #overlay .play {
+    background: #4caf50; color: #fff; padding: 14px 48px; font-size: 20px;
+    border-radius: 8px; border: 2px solid #2e7d32; box-shadow: 0 4px 0 #2e7d32;
+    margin-bottom: 24px;
+  }
+  #overlay .play:active { transform: translateY(2px); box-shadow: 0 2px 0 #2e7d32; }
+  #overlay .controls { font-size: 14px; color: #bbb; line-height: 1.9; max-width: 520px; }
+  #overlay .controls b { color: #ffe66d; }
+  #overlay kbd {
+    background: #333; border: 1px solid #555; border-bottom-width: 2px;
+    border-radius: 4px; padding: 1px 7px; color: #fff; font-family: monospace; font-size: 12px;
+  }
+
+  /* 放置/破坏反馈 toast */
+  #toast {
+    position: fixed; left: 50%; top: 14%; transform: translate(-50%, 0);
+    background: rgba(0,0,0,0.7); color: #fff; padding: 8px 16px; border-radius: 6px;
+    font-size: 14px; z-index: 15; pointer-events: none; opacity: 0;
+    transition: opacity .2s; text-shadow: 1px 1px 2px #000;
+  }
+  #toast.show { opacity: 1; }
+
+  /* 暂停菜单 */
+  #pause-menu {
+    position: fixed; inset: 0; background: rgba(10,15,25,0.7); z-index: 90;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .pause-card {
+    background: rgba(30,35,45,0.97); border: 2px solid rgba(255,255,255,0.2);
+    border-radius: 12px; padding: 28px 32px; text-align: center; min-width: 280px;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+  }
+  .pause-card h2 { color: #fff; margin: 0 0 18px; font-size: 24px; }
+  .menu-btn {
+    display: block; width: 100%; margin: 8px 0; padding: 12px;
+    font-size: 16px; border-radius: 8px; border: 2px solid rgba(255,255,255,0.2);
+    background: rgba(255,255,255,0.08); color: #fff; cursor: pointer; font-family: inherit;
+    transition: background .15s, border-color .15s;
+  }
+  .menu-btn:hover { background: rgba(255,255,255,0.18); border-color: rgba(255,255,255,0.4); }
+  .menu-btn.primary { background: #4caf50; border-color: #2e7d32; }
+  .menu-btn.primary:hover { background: #58c75c; }
+  #pause-controls { font-size: 13px; color: #bbb; line-height: 1.9; margin-top: 14px; text-align: left; }
+  #pause-controls b { color: #ffe66d; }
+  /* 背包面板 */
+  #inventory {
+    position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    z-index: 95; width: 560px; max-width: 92vw; max-height: 80vh; overflow: auto;
+    background: rgba(30,35,45,0.97); border: 2px solid rgba(255,255,255,0.25);
+    border-radius: 12px; padding: 20px 22px; color: #fff;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+  }
+  #inventory h3 { font-size: 18px; margin-bottom: 4px; }
+  .inv-hint { font-size: 12px; color: #9fb0c8; margin-bottom: 14px; }
+  .inv-section { font-size: 13px; color: #ffe66d; margin: 12px 0 6px; }
+  .inv-grid { display: grid; grid-template-columns: repeat(auto-fill, 72px); gap: 8px; }
+  .inv-section-title { grid-column: 1 / -1; font-size: 13px; color: #ffe66d; margin: 8px 0 2px; padding-bottom: 3px; border-bottom: 1px solid rgba(255,255,255,0.15); }
+  .inv-cell {
+    width: 72px; height: 72px; border: 2px solid rgba(255,255,255,0.2); border-radius: 6px;
+    background: rgba(0,0,0,0.3); display: flex; flex-direction: column;
+    align-items: center; justify-content: center; cursor: pointer; position: relative;
+    transition: border-color .12s, background .12s;
+  }
+  .inv-cell:hover { border-color: #ffe66d; background: rgba(255,230,109,0.12); }
+  .inv-cell canvas { width: 44px; height: 44px; image-rendering: pixelated; }
+  .inv-label { font-size: 10px; color: #cdd; text-align: center; margin-top: 2px; line-height: 1.1; max-width: 66px; }
+  .inv-close { position: absolute; top: 10px; right: 14px; font-size: 22px; color: #aaa; cursor: pointer; line-height: 1; }
+  .inv-close:hover { color: #fff; }
+
+  .hidden { display: none !important; }
+.save-item { background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:10px 12px;margin:6px 0;display:flex;justify-content:space-between;align-items:center; }
+.save-item .save-info { flex:1; }
+.save-item .save-name { color:#ffe66d;font-size:14px; }
+.save-item .save-meta { color:#9fb0c8;font-size:11px;margin-top:2px; }
+.save-item button { margin-left:6px;padding:5px 10px;font-size:12px;border-radius:4px;border:1px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.1);color:#fff;cursor:pointer;font-family:inherit; }
+.save-item button.load { background:#4caf50;border-color:#2e7d32; }
+.save-item button.del { background:#d35f5f;border-color:#a04040; }
+.save-item button:hover { opacity:0.85; }
+
+/* HP 条(左下,快捷栏上方) */
+#hp-bar { position: fixed; left: 18px; bottom: 84px; display: flex; gap: 2px; z-index: 10; }
+#hp-bar .heart { width: 18px; height: 18px; font-size: 18px; line-height: 18px; text-align: center; text-shadow: 1px 1px 1px #000; }
+#hp-bar .heart.full  { color: #ff3232; }
+#hp-bar .heart.half  { color: #ff7878; }
+#hp-bar .heart.empty { color: #4a0000; }
+
+/* 受击红屏渐晕 */
+#damage-vignette { position: fixed; inset: 0; pointer-events: none; z-index: 80;
+  background: radial-gradient(circle, transparent 35%, rgba(170,0,0,0.85) 100%);
+  opacity: 0; transition: opacity 0.1s linear; }
+
+/* 死亡遮罩 */
+#death-overlay { position: fixed; inset: 0; z-index: 85; display: none; flex-direction: column;
+  align-items: center; justify-content: center; color: #fff; text-align: center;
+  background: rgba(60,0,0,0.6); transition: opacity 0.2s linear; }
+#death-overlay h1 { font-size: 64px; letter-spacing: 6px; color: #ff5050;
+  text-shadow: 3px 3px 0 #400; margin-bottom: 8px; }
+#death-overlay p { font-size: 16px; color: #ffd0d0; }
+
+/* 合成区(背包内) */
+.craft-section { margin-top: 18px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.15); }
+.craft-section .craft-title { font-size: 13px; color: #ffe66d; margin-bottom: 8px; }
+.craft-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.craft-grid { display: grid; grid-template-columns: repeat(2, 56px); grid-template-rows: repeat(2, 56px); gap: 4px; }
+.craft-grid .inv-cell { width: 56px; height: 56px; }
+.craft-grid .inv-cell canvas { width: 36px; height: 36px; }
+.craft-result-box { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.craft-result { width: 64px; height: 64px; border: 2px solid #ffe66d; border-radius: 6px;
+  background: rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; }
+.craft-result canvas { width: 44px; height: 44px; image-rendering: pixelated; }
+.craft-btn { padding: 8px 16px; font-size: 14px; border-radius: 6px; border: 2px solid #2e7d32;
+  background: #4caf50; color: #fff; cursor: pointer; font-family: inherit; }
+.craft-btn:hover { background: #58c75c; }
+.craft-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+</style>
+</head>
+<body>
+
+<div id="crosshair"></div>
+<div id="toast"></div>
+
+<div id="info">
+  位置: <span id="pos">0, 0, 0</span><br>
+  区块: <span id="chunk">0, 0</span> · 生物群系: <span id="biome">平原</span><br>
+  已加载区块: <span id="count">0</span> · FPS: <span id="fps">0</span><br>
+  时间: <span id="daytime">--:--</span>
+</div>
+
+<div id="hotbar"></div>
+
+<!-- 移动端触屏控件(仅触屏设备显示) -->
+<div id="touch-controls" style="display:none;">
+  <div id="joystick" style="position:fixed;left:30px;bottom:120px;width:120px;height:120px;background:rgba(255,255,255,0.15);border:2px solid rgba(255,255,255,0.3);border-radius:60px;z-index:20;touch-action:none;">
+    <div id="joystick-knob" style="position:absolute;left:40px;top:40px;width:40px;height:40px;background:rgba(255,255,255,0.4);border-radius:20px;"></div>
+  </div>
+  <div id="touch-jump" style="position:fixed;right:30px;bottom:180px;width:60px;height:60px;background:rgba(255,255,255,0.2);border:2px solid rgba(255,255,255,0.4);border-radius:30px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:24px;z-index:20;touch-action:none;">⬆</div>
+  <div id="touch-break" style="position:fixed;right:100px;bottom:120px;width:60px;height:60px;background:rgba(220,80,80,0.3);border:2px solid rgba(255,100,100,0.5);border-radius:30px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;z-index:20;touch-action:none;">挖</div>
+  <div id="touch-place" style="position:fixed;right:30px;bottom:120px;width:60px;height:60px;background:rgba(80,180,80,0.3);border:2px solid rgba(100,200,100,0.5);border-radius:30px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;z-index:20;touch-action:none;">放</div>
+</div>
+
+<!-- 生命条(左下) -->
+<div id="hp-bar"></div>
+
+<!-- 受击红屏渐晕 -->
+<div id="damage-vignette"></div>
+
+<!-- 死亡遮罩 -->
+<div id="death-overlay">
+  <h1>你死了</h1>
+  <p>已重生到出生广场</p>
+</div>
+
+<div id="overlay">
+  <h1>我的世界</h1>
+  <h2>Minecraft 风格 3D 体素小游戏 · 增强版</h2>
+  <button id="btn-continue" class="menu-btn primary" style="display:none;margin-bottom:12px;">▶ 继续上次游戏</button>
+  <div class="play">▶ 点击开始游戏(新世界)</div>
+  <div class="controls">
+    <b>移动:</b> <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> &nbsp; <b>跳跃:</b> <kbd>空格</kbd> &nbsp; <b>下蹲:</b> <kbd>Shift</kbd><br>
+    <b>视角:</b> 鼠标移动 &nbsp; <b>破坏方块:</b> 鼠标左键(长按) &nbsp; <b>放置方块:</b> 鼠标右键<br>
+    <b>快捷栏:</b> 数字键 <kbd>1</kbd>-<kbd>9</kbd> 或滚轮 &nbsp; <b>背包:</b> <kbd>E</kbd> &nbsp; <b>切视角:</b> <kbd>F5</kbd><br>
+    <b>飞行:</b> 连按两次 <kbd>空格</kbd> &nbsp; <b>暂停:</b> <kbd>Esc</kbd> &nbsp; <b>世界无限:</b> 走动自动加载新区块
+  </div>
+</div>
+
+<!-- 背包面板(E 打开) -->
+<div id="inventory" class="hidden">
+  <span class="inv-close" onclick="toggleInventory(false)">×</span>
+  <h3>背包(创造模式)</h3>
+  <div class="inv-hint"></div>
+  <div class="inv-section">方块</div>
+  <div class="inv-grid"></div>
+
+  <!-- 合成区(2x2 网格 + 结果 + 合成按钮) -->
+  <div class="craft-section">
+    <div class="craft-title">合成 (2×2)</div>
+    <div class="craft-row">
+      <div class="craft-grid" id="craft-grid">
+        <div class="inv-cell" data-craft="0"></div>
+        <div class="inv-cell" data-craft="1"></div>
+        <div class="inv-cell" data-craft="2"></div>
+        <div class="inv-cell" data-craft="3"></div>
+      </div>
+      <div style="font-size:24px;color:#ffe66d;">→</div>
+      <div class="craft-result-box">
+        <div class="craft-result" id="craft-result"></div>
+        <button class="craft-btn" id="craft-btn" disabled>合成</button>
+      </div>
+      <button class="craft-btn" id="craft-clear" style="background:#666;border-color:#444;">清空</button>
+    </div>
+    <div class="inv-hint" style="margin-top:8px;" id="craft-hint">从下方物品点击放入合成格(创造模式:合成主要作演示)</div>
+  </div>
+</div>
+
+<!-- 暂停菜单(游戏中按 Esc 唤起) -->
+<div id="pause-menu" class="hidden">
+  <div class="pause-card">
+    <h2>已暂停</h2>
+    <button id="btn-resume" class="menu-btn primary">继续游戏</button>
+    <button id="btn-save" class="menu-btn">💾 保存到新存档</button>
+    <button id="btn-mgr" class="menu-btn">📂 存档管理</button>
+    <button id="btn-sound" class="menu-btn">音效:开</button>
+    <button id="btn-settings" class="menu-btn">⚙️ 游戏设置</button>
+    <button id="btn-drops" class="menu-btn">掉落物:关</button>
+    <button id="btn-reset" class="menu-btn">重置世界(新地形)</button>
+    <button id="btn-controls" class="menu-btn">操作说明</button>
+    <div id="pause-controls" class="controls hidden">
+      <b>移动:</b> WASD &nbsp; <b>跳:</b> 空格 &nbsp; <b>下蹲/飞行下降:</b> Shift<br>
+      <b>视角:</b> 鼠标 &nbsp; <b>破坏:</b> 左键(长按,用对工具更快) &nbsp; <b>放置:</b> 右键<br>
+      <b>快捷栏:</b> 1-9 / 滚轮 &nbsp; <b>背包:</b> E &nbsp; <b>切视角:</b> F5<br>
+      <b>飞行:</b> 双击空格 &nbsp; <b>暂停:</b> Esc &nbsp; <b>世界:</b> 无限(走动自动加载)
+    </div>
+  </div>
+</div>
+
+<!-- 设置面板 -->
+<div id="settings-panel" class="hidden" style="position:fixed;inset:0;background:rgba(10,15,25,0.8);z-index:96;display:flex;align-items:center;justify-content:center;">
+  <div class="pause-card" style="min-width:380px;max-width:480px;">
+    <h2>⚙️ 游戏设置</h2>
+    <div style="text-align:left;margin:12px 0;">
+      <!-- 音效 -->
+      <div style="margin:10px 0;display:flex;justify-content:space-between;align-items:center;">
+        <span style="color:#fff;font-size:14px;">🔊 音效</span>
+        <button id="set-sound" class="menu-btn" style="width:auto;padding:6px 16px;margin:0;">开</button>
+      </div>
+      <div style="margin:10px 0;display:flex;justify-content:space-between;align-items:center;">
+        <span style="color:#fff;font-size:14px;">🔈 音量</span>
+        <input type="range" id="set-volume" min="0" max="100" value="35" style="width:160px;">
+      </div>
+      <!-- 渲染距离 -->
+      <div style="margin:10px 0;display:flex;justify-content:space-between;align-items:center;">
+        <span style="color:#fff;font-size:14px;">🌍 渲染距离</span>
+        <select id="set-render" style="padding:4px 8px;background:rgba(0,0,0,0.3);color:#fff;border:1px solid rgba(255,255,255,0.2);border-radius:4px;">
+          <option value="3">近 (3)</option>
+          <option value="5" selected>中 (5)</option>
+          <option value="7">远 (7)</option>
+          <option value="10">极远 (10)</option>
+        </select>
+      </div>
+      <!-- 掉落物 -->
+      <div style="margin:10px 0;display:flex;justify-content:space-between;align-items:center;">
+        <span style="color:#fff;font-size:14px;">📦 掉落物</span>
+        <button id="set-drops" class="menu-btn" style="width:auto;padding:6px 16px;margin:0;">关</button>
+      </div>
+      <!-- 昼夜 -->
+      <div style="margin:14px 0;padding-top:10px;border-top:1px solid rgba(255,255,255,0.1);">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <span style="color:#ffe66d;font-size:14px;">🌞 昼夜循环</span>
+          <button id="set-daynight" class="menu-btn" style="width:auto;padding:6px 16px;margin:0;">开</button>
+        </div>
+        <div id="daynight-controls" style="margin-top:8px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin:6px 0;">
+            <span style="color:#bbb;font-size:12px;">速度</span>
+            <select id="set-dayspeed" style="padding:4px 8px;background:rgba(0,0,0,0.3);color:#fff;border:1px solid rgba(255,255,255,0.2);border-radius:4px;font-size:12px;">
+              <option value="300">慢 (5分钟)</option>
+              <option value="120" selected>正常 (2分钟)</option>
+              <option value="60">快 (1分钟)</option>
+              <option value="30">极快 (30秒)</option>
+            </select>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin:6px 0;">
+            <span style="color:#bbb;font-size:12px;">时间</span>
+            <input type="range" id="set-daytime" min="0" max="100" value="30" style="width:160px;">
+            <span id="set-daytime-label" style="color:#bbb;font-size:11px;width:40px;">07:12</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <button id="set-close" class="menu-btn primary">确定</button>
+  </div>
+</div>
+
+<!-- 存档管理面板 -->
+<div id="save-manager" class="hidden" style="position:fixed;inset:0;background:rgba(10,15,25,0.8);z-index:96;display:flex;align-items:center;justify-content:center;">
+  <div class="pause-card" style="min-width:420px;max-width:560px;max-height:80vh;overflow:auto;">
+    <h2>📂 存档管理</h2>
+    <div id="save-list" style="text-align:left;margin:12px 0;"></div>
+    <button id="btn-save-new" class="menu-btn primary">💾 保存当前为新存档</button>
+    <button id="btn-mgr-close" class="menu-btn">返回</button>
+  </div>
+</div>
+
+<script src="worldgen.js"></script>
+<script src="three.min.js?v=r160"></script>
+<script src="game.js?v=20260807g"></script>
+</body>
+</html>

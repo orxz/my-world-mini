@@ -1,0 +1,14 @@
+# 备份文件
+*.bak
+*.beforefix
+*.bak_*
+
+# 会话/编辑器
+.zcode/
+.DS_Store
+*.swp
+*.swo
+*~
+
+# 服务器日志
+*.log

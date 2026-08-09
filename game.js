@@ -25,12 +25,16 @@ const BLOCK_TYPES = {
   wool_yellow: { name: '黄色羊毛', top: '#f1c40f', side: '#f1c40f', bottom: '#f1c40f', solid: true, tool: 'any', hardness: 0.8 },
   wool_white:  { name: '白色羊毛', top: '#ecf0f1', side: '#ecf0f1', bottom: '#ecf0f1', solid: true, tool: 'any', hardness: 0.8 },
   wool_black:  { name: '黑色羊毛', top: '#2c3e50', side: '#2c3e50', bottom: '#2c3e50', solid: true, tool: 'any', hardness: 0.8 },
-  door:        { name: '木门',     top: '#8a6334', side: '#a0763a', bottom: '#8a6334', solid: true, tool: 'axe', hardness: 1.0 },
+  door:        { name: '木门',     top: '#8a6334', side: '#a0763a', bottom: '#8a6334', solid: true, tool: 'axe',      hardness: 1.0 },
+  door_iron:   { name: '铁门',     top: '#888888', side: '#a0a0a0', bottom: '#707070', solid: true, tool: 'pickaxe', hardness: 3.0 },
+  door_stone:  { name: '石门',     top: '#777777', side: '#888888', bottom: '#666666', solid: true, tool: 'pickaxe', hardness: 2.5 },
+  door_gold:   { name: '金门',     top: '#c8a030', side: '#ffd54a', bottom: '#b89020', solid: true, tool: 'pickaxe', hardness: 2.0 },
+  door_diamond:{ name: '钻石门',   top: '#3aa8b8', side: '#5fe3e8', bottom: '#2a8898', solid: true, tool: 'pickaxe', hardness: 4.0 },
 };
 const HOTBAR_ORDER = ['grass', 'dirt', 'stone', 'wood', 'leaves', 'sand', 'planks', 'brick'];
 
 // 方块数字 id(用于紧凑的 Uint8Array 区块存储)
-const BLOCK_ID = { air: 0, grass: 1, dirt: 2, stone: 3, wood: 4, leaves: 5, sand: 6, planks: 7, brick: 8, water: 9, snow: 10, gravel: 11, wool_red: 12, wool_yellow: 13, wool_white: 14, wool_black: 15, door: 16 };
+const BLOCK_ID = { air: 0, grass: 1, dirt: 2, stone: 3, wood: 4, leaves: 5, sand: 6, planks: 7, brick: 8, water: 9, snow: 10, gravel: 11, wool_red: 12, wool_yellow: 13, wool_white: 14, wool_black: 15, door: 16, door_iron: 17, door_stone: 18, door_gold: 19, door_diamond: 20 };
 const ID_TO_BLOCK = Object.keys(BLOCK_ID);
 
 // ============================================================
@@ -176,19 +180,64 @@ function drawBlockFace(ctx, type, face, s, seedRand) {
     case 'wool_red':
     case 'wool_yellow':
     case 'wool_white':
-        case 'door':
-      // 门:木板底色 + 深色门框(四边)+ 中线分缝
+        case 'door': {
+      // 木门:木板底 + 深棕门框 + 中线 + 金把手
       ctx.fillStyle = col; ctx.fillRect(0, 0, s, s);
       ctx.fillStyle = 'rgba(60,40,20,0.6)';
-      ctx.fillRect(0, 0, s, 1);       // 上框
-      ctx.fillRect(0, s-1, s, 1);     // 下框
-      ctx.fillRect(0, 0, 1, s);       // 左框
-      ctx.fillRect(s-1, 0, 1, s);     // 右框
-      ctx.fillRect(Math.floor(s/2), 1, 1, s-2); // 中线分缝
-      // 门把手(右半中)
-      ctx.fillStyle = 'rgba(200,180,80,0.8)';
-      ctx.fillRect(Math.floor(s*0.7), Math.floor(s*0.4), 1, 1);
+      ctx.fillRect(0,0,s,1); ctx.fillRect(0,s-1,s,1); ctx.fillRect(0,0,1,s); ctx.fillRect(s-1,0,1,s);
+      ctx.fillRect(Math.floor(s/2),1,1,s-2);
+      ctx.fillStyle = 'rgba(200,180,80,0.8)'; ctx.fillRect(Math.floor(s*0.7),Math.floor(s*0.4),1,1);
       break;
+    }
+    case 'door_iron': {
+      // 铁门:金属灰底 + 铆钉点缀 + 中线 + 银把手
+      ctx.fillStyle = col; ctx.fillRect(0, 0, s, s);
+      ctx.fillStyle = 'rgba(40,40,40,0.5)';
+      ctx.fillRect(0,0,s,1); ctx.fillRect(0,s-1,s,1); ctx.fillRect(0,0,1,s); ctx.fillRect(s-1,0,1,s);
+      ctx.fillRect(Math.floor(s/2),1,1,s-2);
+      // 铆钉(四角+中)
+      ctx.fillStyle = 'rgba(180,180,180,0.6)';
+      ctx.fillRect(1,1,1,1); ctx.fillRect(s-2,1,1,1); ctx.fillRect(1,s-2,1,1); ctx.fillRect(s-2,s-2,1,1);
+      ctx.fillStyle = 'rgba(220,220,220,0.8)'; ctx.fillRect(Math.floor(s*0.7),Math.floor(s*0.4),1,1);
+      break;
+    }
+    case 'door_stone': {
+      // 石门:石质灰底 + 粗犷裂纹 + 中线
+      ctx.fillStyle = col; ctx.fillRect(0, 0, s, s);
+      ctx.fillStyle = 'rgba(50,50,50,0.4)';
+      ctx.fillRect(0,0,s,1); ctx.fillRect(0,s-1,s,1); ctx.fillRect(0,0,1,s); ctx.fillRect(s-1,0,1,s);
+      ctx.fillRect(Math.floor(s/2),1,1,s-2);
+      // 裂纹(随机暗点)
+      ctx.fillStyle = 'rgba(40,40,40,0.3)';
+      ctx.fillRect(2,3,1,1); ctx.fillRect(s-3,s-4,1,1); ctx.fillRect(3,s-3,1,1);
+      break;
+    }
+    case 'door_gold': {
+      // 金门:金色底 + 华丽金边 + 宝石把手
+      ctx.fillStyle = col; ctx.fillRect(0, 0, s, s);
+      ctx.fillStyle = 'rgba(180,140,20,0.6)';
+      ctx.fillRect(0,0,s,1); ctx.fillRect(0,s-1,s,1); ctx.fillRect(0,0,1,s); ctx.fillRect(s-1,0,1,s);
+      ctx.fillRect(Math.floor(s/2),1,1,s-2);
+      // 装饰金线
+      ctx.fillStyle = 'rgba(255,230,100,0.5)';
+      ctx.fillRect(1,2,s-2,1); ctx.fillRect(1,s-3,s-2,1);
+      // 宝石把手(红宝石)
+      ctx.fillStyle = 'rgba(220,60,60,0.9)'; ctx.fillRect(Math.floor(s*0.7),Math.floor(s*0.4),1,1);
+      break;
+    }
+    case 'door_diamond': {
+      // 钻石门:青蓝底 + 晶体纹路 + 钻石把手
+      ctx.fillStyle = col; ctx.fillRect(0, 0, s, s);
+      ctx.fillStyle = 'rgba(20,120,140,0.5)';
+      ctx.fillRect(0,0,s,1); ctx.fillRect(0,s-1,s,1); ctx.fillRect(0,0,1,s); ctx.fillRect(s-1,0,1,s);
+      ctx.fillRect(Math.floor(s/2),1,1,s-2);
+      // 晶体高光(斜线)
+      ctx.fillStyle = 'rgba(180,255,255,0.4)';
+      ctx.fillRect(2,2,1,1); ctx.fillRect(3,3,1,1); ctx.fillRect(s-4,s-4,1,1); ctx.fillRect(s-3,s-3,1,1);
+      // 钻石把手
+      ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.fillRect(Math.floor(s*0.7),Math.floor(s*0.4),1,1);
+      break;
+    }
     case 'wool_black':case 'wool_black':
       // 羊毛:接近纯色,仅 ~5% 像素加微弱噪点(比默认 18% 干净),适合装饰
       for (let y = 0; y < s; y++) for (let x = 0; x < s; x++) {
@@ -3050,8 +3099,16 @@ const RECIPES = [
   { name: '沙砾', pattern: ['sand','sand','sand','sand'], result: { kind: 'block', id: 'gravel' }, count: 2, shapeless: true },
   // 4 雪块→冰(用 snow→water 表示,演示)
   { name: '融雪', pattern: ['snow','snow','snow','snow'], result: { kind: 'block', id: 'water' }, count: 1, shapeless: true },
-  // 木门:2 木板(横向)→1 门(有序)
+  // 木门:2 木板(横向)→1 门
   { name: '木门', pattern: ['planks','planks',null,null], result: { kind: 'block', id: 'door' }, count: 1, shapeless: false },
+  // 铁门:4 铁锭(2×2)→1 铁门
+  { name: '铁门', pattern: ['gem_gold','gem_gold','gem_gold','gem_gold'], result: { kind: 'block', id: 'door_iron' }, count: 1, shapeless: true },
+  // 石门:2 石头(纵向)→1 石门(有序,与石砖的4石头区分)
+  { name: '石门', pattern: ['stone',null,'stone',null], result: { kind: 'block', id: 'door_stone' }, count: 1, shapeless: false },
+  // 金门:2 金锭(横向)→1 金门(有序,与铁门的4金锭区分)
+  { name: '金门', pattern: ['gem_gold','gem_gold',null,null], result: { kind: 'block', id: 'door_gold' }, count: 1, shapeless: false },
+  // 钻石门:4 钻石(2×2)→1 钻石门
+  { name: '钻石门', pattern: ['gem_diamond','gem_diamond','gem_diamond','gem_diamond'], result: { kind: 'block', id: 'door_diamond' }, count: 1, shapeless: true },
 ];
 
 // 合成格状态:长度 4 的数组,每格为 null 或 {kind,id}(方块演示)

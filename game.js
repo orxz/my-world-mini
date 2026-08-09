@@ -2303,7 +2303,8 @@ function placeDoor(x, y, z, type, facing) {
 }
 function removeDoor(x, y, z) {
   const d = doors.get(doorKey(x,y,z)); if (!d) return false;
-  if (d.group) scene.remove(d.group); doors.delete(doorKey(x,y,z)); return true;
+  if (d.group) { disposeDoorGroup(d.group); scene.remove(d.group); }
+  doors.delete(doorKey(x,y,z)); return true;
 }
 function toggleDoor(x, y, z) {
   const d = doors.get(doorKey(x, y, z));
@@ -2341,7 +2342,21 @@ function raycastDoor() {
   for (let t = 0.3; t <= 4; t += 0.25) { const d = getDoorAt(Math.floor(eye.x+dir.x*t), Math.floor(eye.y+dir.y*t), Math.floor(eye.z+dir.z*t)); if (d) return d; }
   return null;
 }
-function clearDoors() { for (const d of doors.values()) { if (d.group) scene.remove(d.group); } doors.clear(); }
+// 释放门 mesh 的 geometry/material(避免 GPU 泄漏)
+function disposeDoorGroup(g) {
+  if (!g) return;
+  g.traverse(function(o) {
+    if (o.isMesh) {
+      if (o.geometry) o.geometry.dispose();
+      // 门板材质用共享缓存(不释放),frame/groove/knob 每次新建(释放)
+      if (o.material && !o.userData.isDoorPanel) o.material.dispose();
+    }
+  });
+}
+function clearDoors() {
+  for (const d of doors.values()) { if (d.group) { disposeDoorGroup(d.group); scene.remove(d.group); } }
+  doors.clear();
+}
 
 
 // 破坏/放置粒子效果

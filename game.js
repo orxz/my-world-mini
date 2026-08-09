@@ -484,7 +484,9 @@ function getBlock(x, y, z) {
 }
 function isSolidAt(x, y, z) {
   const t = getBlock(x, y, z);
-  return !!t && BLOCK_TYPES[t].solid;
+  if (!!t && BLOCK_TYPES[t].solid) return true;
+  if (doorBlocksAt(x, y, z)) return true;
+  return false;
 }
 
 // 设置方块(玩家破坏/放置)
@@ -1457,6 +1459,7 @@ function clearWorld() {
   for (const pt of particles) { scene.remove(pt); pt.material.dispose(); }
   particles.length = 0;
   cropTimers.clear();
+  clearDoors();
 }
 
 function resetWorld() {
@@ -2115,7 +2118,9 @@ function breakBlock() {
   if (!t) return;
   const type = getBlock(t.x, t.y, t.z);
   if (!type) return;
-  if (t.y === 0) { showToast('基岩无法破坏'); return; }  // 基岩层不可挖
+  if (t.y === 0) { showToast('基岩无法破坏'); return; }
+  const breakDoor = getDoorAt(t.x, t.y, t.z);
+  if (breakDoor) { removeDoor(breakDoor.x, breakDoor.y, breakDoor.z); showToast('移除门'); audio.play('break'); markDirtySave(); return; }  // 基岩层不可挖
   if (type === 'water') { showToast('水不能破坏'); return; }
   const def = BLOCK_TYPES[type];
 
@@ -2152,6 +2157,8 @@ function breakBlock() {
 }
 
 function placeBlock() {
+  const lookDoor = raycastDoor();
+  if (lookDoor) { toggleDoor(lookDoor.x, lookDoor.y, lookDoor.z); return; }
   const item = hotbar[currentSlot];
   if (item && item.kind === 'tool') { useTool(item); return; }
   if (item && item.kind === 'item') {
@@ -2166,6 +2173,12 @@ function placeBlock() {
   const nz = t.z + Math.round(t.normal.z);
   if (getBlock(nx, ny, nz)) { showToast('此处已有方块'); return; }
   if (overlapsPlayer(nx, ny, nz)) { showToast('挡住自己了,换个方向'); return; }
+  if (selectedType && selectedType.indexOf('door') === 0) {
+    const facing = Math.abs(Math.sin(yaw)) > 0.5 ? 1 : 0;
+    if (placeDoor(nx, ny, nz, selectedType, facing)) { showToast('放置:'+(BLOCK_TYPES[selectedType]?BLOCK_TYPES[selectedType].name:'门')); audio.play('place'); markDirtySave(); }
+    else { showToast('门需 2 格高空间'); }
+    return;
+  }
   if (tryPlantCrop(nx, ny, nz)) { showToast('种下小麦(60秒成熟)'); audio.play('place'); return; }
   if (setBlock(nx, ny, nz, selectedType)) {
     spawnParticles(nx, ny, nz, new THREE.Color(BLOCK_TYPES[selectedType].top).getHex(), 4);
@@ -2236,6 +2249,63 @@ function shootArrow() {
   scene.add(m);
   arrows.push(m);
 }
+
+
+// 门实体系统(独立于区块,2 格高,可开关)
+const doors = new Map();
+function doorKey(x, y, z) { return x+','+y+','+z; }
+const doorMatCache = {};
+function getDoorMat(type) {
+  if (!doorMatCache[type]) { const def = BLOCK_TYPES[type] || BLOCK_TYPES['door']; doorMatCache[type] = new THREE.MeshLambertMaterial({ color: def.side }); }
+  return doorMatCache[type];
+}
+function createDoorMesh(door) {
+  const mat = getDoorMat(door.type);
+  const g = new THREE.Group();
+  const panel = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.8, 0.12), mat);
+  panel.position.set(0, 0.9, 0); panel.userData.isDoorPanel = true; g.add(panel);
+  const knob = new THREE.Mesh(new THREE.BoxGeometry(0.06,0.06,0.06), new THREE.MeshLambertMaterial({ color: 0xc8b450 }));
+  knob.position.set(0.35, 1.0, 0.08); g.add(knob);
+  g.position.set(door.x + 0.5, door.y, door.z + 0.5);
+  g.rotation.y = door.facing === 1 ? Math.PI/2 : 0;
+  if (door.open) { panel.rotation.y = Math.PI/2; panel.position.x = 0.35; }
+  return g;
+}
+function placeDoor(x, y, z, type, facing) {
+  if (getBlock(x, y, z) || getBlock(x, y + 1, z)) return false;
+  if (!isSolidAt(x, y - 1, z)) return false;
+  const door = { x, y, z, type: type || 'door', open: false, facing: facing || 0 };
+  doors.set(doorKey(x,y,z), door);
+  door.group = createDoorMesh(door); scene.add(door.group);
+  return true;
+}
+function removeDoor(x, y, z) {
+  const d = doors.get(doorKey(x,y,z)); if (!d) return false;
+  if (d.group) scene.remove(d.group); doors.delete(doorKey(x,y,z)); return true;
+}
+function toggleDoor(x, y, z) {
+  const d = doors.get(doorKey(x,y,z)); if (!d) return false;
+  d.open = !d.open;
+  if (d.group) { const p = d.group.children.find(function(c){return c.userData.isDoorPanel;}); if (p) { if(d.open){p.rotation.y=Math.PI/2;p.position.x=0.35;} else {p.rotation.y=0;p.position.x=0;} } }
+  audio.play('place'); showToast(d.open?'开门':'关门'); return true;
+}
+function doorBlocksAt(x, y, z) {
+  const d1 = doors.get(doorKey(x,y,z)); if (d1 && !d1.open) return true;
+  const d2 = doors.get(doorKey(x,y-1,z)); if (d2 && !d2.open) return true;
+  return false;
+}
+function getDoorAt(x, y, z) {
+  let d = doors.get(doorKey(x,y,z)); if (d) return d;
+  return doors.get(doorKey(x,y-1,z)) || null;
+}
+function raycastDoor() {
+  const eye = new THREE.Vector3(playerPos.x, playerPos.y, playerPos.z);
+  const dir = new THREE.Vector3(-Math.sin(yaw)*Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw)*Math.cos(pitch));
+  for (let t = 0.5; t <= 3; t += 0.5) { const d = getDoorAt(Math.floor(eye.x+dir.x*t), Math.floor(eye.y+dir.y*t), Math.floor(eye.z+dir.z*t)); if (d) return d; }
+  return null;
+}
+function clearDoors() { for (const d of doors.values()) { if (d.group) scene.remove(d.group); } doors.clear(); }
+
 
 // 破坏/放置粒子效果
 const particles = [];

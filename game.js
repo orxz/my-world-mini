@@ -650,6 +650,15 @@ function updateChunks(playerWX, playerWZ) {
       markRaycastDirty();   // 卸载区块,raycast 目标需重建
     }
   }
+  // 清理远离玩家的门(距离 > 渲染范围 + 2 chunk,避免内存泄漏)
+  const _doorMaxDist = (RENDER_DISTANCE + 2) * CHUNK_SIZE;
+  for (const [key, d] of doors) {
+    const dist = Math.max(Math.abs(d.x - playerWX), Math.abs(d.z - playerWZ));
+    if (dist > _doorMaxDist) {
+      if (d.group) { disposeDoorGroup(d.group); scene.remove(d.group); }
+      doors.delete(key);
+    }
+  }
 
   // 加载:先生成数据(由近到远),再构建 mesh
   // 优先保证玩家所在 chunk 及周围 1 圈的数据存在(物理碰撞需要)
@@ -2114,13 +2123,14 @@ function breakBlock() {
     showToast(`${itemName(item)} 不能破坏方块,切换到工具或方块`);
     return;
   }
+  // 优先检查门(DDA 会穿过门找到后面的方块)
+  const lookDoor = raycastDoor();
+  if (lookDoor) { removeDoor(lookDoor.x, lookDoor.y, lookDoor.z); showToast('移除门'); audio.play('break'); markDirtySave(); return; }
   const t = raycastTarget();
   if (!t) return;
   const type = getBlock(t.x, t.y, t.z);
   if (!type) return;
-  if (t.y === 0) { showToast('基岩无法破坏'); return; }
-  const breakDoor = getDoorAt(t.x, t.y, t.z);
-  if (breakDoor) { removeDoor(breakDoor.x, breakDoor.y, breakDoor.z); showToast('移除门'); audio.play('break'); markDirtySave(); return; }  // 基岩层不可挖
+  if (t.y === 0) { showToast('基岩无法破坏'); return; }  // 基岩层不可挖
   if (type === 'water') { showToast('水不能破坏'); return; }
   const def = BLOCK_TYPES[type];
 

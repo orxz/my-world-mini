@@ -25,11 +25,12 @@ const BLOCK_TYPES = {
   wool_yellow: { name: '黄色羊毛', top: '#f1c40f', side: '#f1c40f', bottom: '#f1c40f', solid: true, tool: 'any', hardness: 0.8 },
   wool_white:  { name: '白色羊毛', top: '#ecf0f1', side: '#ecf0f1', bottom: '#ecf0f1', solid: true, tool: 'any', hardness: 0.8 },
   wool_black:  { name: '黑色羊毛', top: '#2c3e50', side: '#2c3e50', bottom: '#2c3e50', solid: true, tool: 'any', hardness: 0.8 },
+  door:        { name: '木门',     top: '#8a6334', side: '#a0763a', bottom: '#8a6334', solid: true, tool: 'axe', hardness: 1.0 },
 };
 const HOTBAR_ORDER = ['grass', 'dirt', 'stone', 'wood', 'leaves', 'sand', 'planks', 'brick'];
 
 // 方块数字 id(用于紧凑的 Uint8Array 区块存储)
-const BLOCK_ID = { air: 0, grass: 1, dirt: 2, stone: 3, wood: 4, leaves: 5, sand: 6, planks: 7, brick: 8, water: 9, snow: 10, gravel: 11, wool_red: 12, wool_yellow: 13, wool_white: 14, wool_black: 15 };
+const BLOCK_ID = { air: 0, grass: 1, dirt: 2, stone: 3, wood: 4, leaves: 5, sand: 6, planks: 7, brick: 8, water: 9, snow: 10, gravel: 11, wool_red: 12, wool_yellow: 13, wool_white: 14, wool_black: 15, door: 16 };
 const ID_TO_BLOCK = Object.keys(BLOCK_ID);
 
 // ============================================================
@@ -175,7 +176,20 @@ function drawBlockFace(ctx, type, face, s, seedRand) {
     case 'wool_red':
     case 'wool_yellow':
     case 'wool_white':
-    case 'wool_black':
+        case 'door':
+      // 门:木板底色 + 深色门框(四边)+ 中线分缝
+      ctx.fillStyle = col; ctx.fillRect(0, 0, s, s);
+      ctx.fillStyle = 'rgba(60,40,20,0.6)';
+      ctx.fillRect(0, 0, s, 1);       // 上框
+      ctx.fillRect(0, s-1, s, 1);     // 下框
+      ctx.fillRect(0, 0, 1, s);       // 左框
+      ctx.fillRect(s-1, 0, 1, s);     // 右框
+      ctx.fillRect(Math.floor(s/2), 1, 1, s-2); // 中线分缝
+      // 门把手(右半中)
+      ctx.fillStyle = 'rgba(200,180,80,0.8)';
+      ctx.fillRect(Math.floor(s*0.7), Math.floor(s*0.4), 1, 1);
+      break;
+    case 'wool_black':case 'wool_black':
       // 羊毛:接近纯色,仅 ~5% 像素加微弱噪点(比默认 18% 干净),适合装饰
       for (let y = 0; y < s; y++) for (let x = 0; x < s; x++) {
         if (seedRand() < 0.05) {
@@ -3036,6 +3050,8 @@ const RECIPES = [
   { name: '沙砾', pattern: ['sand','sand','sand','sand'], result: { kind: 'block', id: 'gravel' }, count: 2, shapeless: true },
   // 4 雪块→冰(用 snow→water 表示,演示)
   { name: '融雪', pattern: ['snow','snow','snow','snow'], result: { kind: 'block', id: 'water' }, count: 1, shapeless: true },
+  // 木门:2 木板(横向)→1 门(有序)
+  { name: '木门', pattern: ['planks','planks',null,null], result: { kind: 'block', id: 'door' }, count: 1, shapeless: false },
 ];
 
 // 合成格状态:长度 4 的数组,每格为 null 或 {kind,id}(方块演示)

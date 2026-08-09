@@ -2262,13 +2262,41 @@ function getDoorMat(type) {
 function createDoorMesh(door) {
   const mat = getDoorMat(door.type);
   const g = new THREE.Group();
-  const panel = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.8, 0.12), mat);
-  panel.position.set(0, 0.9, 0); panel.userData.isDoorPanel = true; g.add(panel);
-  const knob = new THREE.Mesh(new THREE.BoxGeometry(0.06,0.06,0.06), new THREE.MeshLambertMaterial({ color: 0xc8b450 }));
-  knob.position.set(0.35, 1.0, 0.08); g.add(knob);
+  // 门板(主体):略小于一格,0.86 宽 x 1.9 高 x 0.1 厚
+  const panel = new THREE.Mesh(new THREE.BoxGeometry(0.86, 1.9, 0.1), mat);
+  panel.position.set(0, 0.95, 0);  // 中心在底上方 0.95
+  panel.userData.isDoorPanel = true;
+  g.add(panel);
+  // 门框(深色):顶部横框 + 底部横框
+  const frameMat = new THREE.MeshLambertMaterial({ color: 0x3a2412 });
+  const topFrame = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.08, 0.14), frameMat);
+  topFrame.position.set(0, 1.95, 0);
+  g.add(topFrame);
+  const botFrame = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.06, 0.14), frameMat);
+  botFrame.position.set(0, 0.03, 0);
+  g.add(botFrame);
+  // 门板装饰线(纵向凹槽效果,用深色细条)
+  const grooveMat = new THREE.MeshLambertMaterial({ color: 0x000000, transparent: true, opacity: 0.25 });
+  for (const gx of [-0.2, 0, 0.2]) {
+    const groove = new THREE.Mesh(new THREE.BoxGeometry(0.02, 1.7, 0.02), grooveMat);
+    groove.position.set(gx, 0.95, 0.06);
+    g.add(groove);
+  }
+  // 门把手(金色,右半中部)
+  const knob = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.06), new THREE.MeshLambertMaterial({ color: 0xd4af37 }));
+  knob.position.set(0.32, 1.0, 0.08);
+  knob.userData.isDoorKnob = true;
+  g.add(knob);
+  // 定位 + 朝向
   g.position.set(door.x + 0.5, door.y, door.z + 0.5);
-  g.rotation.y = door.facing === 1 ? Math.PI/2 : 0;
-  if (door.open) { panel.rotation.y = Math.PI/2; panel.position.x = 0.35; }
+  g.rotation.y = door.facing === 1 ? Math.PI / 2 : 0;
+  // 开门状态:门板+把手绕铰链(左边)旋转 90 度
+  if (door.open) {
+    panel.rotation.y = -Math.PI / 2;  // 绕左边缘旋转
+    panel.position.set(-0.43, 0.95, 0.43);
+    knob.position.set(-0.43, 1.0, 0.36);
+  }
+  g.userData.doorKey = doorKey(door.x, door.y, door.z);
   return g;
 }
 function placeDoor(x, y, z, type, facing) {
@@ -2284,10 +2312,37 @@ function removeDoor(x, y, z) {
   if (d.group) scene.remove(d.group); doors.delete(doorKey(x,y,z)); return true;
 }
 function toggleDoor(x, y, z) {
-  const d = doors.get(doorKey(x,y,z)); if (!d) return false;
+  const d = doors.get(doorKey(x, y, z));
+  if (!d) return false;
   d.open = !d.open;
-  if (d.group) { const p = d.group.children.find(function(c){return c.userData.isDoorPanel;}); if (p) { if(d.open){p.rotation.y=Math.PI/2;p.position.x=0.35;} else {p.rotation.y=0;p.position.x=0;} } }
-  audio.play('place'); showToast(d.open?'开门':'关门'); return true;
+  d.animT = 0;  // 触发动画(在 animate 里推进)
+  audio.play(d.open ? 'place' : 'break');
+  showToast(d.open ? '🚪 开门' : '🚪 关门');
+  return true;
+}
+// 门开关动画推进(在 animate 里调用)
+function updateDoorAnim(dt) {
+  for (const d of doors.values()) {
+    if (d.animT === undefined) continue;
+    d.animT += dt;
+    const dur = 0.3;  // 0.3 秒动画
+    const p = Math.min(1, d.animT / dur);
+    const eased = d.open ? p : (1 - p);  // 0→1 开,1→0 关
+    if (d.group) {
+      const panel = d.group.children.find(c => c.userData.isDoorPanel);
+      const knob = d.group.children.find(c => c.userData.isDoorKnob);
+      if (panel) {
+        // 铰链在左边(-0.43),旋转 -90 度(开门)
+        panel.rotation.y = -eased * Math.PI / 2;
+        panel.position.set(-0.43 + 0.43 * Math.cos(eased * Math.PI / 2), 0.95, 0.43 * Math.sin(eased * Math.PI / 2));
+      }
+      if (knob) {
+        knob.rotation.y = -eased * Math.PI / 2;
+        knob.position.set(-0.43 + 0.75 * Math.cos(eased * Math.PI / 2), 1.0, 0.75 * Math.sin(eased * Math.PI / 2) - 0.39);
+      }
+    }
+    if (p >= 1) d.animT = undefined;  // 动画结束
+  }
 }
 function doorBlocksAt(x, y, z) {
   const d1 = doors.get(doorKey(x,y,z)); if (d1 && !d1.open) return true;
@@ -2802,7 +2857,8 @@ function animate() {
   if (locked) updatePlayer(dt, prevVy);
   updateArrows(dt);
   updateDroppedItems(dt);
-  updateParticles(dt);   // 粒子效果(破坏/放置碎屑)
+  updateParticles(dt);   // 粒子效果
+  updateDoorAnim(dt);    // 门开关动画
   updateDamageVignette(dt);
   updateDeathOverlay(dt);
   updateClouds(dt);   // 云朵飘动(无论是否锁定都执行)
@@ -2960,6 +3016,16 @@ function applySave(rec) {
   updateHPBar();
   selectSlot(currentSlot);
   rebuildRaycastTargets();
+  // 恢复门实体
+  clearDoors();
+  if (rec.doorsData) {
+    for (const [key, d] of rec.doorsData) {
+      const door = { x: d.x, y: d.y, z: d.z, type: d.type, open: d.open, facing: d.facing };
+      doors.set(key, door);
+      door.group = createDoorMesh(door);
+      scene.add(door.group);
+    }
+  }
   saveDirty = false;
 }
 
@@ -3436,6 +3502,7 @@ async function saveSlot(name) {
       playerHP, breathTimer: 0,
       hotbar, currentSlot,
       modifications: Array.from(modifications.entries()),
+      doorsData: Array.from(doors.entries()).map(function(e){return [e[0], {x:e[1].x,y:e[1].y,z:e[1].z,type:e[1].type,open:e[1].open,facing:e[1].facing}];}),
       timestamp: Date.now(),
     };
     const tx = db.transaction(STORE, 'readwrite');
@@ -3462,7 +3529,7 @@ async function overwriteSave(id) {
       yaw, pitch, cameraMode, isFlying,
       playerHP, breathTimer: 0,
       hotbar, currentSlot,
-      modifications: Array.from(modifications.entries()),
+      doorsData: Array.from(doors.entries()).map(function(e){return [e[0], {x:e[1].x,y:e[1].y,z:e[1].z,type:e[1].type,open:e[1].open,facing:e[1].facing}];}),
       timestamp: Date.now(),
     };
     // 保留原名称:先读旧记录的 name

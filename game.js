@@ -2606,19 +2606,23 @@ function updatePlayer(dt, prevVy) {
     breathTimer = 0;
   }
 
-  // 防掉出世界:返回最后安全位置(而非硬编码原点,避免远途探索者被拉回出生点)
-  if (playerPos.y < -20) {
+  // 防掉落到地图下面:y < 0(世界底部以下)立即救援,不等 -20
+  if (playerPos.y < 0) {
+    // 优先:尝试在 lastSafePos 附近找安全位(确保区块已生成)
     const sx = Math.floor(lastSafePos.x), sz = Math.floor(lastSafePos.z);
-    // 确保救援点区块已生成,再向上找一个头顶两格空的安全站立位
     ensureChunk(Math.floor(sx / CHUNK_SIZE), Math.floor(sz / CHUNK_SIZE));
-    let ry = Math.min(WORLD_HEIGHT - 3, Math.floor(lastSafePos.y) + 2);
-    for (let y = ry; y >= 1; y--) {
+    let rescued = false;
+    for (let y = Math.min(WORLD_HEIGHT - 3, Math.floor(lastSafePos.y) + 2); y >= 1; y--) {
       if (isSolidAt(sx, y, sz) && !isSolidAt(sx, y + 1, sz) && !isSolidAt(sx, y + 2, sz)) {
         playerPos.set(sx + 0.5, y + 1 + PLAYER_HEIGHT * 0.5 + 0.1, sz + 0.5);
-        break;
+        rescued = true; break;
       }
     }
-    if (playerPos.y < -20) playerPos.set(lastSafePos.x, lastSafePos.y, lastSafePos.z); // 兜底
+    // 兜底:lastSafePos 不可用 → 回出生广场中心(确定性安全)
+    if (!rescued) {
+      const plazaH = SEA_LEVEL + 6;
+      playerPos.set(0.5, plazaH + 1 + PLAYER_HEIGHT * 0.5 + 0.1, 0.5);
+    }
     velocity.set(0, 0, 0);
     showToast('已从虚空中救回');
   }

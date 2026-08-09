@@ -1236,9 +1236,9 @@ function init() {
   // 构建全部已生成区块的 mesh
   for (const ch of chunks.values()) buildChunkMesh(ch);
 
-  // 找安全出生点
-  const spawn = findSafeSpawn();
-  playerPos.set(spawn.x + 0.5, spawn.y + 1 + PLAYER_HEIGHT * 0.5 + 0.1, spawn.z + 0.5);
+  // 出生点固定在广场中心(不用 findSafeSpawn,确保每次都在广场)
+  const plazaH = SEA_LEVEL + 6;
+  playerPos.set(0.5, plazaH + 1 + PLAYER_HEIGHT * 0.5, 0.5);
 
   initInventory();
   buildPlayerModel();
@@ -1504,7 +1504,7 @@ function resetWorld() {
   for (const ch of chunks.values()) buildChunkMesh(ch);
   // 出生点固定在广场中心(原点)
   const plazaH = SEA_LEVEL + 6;
-  playerPos.set(0.5, plazaH + 1 + PLAYER_HEIGHT * 0.5 + 0.1, 0.5);
+  playerPos.set(0.5, plazaH + 1 + PLAYER_HEIGHT * 0.5, 0.5);  // 精确站在广场表面(无余量)
   yaw = 0; pitch = 0;
   updateInfoCount();
   showToast('已重置到出生广场');
@@ -2532,7 +2532,7 @@ let deathOverlayTimer = 0;
 function respawnPlayer() {
   // 重生到出生广场中心(确定性,与 resetWorld 一致)
   const plazaH = SEA_LEVEL + 6;
-  playerPos.set(0.5, plazaH + 1 + PLAYER_HEIGHT * 0.5 + 0.1, 0.5);
+  playerPos.set(0.5, plazaH + 1 + PLAYER_HEIGHT * 0.5, 0.5);
   velocity.set(0, 0, 0);
   playerHP = PLAYER_MAX_HP;
   breathTimer = 0;
@@ -2748,7 +2748,7 @@ function updatePlayer(dt, prevVy) {
     // 兜底:lastSafePos 不可用 → 回出生广场中心(确定性安全)
     if (!rescued) {
       const plazaH = SEA_LEVEL + 6;
-      playerPos.set(0.5, plazaH + 1 + PLAYER_HEIGHT * 0.5 + 0.1, 0.5);
+      playerPos.set(0.5, plazaH + 1 + PLAYER_HEIGHT * 0.5, 0.5);
     }
     velocity.set(0, 0, 0);
     showToast('已从虚空中救回');

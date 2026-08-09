@@ -2980,6 +2980,21 @@ function buildInventoryPanel() {
       putInSlot(currentSlot, copy);
       showToast(`已放入快捷栏:${itemName(item)}`);
     });
+    // 右键:放入合成格(找第一个空位)
+    cell.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      if (item.kind !== 'block') { showToast('合成格只支持方块'); return; }
+      for (let gi = 0; gi < 4; gi++) {
+        if (craftGrid[gi] === null) {
+          craftGrid[gi] = { kind: 'block', id: item.id };
+          renderCraftGrid();
+          refreshCraftResult();
+          showToast(`放入合成格:${itemName(item)}`);
+          return;
+        }
+      }
+      showToast('合成格已满');
+    });
     grid.appendChild(cell);
   };
   addSection(grid, '工具 · 武器');
@@ -3004,10 +3019,23 @@ function addSection(grid, title) {
 // ============================================================
 // 配方:pattern 是长度 4 的数组,元素为方块 id 或 null。null 表示该格必须为空。
 // result 为 {kind,id,count?}。可放置的 crafting_table 方块本游戏未定义,故用 planks 作演示结果。
+// 合成配方表(2×2):pattern 是 4 格的方块 id(或 null=空),result 是产出
+// shapeless:true 表示无序(任意位置都可),false 表示必须精确位置
 const RECIPES = [
-  { name: '木板捆(演示)', pattern: ['planks','planks','planks','planks'], result: { kind: 'block', id: 'planks' } },
-  { name: '石砖(演示)',   pattern: ['stone','stone','stone','stone'],     result: { kind: 'block', id: 'stone' } },
-  { name: '砖块(演示)',   pattern: ['dirt','dirt','dirt','dirt'],         result: { kind: 'block', id: 'brick' } },
+  // 基础:木头→木板(1 木头 = 4 木板,无序)
+  { name: '木板', pattern: ['wood',null,null,null], result: { kind: 'block', id: 'planks' }, count: 4, shapeless: true },
+  // 木板→木棍(2 木板 = 4 木棍,纵向排列)
+  { name: '木棍', pattern: ['planks',null,'planks',null], result: { kind: 'item', id: 'arrow', count: 4 }, shapeless: false },
+  // 4 木板→工作台(用 planks 表示,演示)
+  { name: '压缩木板', pattern: ['planks','planks','planks','planks'], result: { kind: 'block', id: 'planks' }, count: 1, shapeless: true },
+  // 4 石头→石砖(用 brick 表示)
+  { name: '石砖', pattern: ['stone','stone','stone','stone'], result: { kind: 'block', id: 'brick' }, count: 2, shapeless: true },
+  // 4 砖块→砖块(压缩,演示)
+  { name: '砖块', pattern: ['brick','brick','brick','brick'], result: { kind: 'block', id: 'brick' }, count: 1, shapeless: true },
+  // 4 沙子→沙砾
+  { name: '沙砾', pattern: ['sand','sand','sand','sand'], result: { kind: 'block', id: 'gravel' }, count: 2, shapeless: true },
+  // 4 雪块→冰(用 snow→water 表示,演示)
+  { name: '融雪', pattern: ['snow','snow','snow','snow'], result: { kind: 'block', id: 'water' }, count: 1, shapeless: true },
 ];
 
 // 合成格状态:长度 4 的数组,每格为 null 或 {kind,id}(方块演示)
@@ -3015,24 +3043,27 @@ const craftGrid = [null, null, null, null];
 
 // 当前配方匹配结果(null = 无匹配)
 function matchRecipe() {
-  // 完全匹配(含位置)
+  // 网格归一化(非空项的 id 列表)
+  const gridItems = craftGrid.filter(x => x !== null).map(x => x.id);
+  if (gridItems.length === 0) return null;
+  const gridSorted = [...gridItems].sort().join(',');
   for (const r of RECIPES) {
-    let ok = true;
-    for (let i = 0; i < 4; i++) {
-      const want = r.pattern[i];
-      const got = craftGrid[i];
-      if (want === null) { if (got !== null) { ok = false; break; } }
-      else { if (!got || got.id !== want) { ok = false; break; } }
+    const recipeItems = r.pattern.filter(x => x !== null);
+    if (r.shapeless) {
+      // 无序:排序后比较
+      const recipeSorted = [...recipeItems].sort().join(',');
+      if (recipeSorted === gridSorted) return r;
+    } else {
+      // 有序:精确位置匹配
+      let ok = true;
+      for (let i = 0; i < 4; i++) {
+        const want = r.pattern[i] || null;
+        const got = craftGrid[i];
+        if ((want === null) !== (got === null)) { ok = false; break; }
+        if (want && (!got || got.id !== want)) { ok = false; break; }
+      }
+      if (ok) return r;
     }
-    if (ok) return r;
-  }
-  // 形状匹配(忽略位置):把填入项排序后与配方排序比较
-  const norm = (arr) => arr.filter(x => x !== null).map(x => x.id).sort().join(',');
-  const gridNorm = norm(craftGrid);
-  if (!gridNorm) return null;
-  for (const r of RECIPES) {
-    const rNorm = norm(r.pattern);
-    if (rNorm === gridNorm) return r;
   }
   return null;
 }
@@ -3069,22 +3100,23 @@ function refreshCraftResult() {
   } else {
     if (btn) btn.disabled = true;
     const hasItem = craftGrid.some(x => x !== null);
-    if (hint) hint.textContent = hasItem ? '无匹配配方(尝试 4 个同种方块)' : '从下方物品点击放入合成格(创造模式:合成主要作演示)';
+    if (hint) hint.textContent = hasItem ? '无匹配配方(尝试 4 个同种方块)' : '右键点击下方物品放入合成格,左键放入快捷栏';
   }
 }
 
 function performCraft() {
   const r = matchRecipe();
   if (!r) return;
-  // 创造模式:物品栏无限,直接把结果放入当前快捷栏格,清空合成网格
+  // 产出物品(含数量)
   const res = { ...r.result };
-  if (res.kind === 'item' && !res.count) res.count = 1;
+  if (!res.count) res.count = r.count || 1;
+  // 放入当前快捷栏格
   putInSlot(currentSlot, res);
-  // 清空合成格
+  // 清空合成格(创造模式不消耗材料,但仍清空格表示完成)
   for (let i = 0; i < 4; i++) craftGrid[i] = null;
   renderCraftGrid();
   refreshCraftResult();
-  showToast('合成:' + r.name);
+  showToast('合成:' + r.name + ' ×' + res.count);
   audio.play('place');
 }
 

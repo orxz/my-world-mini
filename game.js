@@ -180,7 +180,8 @@ function drawBlockFace(ctx, type, face, s, seedRand) {
     case 'wool_red':
     case 'wool_yellow':
     case 'wool_white':
-        case 'door': {
+      break;
+    case 'door': {
       // 木门:木板底 + 深棕门框 + 中线 + 金把手
       ctx.fillStyle = col; ctx.fillRect(0, 0, s, s);
       ctx.fillStyle = 'rgba(60,40,20,0.6)';
@@ -3046,10 +3047,10 @@ function buildInventoryPanel() {
     // 右键:放入合成格(找第一个空位)
     cell.addEventListener('contextmenu', (e) => {
       e.preventDefault();
-      if (item.kind !== 'block') { showToast('合成格只支持方块'); return; }
+      // 合成格接受方块和材料(物品)
       for (let gi = 0; gi < 4; gi++) {
         if (craftGrid[gi] === null) {
-          craftGrid[gi] = { kind: 'block', id: item.id };
+          craftGrid[gi] = { kind: item.kind || 'block', id: item.id };
           renderCraftGrid();
           refreshCraftResult();
           showToast(`放入合成格:${itemName(item)}`);
@@ -3065,7 +3066,7 @@ function buildInventoryPanel() {
   addSection(grid, '方块');
   HOTBAR_ORDER.forEach(id => addCell({ kind: 'block', id }));
   // 新增方块也可取用
-  ['water', 'snow', 'gravel', 'wool_red', 'wool_yellow', 'wool_white', 'wool_black'].forEach(id => addCell({ kind: 'block', id }));
+  ['water', 'snow', 'gravel', 'door', 'door_iron', 'door_stone', 'door_gold', 'door_diamond'].forEach(id => addCell({ kind: 'block', id }));
   addSection(grid, '材料 · 宝石');
   ITEM_ORDER.forEach(id => addCell({ kind: 'item', id, count: 64 }));
 }

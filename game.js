@@ -1754,6 +1754,7 @@ function setupInput() {
     }
     if (e.code === 'F5') { e.preventDefault(); cycleCameraMode(); }
     if (e.code === 'KeyE') toggleInventory(true);
+    if (e.code === 'KeyQ') { hotbar[currentSlot] = null; buildHotbar(); updateHoldItem(); showToast('空手'); }
   });
   addEventListener('keyup', (e) => { keys[e.code] = false; });
 
@@ -1813,6 +1814,10 @@ function setupInput() {
   // 暂停菜单:音效快捷开关 + 设置面板入口
   const btnSettings = document.getElementById('btn-settings');
   if (btnSettings) btnSettings.addEventListener('click', openSettingsPanel);
+  const btnEmpty = document.getElementById('btn-empty-hand');
+  if (btnEmpty) btnEmpty.addEventListener('click', () => {
+    hotbar[currentSlot] = null; buildHotbar(); updateHoldItem(); showToast('已清空当前手持(空手)');
+  });
   document.getElementById('btn-controls').addEventListener('click', () => {
     document.getElementById('pause-controls').classList.toggle('hidden');
   });

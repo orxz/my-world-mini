@@ -2128,9 +2128,16 @@ function breakBlock() {
     showToast(`${itemName(item)} 不能破坏方块,切换到工具或方块`);
     return;
   }
-  // 优先检查门(DDA 会穿过门找到后面的方块)
+  // 门交互:空手/方块左键门=开关门;工具左键门=移除门
   const lookDoor = raycastDoor();
-  if (lookDoor) { removeDoor(lookDoor.x, lookDoor.y, lookDoor.z); showToast('移除门'); audio.play('break'); markDirtySave(); return; }
+  if (lookDoor) {
+    if (item && item.kind === 'tool') {
+      removeDoor(lookDoor.x, lookDoor.y, lookDoor.z); showToast('移除门'); audio.play('break'); markDirtySave();
+    } else {
+      toggleDoor(lookDoor.x, lookDoor.y, lookDoor.z);
+    }
+    return;
+  }
   const t = raycastTarget();
   if (!t) return;
   const type = getBlock(t.x, t.y, t.z);
@@ -2998,7 +3005,13 @@ function applySave(rec) {
   worldSeed = (typeof rec.seed === 'number') ? rec.seed : worldSeed;
   modifications.clear();
   if (rec.modifications) for (const [k, v] of rec.modifications) modifications.set(k, v);
-  if (rec.playerPos) playerPos.set(rec.playerPos.x, rec.playerPos.y, rec.playerPos.z);
+  if (rec.playerPos && rec.playerPos.y > 1 && rec.playerPos.y < WORLD_HEIGHT) {
+    playerPos.set(rec.playerPos.x, rec.playerPos.y, rec.playerPos.z);
+  } else {
+    // 存档位置异常 → 回广场中心
+    const plazaH = SEA_LEVEL + 6;
+    playerPos.set(0.5, plazaH + 1 + PLAYER_HEIGHT * 0.5, 0.5);
+  }
   yaw = rec.yaw || 0; pitch = rec.pitch || 0;
   cameraMode = rec.cameraMode || 0; isFlying = rec.isFlying || false;
   velocity.set(0, 0, 0);

@@ -2131,16 +2131,9 @@ function breakBlock() {
     showToast(`${itemName(item)} 不能破坏方块,切换到工具或方块`);
     return;
   }
-  // 门交互:空手/方块左键门=开关门;工具左键门=移除门
+  // 门:左键=移除门(任何手持,和破坏方块一致);右键=开关门
   const lookDoor = raycastDoor();
-  if (lookDoor) {
-    if (item && item.kind === 'tool') {
-      removeDoor(lookDoor.x, lookDoor.y, lookDoor.z); showToast('移除门'); audio.play('break'); markDirtySave();
-    } else {
-      toggleDoor(lookDoor.x, lookDoor.y, lookDoor.z);
-    }
-    return;
-  }
+  if (lookDoor) { removeDoor(lookDoor.x, lookDoor.y, lookDoor.z); showToast('移除门'); audio.play('break'); markDirtySave(); return; }
   const t = raycastTarget();
   if (!t) return;
   const type = getBlock(t.x, t.y, t.z);

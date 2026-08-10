@@ -1825,7 +1825,10 @@ function setupInput() {
 
   const btnLoad = document.getElementById('btn-load');
   if (btnLoad) btnLoad.addEventListener('click', () => {
-    loadGame().then(ok => { showToast(ok ? '已读取存档' : '没有存档'); if (ok) enterGame(); });
+    loadGame().then(ok => {
+      if (ok) { showToast('已读取,点击继续游戏'); document.getElementById('pause-menu').classList.remove('hidden'); }
+      else showToast('没有存档');
+    });
   });
 
   // ---------- 设置面板 ----------
@@ -3124,10 +3127,9 @@ function openSaveManager() {
 window.loadSaveFromMgr = function(id) {
   loadSlot(id).then(ok => {
     if (ok) {
-      showToast('已读取存档 #' + id);
+      showToast('已读取,点击继续游戏');
       document.getElementById('save-manager').classList.add('hidden');
-      document.getElementById('pause-menu').classList.add('hidden');
-      enterGame();
+      document.getElementById('pause-menu').classList.remove('hidden');
     } else showToast('读取失败');
   });
 };

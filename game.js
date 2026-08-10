@@ -3031,14 +3031,17 @@ function applySave(rec) {
   updateHPBar();
   selectSlot(currentSlot);
   rebuildRaycastTargets();
-  // 恢复门实体
-  clearDoors();
+  // 恢复门实体(clearWorld 已调 clearDoors)
   if (rec.doorsData) {
     for (const [key, d] of rec.doorsData) {
-      const door = { x: d.x, y: d.y, z: d.z, type: d.type, open: d.open, facing: d.facing };
-      doors.set(key, door);
-      door.group = createDoorMesh(door);
-      scene.add(door.group);
+      try {
+        // 确保门位置区块已生成(避免在未加载区块创建门)
+        ensureChunk(Math.floor(d.x / CHUNK_SIZE), Math.floor(d.z / CHUNK_SIZE));
+        const door = { x: d.x, y: d.y, z: d.z, type: d.type || 'door', open: !!d.open, facing: d.facing || 0 };
+        doors.set(key, door);
+        door.group = createDoorMesh(door);
+        scene.add(door.group);
+      } catch (e) { /* 跳过损坏的门数据 */ }
     }
   }
   saveDirty = false;
@@ -3491,16 +3494,22 @@ function openDB() {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = (e) => {
       const d = e.target.result;
+      const tx = e.target.transaction;
       // v2:新建自增 id 的 saves store
       if (!d.objectStoreNames.contains(STORE)) {
         const os = d.createObjectStore(STORE, { keyPath: 'id', autoIncrement: true });
         os.createIndex('timestamp', 'timestamp', { unique: false });
       }
-      // 删除旧的 v1 'world' store
+      // 删除旧的 v1 'world' store(如果有)
       if (d.objectStoreNames.contains('world')) d.deleteObjectStore('world');
     };
+    req.onblocked = () => {
+      // 被其他标签页阻塞 — 提示用户
+      console.warn('IndexedDB 升级被阻塞,请关闭其他标签页');
+      reject(new Error('DB blocked'));
+    };
     req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+    req.onerror = () => { dbReady = null; reject(req.error); };  // 失败时重置缓存,允许重试
   });
   return dbReady;
 }
@@ -3509,6 +3518,7 @@ function openDB() {
 async function saveSlot(name) {
   try {
     const db = await openDB();
+    if (!db) return null;
     const rec = {
       name: name || ('存档 ' + new Date().toLocaleString('zh-CN')),
       seed: worldSeed,
@@ -3537,6 +3547,7 @@ async function saveGame() {
 async function overwriteSave(id) {
   try {
     const db = await openDB();
+    if (!db) return false;
     const rec = {
       id, name: ('存档 ' + new Date().toLocaleString('zh-CN')),
       seed: worldSeed,
@@ -3566,6 +3577,7 @@ async function overwriteSave(id) {
 async function listSaves() {
   try {
     const db = await openDB();
+    if (!db) return [];
     const tx = db.transaction(STORE, 'readonly');
     return new Promise((resolve) => {
       const r = tx.objectStore(STORE).getAll();
@@ -3583,6 +3595,7 @@ async function listSaves() {
 async function loadSlot(id) {
   try {
     const db = await openDB();
+    if (!db) return false;
     const tx = db.transaction(STORE, 'readonly');
     return new Promise((resolve) => {
       const r = tx.objectStore(STORE).get(id);
@@ -3608,6 +3621,7 @@ async function loadGame() {
 async function deleteSave(id) {
   try {
     const db = await openDB();
+    if (!db) return false;
     const tx = db.transaction(STORE, 'readwrite');
     return new Promise((resolve) => {
       const r = tx.objectStore(STORE).delete(id);

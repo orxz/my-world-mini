@@ -2288,6 +2288,7 @@ function createDoorMesh(door) {
   g.add(pivot);
   const panel = new THREE.Mesh(new THREE.BoxGeometry(0.86, 1.9, 0.1), mat);
   panel.position.set(0.43, 0.95, 0);
+  panel.userData.isDoorPanel = true;  // 标记:共享缓存材质,disposeDoorGroup 不释放
   pivot.add(panel);
   const grooveMat = new THREE.MeshLambertMaterial({ color: 0x000000, transparent: true, opacity: 0.2 });
   for (const gx of [0.23, 0.43, 0.63]) { const gr = new THREE.Mesh(new THREE.BoxGeometry(0.015, 1.6, 0.02), grooveMat); gr.position.set(gx, 0.95, 0.06); pivot.add(gr); }
@@ -3001,7 +3002,8 @@ function applySave(rec) {
   worldSeed = (typeof rec.seed === 'number') ? rec.seed : worldSeed;
   modifications.clear();
   if (rec.modifications) for (const [k, v] of rec.modifications) modifications.set(k, v);
-  if (rec.playerPos && rec.playerPos.y > 1 && rec.playerPos.y < WORLD_HEIGHT) {
+  if (rec.playerPos && rec.playerPos.y > 1 && rec.playerPos.y < WORLD_HEIGHT
+      && Number.isFinite(rec.playerPos.x) && Number.isFinite(rec.playerPos.z)) {
     playerPos.set(rec.playerPos.x, rec.playerPos.y, rec.playerPos.z);
   } else {
     // 存档位置异常 → 回广场中心
@@ -3499,8 +3501,8 @@ function openDB() {
       if (d.objectStoreNames.contains('world')) d.deleteObjectStore('world');
     };
     req.onblocked = () => {
-      // 被其他标签页阻塞 — 提示用户
       console.warn('IndexedDB 升级被阻塞,请关闭其他标签页');
+      dbReady = null;  // 重置缓存,允许重试(和 onerror 一致)
       reject(new Error('DB blocked'));
     };
     req.onsuccess = () => resolve(req.result);

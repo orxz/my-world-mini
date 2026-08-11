@@ -691,6 +691,7 @@ function updateChunks(playerWX, playerWZ) {
   for (const ch of chunks.values()) {
     if (ch.meshDirty) dirtyList.push(ch);
   }
+  if (dirtyList.length === 0) return;
   dirtyList.sort((a, b) => {
     const da = (a.cx - pcx) ** 2 + (a.cz - pcz) ** 2;
     const db = (b.cx - pcx) ** 2 + (b.cz - pcz) ** 2;
@@ -763,6 +764,8 @@ let lastSpaceTime = 0;
 let worldSeed = (Math.random() * 4294967296) >>> 0;
 
 const raycaster = new THREE.Raycaster();
+const _rayEye = new THREE.Vector3();
+const _rayDir = new THREE.Vector3();
 raycaster.far = 6;
 const screenCenter = new THREE.Vector2(0, 0);
 const highlightBox = new THREE.LineSegments(
@@ -1771,8 +1774,8 @@ function setupInput() {
     // 2. 尝试锁定鼠标指针(失败不影响游戏,只是不能用鼠标转视角)
     if (renderer) {
       try {
-        const p = renderer.domElement.requestPointerLock();
-        if (p && typeof p.catch === 'function') p.catch(() => {});
+        if (!('ontouchstart' in window)) { const p = renderer.domElement.requestPointerLock();
+        if (p && typeof p.catch === 'function') p.catch(() => {}); }
       } catch (e) {}
     }
     // 3. 初始化音频(失败静默,不影响游戏)
@@ -2049,13 +2052,10 @@ function setupInput() {
 // 性能优势:只检查视线穿过的 ~6 个体素,而非 121 个 chunk mesh 的所有三角形
 function raycastTarget() {
   // 起点:第一人称=相机位置(playerPos);第三人称=玩家眼睛
-  const eye = new THREE.Vector3(playerPos.x, playerPos.y, playerPos.z);
-  const dir = new THREE.Vector3(
-    -Math.sin(yaw) * Math.cos(pitch),
-    Math.sin(pitch),
-    -Math.cos(yaw) * Math.cos(pitch)
-  );
-  const maxDist = raycaster.far || 6;  // 最远 6 格
+  _rayEye.set(playerPos.x, playerPos.y, playerPos.z);
+  _rayDir.set(-Math.sin(yaw)*Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw)*Math.cos(pitch));
+  const eye = _rayEye, dir = _rayDir;
+  const maxDist = 6;  // 最远 6 格
 
   // DDA 算法:Amanatides-Woo 体素遍历
   let x = Math.floor(eye.x), y = Math.floor(eye.y), z = Math.floor(eye.z);
@@ -3455,7 +3455,9 @@ let settings = { volume: 0.35, soundEnabled: true, fov: 75, renderDist: 5, dropI
 function loadSettings() {
   try {
     const s = localStorage.getItem(SETTINGS_KEY);
-    if (s) Object.assign(settings, JSON.parse(s));
+    if (s) { const parsed = JSON.parse(s); Object.assign(settings, parsed); }
+    settings.renderDist = Math.max(1, Math.min(10, settings.renderDist|0 || 5));
+    settings.volume = Math.max(0, Math.min(1, Number(settings.volume) || 0.35));
   } catch (e) {}
   // 应用设置
   if (audio.masterGain) audio.masterGain.gain.value = settings.soundEnabled ? settings.volume : 0;
@@ -3489,6 +3491,7 @@ let autosaveTimer = null;         // 自动保存防抖定时器
 function openDB() {
   if (dbReady) return dbReady;
   dbReady = new Promise((resolve, reject) => {
+    if (typeof indexedDB === 'undefined' || !indexedDB) { reject(new Error('IndexedDB unavailable')); return; }
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = (e) => {
       const d = e.target.result;

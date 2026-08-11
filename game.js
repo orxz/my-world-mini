@@ -239,7 +239,7 @@ function drawBlockFace(ctx, type, face, s, seedRand) {
       ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.fillRect(Math.floor(s*0.7),Math.floor(s*0.4),1,1);
       break;
     }
-    case 'wool_black':case 'wool_black':
+    case 'wool_black':
       // 羊毛:接近纯色,仅 ~5% 像素加微弱噪点(比默认 18% 干净),适合装饰
       for (let y = 0; y < s; y++) for (let x = 0; x < s; x++) {
         if (seedRand() < 0.05) {
@@ -480,7 +480,7 @@ function getBlock(x, y, z) {
   if (!ch) return null;
   const lx = x - cx * CHUNK_SIZE, lz = z - cz * CHUNK_SIZE;
   const id = ch.data[chunkIdx(lx, y, lz)];
-  return id === 0 ? null : ID_TO_BLOCK[id];
+  const name = id === 0 ? null : ID_TO_BLOCK[id]; return name || null;
 }
 function isSolidAt(x, y, z) {
   const t = getBlock(x, y, z);
@@ -1800,7 +1800,7 @@ function setupInput() {
     if (locked) {
       overlay.classList.add('hidden');
       pauseMenu.classList.add('hidden');
-    } else if (gameStarted) {
+    } else if (gameStarted && !inventoryOpen) {
       pauseMenu.classList.remove('hidden');
       autosave(true);
     }
@@ -1883,7 +1883,7 @@ function setupInput() {
   });
   if (setRender) setRender.addEventListener('change', () => {
     settings.renderDist = parseInt(setRender.value);
-    RENDER_DISTANCE = settings.renderDist;
+    RENDER_DISTANCE = Math.max(1, settings.renderDist | 0);
     FOG_FAR = (RENDER_DISTANCE * CHUNK_SIZE) + 8;
     saveSettings();
   });
@@ -2012,6 +2012,8 @@ function setupInput() {
       el.addEventListener('touchend', (e) => { e.preventDefault(); if (onUp) onUp(); }, { passive: false });
     };
     bindBtn('touch-jump', () => { keys['Space'] = true; }, () => { keys['Space'] = false; });
+  const tj = document.getElementById('touch-jump'); if (tj) tj.addEventListener('touchcancel', () => { keys['Space'] = false; });
+  addEventListener('blur', () => { keys['Space'] = false; });
     bindBtn('touch-break', () => { breakBlock(); });
     bindBtn('touch-place', () => { placeBlock(); });
     // 拖拽转视角(画面右半区拖动)
@@ -2214,8 +2216,7 @@ function useTool(item) {
   const now = performance.now();
   const cd = { sword: 350, bow: 600, shield: 500 }[def.tool] || 200;
   if (toolCooldown[item.id] && now - toolCooldown[item.id] < cd) return;
-  toolCooldown[item.id] = now;
-
+  // cooldown set AFTER success checks (not before, to avoid locking failed actions)
   if (def.tool === 'sword') {
     swingArm();
     swingHoldItem();
@@ -2241,6 +2242,7 @@ function useTool(item) {
     consumeToolDurability(item);
   } else {
     showToast(`${def.name}:用于破坏方块(左键),右键只是展示`);
+    toolCooldown[item.id] = now;
     swingHoldItem();
   }
 }
@@ -2697,7 +2699,7 @@ function updatePlayer(dt, prevVy) {
   // 落地音效:仅在"从空中→触地"这一帧触发(边沿检测),避免着地后重复播放
   if (onGround && !wasOnGround && prevVy < -6) audio.play('jump');
   // Fall damage: when landing with prevVy < -15 (~4+ blocks), scale by speed. Flying immune.
-  if (onGround && !wasOnGround && !isFlying && prevVy < -15) {
+  if (onGround && !wasOnGround && !isFlying && prevVy < -15 && !inWater()) {
     const dmg = Math.floor((-prevVy - 15) / 3);
     if (dmg > 0) damagePlayer(dmg);
   }
@@ -2769,6 +2771,7 @@ let fpsAcc = 0, fpsFrames = 0, fpsTimer = 0;
 
 // 昼夜循环:dayTime 0..1(0=午夜,0.25=日出,0.5=正午,0.75=日落),起步 0.3(早晨)
 let dayTime = 0.3;
+let _daytimeEl = null;  // 缓存 DOM 元素(避免每帧 getElementById)
 // updateDayNight 用的临时颜色对象(避免每帧分配)
 const _dayColor = new THREE.Color();
 const _dayColorB = new THREE.Color();
@@ -2989,7 +2992,7 @@ function tryPlantCrop(nx, ny, nz) {
   return false;
 }
 function updateCrops() {
-  const now = Date.now();
+  const now = performance.now();
   for (const [key, plantTime] of cropTimers.entries()) {
     if (now - plantTime < 60000) continue;
     const [x, y, z] = key.split(',').map(Number);
@@ -2999,6 +3002,7 @@ function updateCrops() {
 }
 
 function applySave(rec) {
+  if (autosaveTimer) { clearTimeout(autosaveTimer); autosaveTimer = null; }
   clearWorld();
   worldSeed = (typeof rec.seed === 'number') ? rec.seed : worldSeed;
   modifications.clear();
@@ -3018,7 +3022,7 @@ function applySave(rec) {
   playerHP = (typeof rec.playerHP === 'number') ? Math.max(0, Math.min(PLAYER_MAX_HP, rec.playerHP)) : PLAYER_MAX_HP;
   breathTimer = 0;
   if (rec.hotbar) { hotbar = rec.hotbar; } else initInventory();
-  currentSlot = rec.currentSlot || 0;
+  currentSlot = Math.max(0, Math.min(HOTBAR_SIZE - 1, (rec.currentSlot | 0) || 0));
   // 预热玩家所在区域区块
   const pcx = Math.floor(playerPos.x / CHUNK_SIZE);
   const pcz = Math.floor(playerPos.z / CHUNK_SIZE);
@@ -3147,6 +3151,7 @@ function toggleInventory(open) {
     if (document.pointerLockElement) document.exitPointerLock();
   } else {
     panel.classList.add('hidden');
+    clearCraftGrid();
   }
 }
 
@@ -3644,7 +3649,7 @@ function scheduleAutosave() {
 }
 function autosave(force) {
   if (!saveDirty && !force) return;
-  if (currentSaveId === null) { saveDirty = false; return; }(避免无命名存档堆积)
+  if (currentSaveId === null) { saveDirty = false; return; } // 避免无命名存档堆积
   saveDirty = false;
   lastAutosaveTime = performance.now();
   overwriteSave(currentSaveId);

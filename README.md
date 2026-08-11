@@ -1,15 +1,56 @@
-# 我的世界 · 体素沙盒(完整版)
+<div align="center">
 
-基于 Three.js 的 Minecraft 风格 3D 体素沙盒游戏,纯前端实现,无需后端或构建工具。打开即玩。
+# 我的世界 · 体素沙盒
 
-## ▶️ 启动
+基于 Three.js 的 Minecraft 风格 3D 体素沙盒游戏 · 纯前端 · 零构建 · 打开即玩
+
+[![CI](https://github.com/orxz/my-world-mini/actions/workflows/ci.yml/badge.svg)](https://github.com/orxz/my-world-mini/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![Node](https://img.shields.io/badge/node-%E2%89%A518-green.svg)](./package.json)
+[![No Build](https://img.shields.io/badge/runtime-no%20build-ff69b4.svg)](#️-快速开始)
+
+</div>
+
+> 打开 `index.html` 就能玩。无需后端、无需安装依赖、无需打包工具 —— 离线也能跑。
+
+---
+
+## 📑 目录
+
+- [快速开始](#️-快速开始)
+- [操作](#-操作)
+- [核心系统](#-核心系统)
+  - [近似无限世界(动态区块加载)](#-近似无限世界动态区块加载)
+  - [6 种生物群系](#️-6-种生物群系)
+  - [多存档管理(IndexedDB)](#-多存档管理indexeddb)
+  - [程序化音效(Web Audio,无外部文件)](#-程序化音效web-audio无外部文件)
+  - [出生广场(固定场景)](#️-出生广场固定场景)
+  - [物品系统(创造模式)](#-物品系统创造模式)
+  - [玩家模型(第三人称)](#-玩家模型第三人称)
+  - [三种视角(F5 切换)](#-三种视角f5-切换)
+- [视觉优化](#-视觉优化)
+- [边界处理](#️-边界处理)
+- [开发](#-开发)
+- [文件结构](#-文件结构)
+- [技术栈](#️-技术栈)
+- [关键实现](#️-关键实现)
+- [贡献](#-贡献)
+- [许可证](#-许可证)
+
+## ▶️ 快速开始
+
+**方式一(最简单):** 直接双击 `index.html`(推荐 Chrome / Edge)。
+
+**方式二(本地服务器,推荐用于开发):**
 
 ```bash
-cd myword
-python3 -m http.server 8843
+npm install      # 仅装开发依赖(ESLint),游戏运行时不需要
+npm run serve    # python3 -m http.server 8843
 # 浏览器访问 http://localhost:8843/
 ```
-或直接双击 `index.html`(推荐 Chrome / Edge)。
+
+> 游戏本身**零构建**:`index.html` 直接 `<script src>` 引入 `worldgen.js` / `three.min.js` / `game.js`。
+> `npm` 只用于跑测试和 lint(见 [开发](#-开发))。
 
 ## 🎮 操作
 
@@ -108,18 +149,39 @@ python3 -m http.server 8843
 - **虚空救援**:掉入虚空返回最后安全位置(非原点)
 - **出生点**:固定在广场中心,海平面以上干燥陆地
 
-## 📁 文件
-```
-myword/
-├── index.html      页面结构 + 样式 + 面板(开始/暂停/背包/存档管理)
-├── game.js         游戏主逻辑(渲染/物理/物品/视角/存档/UI/广场)
-├── worldgen.js     世界生成模块(噪声/生物群系/地形高度,纯函数可独立测试)
-├── three.min.js    Three.js r160(已内置,离线可玩)
-├── test/unit.test.js  Node 单元测试(确定性函数验证,17 项)
-└── README.md       本文档
+## 🛠 开发
+
+需要 **Node.js ≥ 18**(仅用于测试/lint,游戏运行时不需要)。
+
+```bash
+npm install      # 安装开发依赖(ESLint 9)
+npm test         # 跑确定性函数单元测试(17 项)
+npm run lint     # ESLint 静态检查
+npm run serve    # 启动本地静态服务器 http://localhost:8843/
 ```
 
-## 🛠️ 技术栈
+- **测试**:`test/unit.test.js` 覆盖 `worldgen.js` 的纯函数(哈希/噪声/群系/高度/存档序列化)
+- **Lint**:`eslint.config.mjs`(flat config);`game.js`/`worldgen.js` 是经典 script(非 ES module)
+- **CI**:GitHub Actions 在 push/PR 自动跑 `npm test` + `npm run lint`
+- 详细代码组织、数据流、扩展点见 **[docs/architecture.md](./docs/architecture.md)**
+- 世界生成函数 API 参考 **[docs/worldgen.md](./docs/worldgen.md)**
+
+## 📁 文件结构
+```
+myword/
+├── index.html          页面结构 + 样式 + 面板(开始/暂停/背包/存档管理/设置)
+├── game.js             游戏主逻辑(20 个模块,渲染/物理/物品/视角/存档/UI/广场)
+├── worldgen.js         世界生成模块(噪声/生物群系/地形高度,纯函数可独立测试)
+├── three.min.js        Three.js r160(已内置,离线可玩)
+├── test/unit.test.js   Node 单元测试(确定性函数验证,17 项)
+├── docs/               架构与模块文档(architecture.md / worldgen.md)
+├── eslint.config.mjs   ESLint 9 flat config(仅开发期)
+├── package.json        npm scripts(test / serve / lint)
+├── LICENSE             MIT
+└── README.md           本文档
+```
+
+## 🧱 技术栈
 - Three.js r160(WebGL 渲染)、原生 JavaScript(无框架、无构建)
 - Canvas 2D(程序化纹理图集与图标)
 - Web Audio API(程序化音效合成)
@@ -131,5 +193,15 @@ myword/
 - **存档 diff**:只存玩家改动过的方块 `{x,y,z} -> type|null`,加载时在确定性生成的基础上覆盖应用
 - **多存档**:IndexedDB 自增 id,每个存档独立(seed + modifications + 玩家状态),可任意创建/读取/删除
 - **确定性广场**:出生广场用 modifications 记录,每次生成一致,新游戏/重置都重建
+
+## 🤝 贡献
+
+欢迎提 Issue / PR!开发流程、代码风格、提交规范见 **[CONTRIBUTING.md](./CONTRIBUTING.md)**。
+
+更新历史见 **[CHANGELOG.md](./CHANGELOG.md)**。
+
+## 📄 许可证
+
+[MIT](./LICENSE) © myword contributors
 
 祝你玩得开心!⛏️

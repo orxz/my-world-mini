@@ -1,0 +1,31 @@
+{
+  "name": "myword",
+  "version": "2.0.0",
+  "description": "基于 Three.js 的 Minecraft 风格 3D 体素沙盒游戏(纯前端·零构建·打开即玩)",
+  "private": true,
+  "license": "MIT",
+  "author": "orxz",
+  "homepage": "./",
+  "scripts": {
+    "test": "node test/unit.test.js",
+    "serve": "python3 -m http.server 8843",
+    "lint": "eslint ."
+  },
+  "keywords": [
+    "minecraft",
+    "voxel",
+    "sandbox",
+    "three-js",
+    "game",
+    "browser",
+    "procedural-generation"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.9.0",
+    "eslint": "^9.9.0",
+    "globals": "^15.9.0"
+  }
+}

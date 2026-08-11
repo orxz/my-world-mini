@@ -12,3 +12,8 @@
 
 # 服务器日志
 *.log
+
+# Node / 开发依赖(运行时无需,仅 lint/test 用)
+node_modules/
+.eslintcache
+npm-debug.log*

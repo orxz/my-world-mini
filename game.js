@@ -2774,7 +2774,6 @@ let fpsAcc = 0, fpsFrames = 0, fpsTimer = 0;
 
 // 昼夜循环:dayTime 0..1(0=午夜,0.25=日出,0.5=正午,0.75=日落),起步 0.3(早晨)
 let dayTime = 0.3;
-let _daytimeEl = null;  // 缓存 DOM 元素(避免每帧 getElementById)
 // updateDayNight 用的临时颜色对象(避免每帧分配)
 const _dayColor = new THREE.Color();
 const _dayColorB = new THREE.Color();
@@ -2991,11 +2990,13 @@ const cropTimers = new Map();
 function tryPlantCrop(nx, ny, nz) {
   if (selectedType !== 'snow') return false;
   if (getBlock(nx, ny - 1, nz) !== 'grass') return false;
-  if (setBlock(nx, ny, nz, 'snow')) { cropTimers.set(blockKey(nx, ny, nz), performance.now()); return true; }
+  if (setBlock(nx, ny, nz, 'snow')) { cropTimers.set(blockKey(nx, ny, nz), Date.now()); return true; }
   return false;
 }
 function updateCrops() {
-  const now = performance.now();
+  // 必须用 Date.now()(绝对时间):cropTimers 会随存档持久化,跨会话恢复后
+  // 仍需按真实经过时间成熟。performance.now() 相对页面加载、每会话归零,会导致跨会话农作物永远不成熟。
+  const now = Date.now();
   for (const [key, plantTime] of cropTimers.entries()) {
     if (now - plantTime < 60000) continue;
     const [x, y, z] = key.split(',').map(Number);

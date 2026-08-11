@@ -990,6 +990,7 @@ function buildToolMesh(toolId) {
   }
   g.scale.setScalar(0.9);  // 工具整体尺寸(与身体比例匹配,武器清晰可见)
   g.position.set(0, -0.08, -0.08);
+  g.traverse(function(o) { if (o.isMesh) o.userData._owned = true; });
   return g;
 }
 
@@ -1002,6 +1003,7 @@ function buildMaterialMesh(itemId) {
   else { g.add(new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.3), mat)); }
   g.rotation.set(0.3, 0.6, 0.2);
   g.position.set(0, -0.05, 0);
+  g.traverse(function(o) { if (o.isMesh) o.userData._owned = true; });
   return g;
 }
 
@@ -3457,7 +3459,7 @@ function loadSettings() {
     const s = localStorage.getItem(SETTINGS_KEY);
     if (s) { const parsed = JSON.parse(s); Object.assign(settings, parsed); }
     settings.renderDist = Math.max(1, Math.min(10, settings.renderDist|0 || 5));
-    settings.volume = Math.max(0, Math.min(1, Number(settings.volume) || 0.35));
+    var _vol = Number(settings.volume); settings.volume = Math.max(0, Math.min(1, Number.isFinite(_vol) ? _vol : 0.35));
   } catch (e) {}
   // 应用设置
   if (audio.masterGain) audio.masterGain.gain.value = settings.soundEnabled ? settings.volume : 0;

@@ -7,7 +7,7 @@
 
 ### 新增
 - 项目基础设施:`package.json`(npm scripts:`test` / `serve` / `lint`)
-- ESLint 9 flat config(`eslint.config.js`),含 browser/node 环境与忽略规则
+- ESLint 9 flat config(`eslint.config.mjs`),含 browser/node 环境与忽略规则
 - GitHub Actions CI(`.github/workflows/ci.yml`):push/PR 自动跑测试 + lint
 - `LICENSE`(MIT)、`.editorconfig`
 - 产品文档:`docs/architecture.md`(架构与数据流)、`docs/worldgen.md`(世界生成模块 API)、
@@ -19,6 +19,10 @@
 
 ### 移除
 - 清理游离的 0 字节垃圾文件 `_t`
+
+### 修复
+- 农作物跨会话成熟回归:`updateCrops`/`tryPlantCrop` 改回 `Date.now()`(cropTimers 持久化,需绝对时间),并加注释防止再次回归
+- 移除未使用的 `_daytimeEl` 死代码
 
 ## [2.0.0] - 2026-08-07
 

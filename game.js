@@ -1738,6 +1738,7 @@ function putInSlot(i, item) {
 function setupInput() {
   addEventListener('keydown', (e) => {
     if (e.repeat) return;
+    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')) return;
     keys[e.code] = true;
     if (inventoryOpen) {
       if (e.code === 'KeyE' || e.code === 'Escape') toggleInventory(false);
@@ -2988,7 +2989,7 @@ const cropTimers = new Map();
 function tryPlantCrop(nx, ny, nz) {
   if (selectedType !== 'snow') return false;
   if (getBlock(nx, ny - 1, nz) !== 'grass') return false;
-  if (setBlock(nx, ny, nz, 'snow')) { cropTimers.set(blockKey(nx, ny, nz), Date.now()); return true; }
+  if (setBlock(nx, ny, nz, 'snow')) { cropTimers.set(blockKey(nx, ny, nz), performance.now()); return true; }
   return false;
 }
 function updateCrops() {

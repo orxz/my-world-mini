@@ -641,7 +641,7 @@ function updateChunks(playerWX, playerWZ) {
 
   // 卸载范围外的 chunk
   for (const [key, ch] of chunks) {
-    if (Math.abs(ch.cx - pcx) > R + 1 || Math.abs(ch.cz - pcz) > R + 1) {
+    if ((Math.abs(ch.cx - pcx) > R + 1 || Math.abs(ch.cz - pcz) > R + 1) && !(ch.cx === pcx && ch.cz === pcz)) {
       if (ch.mesh) {
         if (ch.mesh.solid) { scene.remove(ch.mesh.solid); ch.mesh.solid.geometry.dispose(); }
         if (ch.mesh.water) { scene.remove(ch.mesh.water); ch.mesh.water.geometry.dispose(); }
@@ -1754,7 +1754,7 @@ function setupInput() {
     }
     if (e.code === 'F5') { e.preventDefault(); cycleCameraMode(); }
     if (e.code === 'KeyE') toggleInventory(true);
-    if (e.code === 'KeyQ') { hotbar[currentSlot] = null; buildHotbar(); updateHoldItem(); showToast('空手'); }
+    if (e.code === 'KeyQ') { hotbar[currentSlot] = null; buildHotbar(); updateHoldItem(); showToast('空手'); markDirtySave(); }
   });
   addEventListener('keyup', (e) => { keys[e.code] = false; });
 
@@ -2190,7 +2190,7 @@ function placeBlock() {
   const nx = t.x + Math.round(t.normal.x);
   const ny = t.y + Math.round(t.normal.y);
   const nz = t.z + Math.round(t.normal.z);
-  if (getBlock(nx, ny, nz)) { showToast('此处已有方块'); return; }
+  if (getBlock(nx, ny, nz) || doorBlocksAt(nx, ny, nz)) { showToast('此处已有方块或门'); return; }
   if (overlapsPlayer(nx, ny, nz)) { showToast('挡住自己了,换个方向'); return; }
   if (selectedType && selectedType.indexOf('door') === 0) {
     const facing = Math.abs(Math.sin(yaw)) > 0.5 ? 1 : 0;
@@ -2303,6 +2303,7 @@ function createDoorMesh(door) {
   return g;
 }
 function placeDoor(x, y, z, type, facing) {
+  if (y < 1 || y + 1 >= WORLD_HEIGHT) return false;
   if (getBlock(x, y, z) || getBlock(x, y + 1, z)) return false;
   if (!isSolidAt(x, y - 1, z)) return false;
   const door = { x, y, z, type: type || 'door', open: false, facing: facing || 0 };
@@ -2993,7 +2994,7 @@ function updateCrops() {
     if (now - plantTime < 60000) continue;
     const [x, y, z] = key.split(',').map(Number);
     if (getBlock(x, y, z) === 'snow') { setBlock(x, y, z, 'leaves'); showToast('小麦成熟了'); }
-    else if (!getBlock(x, y, z)) cropTimers.delete(key);
+    else if (getBlock(x, y, z) !== 'snow') cropTimers.delete(key);
   }
 }
 
@@ -3042,6 +3043,7 @@ function applySave(rec) {
       } catch (e) { /* 跳过损坏的门数据 */ }
     }
   }
+  if (rec.cropTimersData) { cropTimers.clear(); for (const [k,v] of rec.cropTimersData) cropTimers.set(k,v); }
   saveDirty = false;
 }
 
@@ -3300,16 +3302,9 @@ function matchRecipe() {
 function renderCraftGrid() {
   const cells = document.querySelectorAll('#craft-grid .inv-cell');
   cells.forEach((cell, i) => {
-    cell.innerHTML = '';
+    const old = cell.querySelector('canvas'); if (old) old.remove();
     const item = craftGrid[i];
-    if (item) {
-      const cv = document.createElement('canvas');
-      cv.width = cv.height = 48;
-      drawItemIcon(item, cv);
-      cell.appendChild(cv);
-    }
-    // 点击格内物品 = 取出(清空该格)
-    cell.onclick = () => { craftGrid[i] = null; renderCraftGrid(); refreshCraftResult(); };
+    if (item) { const cv = document.createElement('canvas'); cv.width = cv.height = 48; drawItemIcon(item, cv); cell.appendChild(cv); }
   });
 }
 
@@ -3524,6 +3519,7 @@ async function saveSlot(name) {
       playerHP, breathTimer: 0,
       hotbar, currentSlot,
       modifications: Array.from(modifications.entries()),
+      cropTimersData: Array.from(cropTimers.entries()),
       doorsData: Array.from(doors.entries()).map(function(e){return [e[0], {x:e[1].x,y:e[1].y,z:e[1].z,type:e[1].type,open:e[1].open,facing:e[1].facing}];}),
       timestamp: Date.now(),
     };
@@ -3553,6 +3549,8 @@ async function overwriteSave(id) {
       playerHP, breathTimer: 0,
       hotbar, currentSlot,
       doorsData: Array.from(doors.entries()).map(function(e){return [e[0], {x:e[1].x,y:e[1].y,z:e[1].z,type:e[1].type,open:e[1].open,facing:e[1].facing}];}),
+      modifications: Array.from(modifications.entries()),  // C2:不能丢失!
+      cropTimersData: Array.from(cropTimers.entries()),
       timestamp: Date.now(),
     };
     // 保留原名称:先读旧记录的 name
@@ -3646,7 +3644,7 @@ function scheduleAutosave() {
 }
 function autosave(force) {
   if (!saveDirty && !force) return;
-  if (currentSaveId === null) return;   // 无当前存档不自动存(避免无命名存档堆积)
+  if (currentSaveId === null) { saveDirty = false; return; }(避免无命名存档堆积)
   saveDirty = false;
   lastAutosaveTime = performance.now();
   overwriteSave(currentSaveId);

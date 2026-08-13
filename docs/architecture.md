@@ -8,11 +8,11 @@
 
 ## 1. 设计原则
 
-- **纯前端·零构建运行时**:不引入打包/编译工具,`index.html` 以经典 `<script src>` 直引三个脚本;
-  双击即玩,可完全离线。
+- **纯前端·零构建运行时**:不引入打包/编译工具,`index.html` 以经典 `<script src>` 直引四个脚本
+  (worldgen / craft / three / game);双击即玩,可完全离线。
 - **确定性优先**:世界由种子 + 纯函数生成,同种子同坐标永远一致 → 存档只需存"种子 + 玩家改动 diff"。
 - **运行时无框架**:原生 JavaScript + Three.js,DOM 直接操作。
-- **可测部分与渲染解耦**:世界生成的纯数学函数抽到 `worldgen.js`,可在 Node 单测中复用。
+- **可测部分与渲染解耦**:世界生成/合成破坏的纯逻辑抽到 `worldgen.js` 与 `craft.js`,可在 Node 单测中复用。
 
 ## 2. 三层结构
 
@@ -26,22 +26,26 @@
 │  game.js  ── 游戏引擎(20 个模块,~3600 行)             │  引擎层
 │   渲染 / 物理 / 输入 / 物品 / 视角 / 存档 / 音效 / UI   │
 └───────────────┬─────────────────────────────────────────┘
-                │ 函数调用(hash2 / fbm2D / biomeAt / heightAt)
+                │ 函数调用(hash2/fbm2D/biomeAt/heightAt + CRAFTLIB)
 ┌───────────────▼─────────────────────────────────────────┐
-│  worldgen.js  ── 世界生成纯函数(无 DOM/Three 依赖)     │  纯函数层
-│   哈希 / 值噪声 / fbm / 群系 / 高度  ← 可单测           │
+│  worldgen.js + craft.js ── 纯函数层(无 DOM/Three 依赖) │  纯函数层
+│   worldgen: 哈希 / 值噪声 / fbm / 群系 / 高度           │
+│   craft:    RECIPES / matchRecipe / breakCost           │
+│   ← 均可单测                                            │
 └─────────────────────────────────────────────────────────┘
                 ▲
 ┌───────────────┴─────────────────────────────────────────┐
-│  test/unit.test.js  ── Node 单元测试(17 项)           │  测试
-│   直接 require('../worldgen.js')                        │
+│  test/unit.test.js  ── Node 单元测试(32 项)           │  测试
+│    require('../worldgen.js') + require('../craft.js')   │
 └─────────────────────────────────────────────────────────┘
 
 three.min.js  ── Three.js r160(第三方渲染库,内置,离线)
 ```
 
-`worldgen.js` 是 UMD:浏览器里挂全局(`window.WORLDGEN` + 各函数名),`game.js` 直接调用;
-Node 里通过 `module.exports` 导出供测试 require。这是"浏览器与测试共用单一数据源"的关键。
+`worldgen.js` 与 `craft.js` 均为 UMD:浏览器里挂全局(`window.WORLDGEN` / `window.CRAFTLIB`),
+`game.js` 直接调用;Node 里通过 `module.exports` 导出供测试 require。
+这是"浏览器与测试共用单一数据源"的关键:所有可测的纯逻辑(地形、配方、破坏耗时)
+都不放在 `game.js` 里,避免 DOM/Three 依赖污染测试。
 
 ## 3. game.js 模块划分(20 部分)
 
@@ -54,18 +58,18 @@ Node 里通过 `module.exports` 导出供测试 require。这是"浏览器与测
 | 3 | 像素纹理与图集 | `makePixelTexture` / `buildAtlas` / `makeBlockMaterials` |
 | 4 | 区块系统 | `chunks` Map、`modifications` Map、`generateChunkData`、`getBlock`/`setBlock`/`isSolidAt` |
 | 5 | 区块网格构建 | `buildChunkMesh`:面剔除 + atlas UV + 合并为单 BufferGeometry |
-| 6 | 区块加载/卸载 | `updateChunks`(分帧)、`rebuildRaycastTargets` |
-| 7 | 全局状态 | 玩家 pos/velocity/keys/hotbar、相机、Raycaster、云朵 |
+| 6 | 区块加载/卸载 | `updateChunks`(分帧)、远端门清理 |
+| 7 | 全局状态 | 玩家 pos/velocity/keys/hotbar、相机、云朵、池化向量(热路径零 GC) |
 | 8 | 玩家模型 | `buildPlayerModel`(第三人称人形) |
 | 9 | 手持物品与工具模型 | `buildHoldGroup` / `updateHoldItem` / `buildToolMesh` |
 | 10 | 第三人称相机 | `updateThirdPersonCamera` / 相机碰撞 / 视角切换 |
 | 11 | 初始化 | `init` / 出生广场 `buildSpawnPlaza` / `findSafeSpawn` / `clearWorld` / `resetWorld` |
 | 12 | 快捷栏/背包 | `initInventory` / `buildHotbar` / 图标渲染 |
 | 13 | 输入 | 键盘/鼠标/触屏事件、Pointer Lock、音频初始化钩子 |
-| 14 | 射线检测 | 基于 chunk mesh + 法线反查的破坏/放置坐标计算 |
+| 14 | 射线检测 | DDA 体素步进(`raycastTarget`)+ 门实体射线(`raycastDoor`),结果池化零分配 |
 | 15 | 物理/移动 | 重力、跳跃、飞行、游泳、碰撞(`isSolidAt` 查 chunk) |
 | 16 | 渲染循环 | `requestAnimationFrame` 主循环、区块更新、雾色随水位、昼夜 |
-| 17 | 背包面板 | 背包 DOM 渲染、物品分类、合成(2×2) |
+| 17 | 背包面板 | 背包 DOM 渲染、物品分类、合成(2×2;配方匹配在 craft.js) |
 | 18 | 音效系统 | Web Audio 程序化合成(Oscillator + 白噪声) |
 | 19 | 存档/读档 | IndexedDB 多存档、seed + modifications diff、自动保存 |
 | 20 | 启动 | 入口:DOM 就绪 → `init` → 主循环 |
@@ -79,7 +83,7 @@ Node 里通过 `module.exports` 导出供测试 require。这是"浏览器与测
          ├─ 卸载半径外 chunk: scene.remove + geometry.dispose(数据保留在 modifications)
          └─ 加载半径内未生成 chunk(分帧,避免卡顿):
               generateChunkData(cx,cz) ──► 确定性生成地形 + 应用 modifications diff
-              buildChunkMesh(ch)      ──► 面剔除 + 合并 → 加入 scene + raycastTargets
+              buildChunkMesh(ch)      ──► 面剔除 + 合并 → 加入 scene
 ```
 
 - `chunks`:`Map<chunkKey, {cx,cz,data:Uint8Array,mesh,...}>`
@@ -98,17 +102,24 @@ Node 里通过 `module.exports` 导出供测试 require。这是"浏览器与测
 材质:`MeshLambertMaterial({ map: atlasTexture })`;水/树叶用透明/alphaTest。
 结果:上千方块只有 ~121 draw call,性能稳定。
 
-### 4.3 射线反查(破坏/放置)
+### 4.3 射线检测(破坏/放置,纯 DDA,无 mesh 遍历)
 
-由于 mesh 是整个 chunk(不再是单个方块 mesh),命中后不能直接取方块坐标,改用体素标准法:
+由于 mesh 是整个 chunk(不再是单个方块 mesh),命中后不能直接取方块坐标。
+早期实现用 `Raycaster.intersect(raycastTargets 数组)`,但每次区块 mesh 变化
+都要重建目标数组(脏标记),且每帧遍历上百个 mesh 的所有三角形。现已改为
+**DDA 体素步进**(Amanatides-Woo):
 
 ```
-Raycaster.intersect(活跃 chunkMesh 数组) → 命中点 point + face.normal
-  破坏坐标 = floor(point - normal * 0.5)
-  放置坐标 = floor(point + normal * 0.5)
+raycastTarget():
+  起点 = 玩家眼睛位置,方向 = 由 yaw/pitch 推导
+  沿 3 轴逐体素步进(只检查视线穿过的 ~6 个体素)
+  首个固体方块 → 返回 {x, y, z, normal}(法线 = 进入面方向,反推 step 轴)
 ```
 
-chunk mesh 无旋转,故 `face.normal` 即世界法线。
+- 不再维护 `raycastTargets` 数组,无需脏标记/重建(相关死代码已删除)
+- 命中结果与法线用**池化对象/向量**复用,每帧调用零 GC 分配
+- 门实体另走 `raycastDoor`(沿射线固定步长查 `doors` Map)
+- 破坏坐标 = 命中体素;放置坐标 = 命中体素 + 法线取整偏移
 
 ### 4.4 存档/读档(IndexedDB)
 
@@ -138,6 +149,8 @@ chunk mesh 无旋转,故 `face.normal` 即世界法线。
 ## 6. 可扩展点
 
 - **新方块**:在 `BLOCK_TYPES` / `BLOCK_ID` / `ID_TO_BLOCK` 注册 → `buildAtlas` 加纹理 → 必要时进 `HOTBAR_ORDER`
+- **新配方**:在 `craft.js` 的 `RECIPES` 加条目(pattern 长度 4 + shapeless 标记)→ `matchRecipe` 自动生效,并在 `test/unit.test.js` 补一个配方用例
+- **新破坏规则**:改 `craft.js` 的 `breakCost(blockDef, toolDef)`(纯函数,单测覆盖)
 - **新群系**:在 `worldgen.js` 的 `BIOMES` 加定义 → `biomeAt` 的判定分支加条件
 - **新工具**:在 `TOOL_TYPES` / `TOOL_ORDER` 注册 + `buildToolMesh` 加建模分支
 - **新音效**:`audio.play(type)` 加合成分支,在对应事件调用

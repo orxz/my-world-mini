@@ -625,7 +625,6 @@ function buildChunkMesh(ch) {
     ch.mesh.water = wm;
     ch.hasMesh = true;
   }
-  markRaycastDirty();   // mesh 变化,raycast 目标需重建
 }
 
 // ============================================================
@@ -647,7 +646,6 @@ function updateChunks(playerWX, playerWZ) {
         if (ch.mesh.water) { scene.remove(ch.mesh.water); ch.mesh.water.geometry.dispose(); }
       }
       chunks.delete(key);
-      markRaycastDirty();   // 卸载区块,raycast 目标需重建
     }
   }
   // 清理远离玩家的门(距离 > 渲染范围 + 2 chunk,避免内存泄漏)
@@ -703,20 +701,8 @@ function updateChunks(playerWX, playerWZ) {
   }
 }
 
-// 收集所有 chunk 的 mesh(供 raycast)
-let raycastTargets = [];
-let raycastTargetsDirty = true;   // 区块 mesh 变化时置脏,animate 仅在脏时重建
-function rebuildRaycastTargets() {
-  raycastTargets.length = 0;
-  for (const ch of chunks.values()) {
-    if (ch.mesh && ch.mesh.solid) raycastTargets.push(ch.mesh.solid);
-  }
-  raycastTargetsDirty = false;
-}
-function markRaycastDirty() { raycastTargetsDirty = true; }
-
 // ============================================================
-// 第七部分:全局状态(玩家/物品/视角,沿用旧逻辑)
+// 第七部分:全局状态(玩家/物品/视角)
 // ============================================================
 let scene, camera, renderer;
 const PLAYER_HEIGHT = 1.8;
@@ -726,7 +712,6 @@ const JUMP_SPEED = 9;
 const WALK_SPEED = 5.5;
 const FLY_SPEED = 9;
 
-let selected = { kind: 'block', id: 'grass' };
 let selectedType = 'grass';
 let lastSelectedBlock = 'grass';
 
@@ -752,6 +737,14 @@ let inventoryOpen = false;
 const velocity = new THREE.Vector3();
 const playerPos = new THREE.Vector3(0, 30, 0);
 
+// 池化向量:热路径(每帧)复用,避免 new Vector3 造成 GC 压力
+const _fwd = new THREE.Vector3();       // 移动:前方向
+const _right = new THREE.Vector3();     // 移动:右方向
+const _move = new THREE.Vector3();      // 移动:合成输入
+const _rayEye = new THREE.Vector3();    // 射线:起点(DDA + 门检测共用)
+const _rayDir = new THREE.Vector3();    // 射线:方向
+const _rayNormal = new THREE.Vector3(); // 射线:命中面法线
+
 // 掉落物(创造模式:仅视觉趣味,无物品栏变动)
 const droppedItems = [];
 let dropItems = false;   // 默认关,保留创造模式无限物品栏的体验;暂停菜单可切换
@@ -763,11 +756,6 @@ const lastSafePos = new THREE.Vector3(0, 30, 0);  // 最后安全位置(虚空�
 let lastSpaceTime = 0;
 let worldSeed = (Math.random() * 4294967296) >>> 0;
 
-const raycaster = new THREE.Raycaster();
-const _rayEye = new THREE.Vector3();
-const _rayDir = new THREE.Vector3();
-raycaster.far = 6;
-const screenCenter = new THREE.Vector2(0, 0);
 const highlightBox = new THREE.LineSegments(
   new THREE.EdgesGeometry(new THREE.BoxGeometry(1.002, 1.002, 1.002)),
   new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.4 })
@@ -801,6 +789,7 @@ function createClouds() {
     clouds.push(cloud);
   }
 }
+
 // 更新云朵:缓慢 +x 方向飘动,越过 x=200 后重置到 x=-200(环绕)
 function updateClouds(dt) {
   for (const c of clouds) {
@@ -1720,7 +1709,6 @@ function selectSlot(i) {
   currentSlot = i;
   const item = hotbar[i];
   if (item) {
-    selected = { ...item };
     if (item.kind === 'block') { selectedType = item.id; lastSelectedBlock = item.id; }
   }
   document.querySelectorAll('#hotbar .slot').forEach(s => {
@@ -2048,10 +2036,19 @@ function setupInput() {
 }
 
 // ============================================================
-// 第十四部分:射线检测(改造:基于 chunk mesh + 法线反查)
+// 第十四部分:射线检测(DDA 体素步进 + 门实体射线)
 // ============================================================
 // DDA 体素射线:逐体素步进找第一个固体方块(替代 intersectObjects,无需遍历 mesh 数组)
 // 性能优势:只检查视线穿过的 ~6 个体素,而非 121 个 chunk mesh 的所有三角形
+// 池化命中结果:animate 每帧调用 raycastTarget,命中时不再分配对象字面量
+// 调用方都是同步消费(读取 x/y/z/normal 后立即使用),复用引用安全
+const _rayHitResult = { x: 0, y: 0, z: 0, normal: null };
+function _rayHit(x, y, z) {
+  _rayHitResult.x = x; _rayHitResult.y = y; _rayHitResult.z = z;
+  _rayHitResult.normal = _rayNormal;
+  return _rayHitResult;
+}
+
 function raycastTarget() {
   // 起点:第一人称=相机位置(playerPos);第三人称=玩家眼睛
   _rayEye.set(playerPos.x, playerPos.y, playerPos.z);
@@ -2080,7 +2077,10 @@ function raycastTarget() {
   let traveled = 0;
 
   // 检查起点是否已在方块内(眼睛嵌墙)
-  if (isSolidAt(x, y, z)) return { x, y, z, normal: new THREE.Vector3(0, 1, 0) };
+  if (isSolidAt(x, y, z)) {
+    _rayNormal.set(0, 1, 0);
+    return _rayHit(x, y, z);
+  }
 
   for (let i = 0; i < 32 && traveled <= maxDist; i++) {
     // 步进到最近的体素边界
@@ -2095,13 +2095,13 @@ function raycastTarget() {
     // 检查当前体素是否固体(非空气,且非水)
     const block = getBlock(x, y, z);
     if (block && block !== 'water' && BLOCK_TYPES[block] && BLOCK_TYPES[block].solid) {
-      // 命中:法线 = 进入面方向(反 step)
-      const normal = new THREE.Vector3(
+      // 命中:法线 = 进入面方向(反 step),池化向量避免每帧命中时分配
+      _rayNormal.set(
         lastStep === 'x' ? -stepX : 0,
         lastStep === 'y' ? -stepY : 0,
         lastStep === 'z' ? -stepZ : 0
       );
-      return { x, y, z, normal };
+      return _rayHit(x, y, z);
     }
   }
   return null;  // 射线未命中固体
@@ -2114,13 +2114,10 @@ function currentTool() {
 }
 
 function breakCost(blockType) {
+  // 核心计算在 craft.js(纯函数,可单测);这里只做依赖注入(BLOCK_TYPES/TOOL_TYPES/currentTool)
   const def = BLOCK_TYPES[blockType];
   const tool = currentTool();
-  const baseClicks = Math.max(1, Math.round(def.hardness * 3));
-  if (tool && TOOL_TYPES[tool.id].tool === def.tool) {
-    return Math.max(1, Math.round(baseClicks / TOOL_TYPES[tool.id].speed));
-  }
-  return baseClicks;
+  return CRAFTLIB.breakCost(def, tool ? TOOL_TYPES[tool.id] : null);
 }
 
 function breakBlock() {
@@ -2175,7 +2172,6 @@ function breakBlock() {
       buildHotbar();
     }
   }
-  rebuildRaycastTargets();
   markDirtySave();
 }
 
@@ -2208,7 +2204,6 @@ function placeBlock() {
     spawnParticles(nx, ny, nz, new THREE.Color(BLOCK_TYPES[selectedType].top).getHex(), 4);
     showToast(`放置:${BLOCK_TYPES[selectedType].name}`);
     audio.play('place');
-    rebuildRaycastTargets();
     markDirtySave();
   }
 }
@@ -2352,9 +2347,9 @@ function getDoorAt(x, y, z) {
   return doors.get(doorKey(x,y-1,z)) || null;
 }
 function raycastDoor() {
-  const eye = new THREE.Vector3(playerPos.x, playerPos.y, playerPos.z);
-  const dir = new THREE.Vector3(-Math.sin(yaw)*Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw)*Math.cos(pitch));
-  for (let t = 0.3; t <= 4; t += 0.25) { const d = getDoorAt(Math.floor(eye.x+dir.x*t), Math.floor(eye.y+dir.y*t), Math.floor(eye.z+dir.z*t)); if (d) return d; }
+  _rayEye.set(playerPos.x, playerPos.y, playerPos.z);
+  _rayDir.set(-Math.sin(yaw)*Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw)*Math.cos(pitch));
+  for (let t = 0.3; t <= 4; t += 0.25) { const d = getDoorAt(Math.floor(_rayEye.x+_rayDir.x*t), Math.floor(_rayEye.y+_rayDir.y*t), Math.floor(_rayEye.z+_rayDir.z*t)); if (d) return d; }
   return null;
 }
 // 释放门 mesh 的 geometry/material(避免 GPU 泄漏)
@@ -2647,16 +2642,16 @@ function inWater() {
 let lastStepTime = 0, lastJumpTime = 0, lastWaterTime = 0, wasInWater = false;
 
 function updatePlayer(dt, prevVy) {
-  let forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
-  const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
-  if (cameraMode === 2) { forward = forward.clone().negate(); }
+  const forward = _fwd.set(-Math.sin(yaw), 0, -Math.cos(yaw));
+  const right = _right.set(Math.cos(yaw), 0, -Math.sin(yaw));
+  if (cameraMode === 2) { forward.negate(); }
 
-  const move = new THREE.Vector3();
+  const move = _move.set(0, 0, 0);
   // 触屏摇杆输入
   const tm = (typeof window.__touchMove === 'function') ? window.__touchMove() : null;
   if (tm && (Math.abs(tm.x) > 0.1 || Math.abs(tm.z) > 0.1)) {
-    move.add(forward.clone().multiplyScalar(-tm.z));
-    move.add(right.clone().multiplyScalar(tm.x));
+    move.addScaledVector(forward, -tm.z);   // 池化:不 clone,零分配
+    move.addScaledVector(right, tm.x);
   } else {
     if (keys['KeyW']) move.add(forward);
   if (keys['KeyS']) move.sub(forward);
@@ -2878,8 +2873,6 @@ function animate() {
   // 区块动态加载/卸载(无论是否锁定都执行,保证世界持续生成)
   updateChunks(playerPos.x, playerPos.z);
   if (Math.floor(now / 1000) !== window.__lastCropCheck) { window.__lastCropCheck = Math.floor(now / 1000); updateCrops(); }
-  // raycast 目标:仅在区块 mesh 变化时重建(脏标记),避免每帧遍历全部区块
-  if (raycastTargetsDirty) rebuildRaycastTargets();
 
   if (holdGroup) {
     holdGroup.visible = (cameraMode === 0);
@@ -3037,7 +3030,6 @@ function applySave(rec) {
   buildHotbar();
   updateHPBar();
   selectSlot(currentSlot);
-  rebuildRaycastTargets();
   // 恢复门实体(clearWorld 已调 clearDoors)
   if (rec.doorsData) {
     for (const [key, d] of rec.doorsData) {
@@ -3249,63 +3241,14 @@ function addSection(grid, title) {
 // ============================================================
 // 配方:pattern 是长度 4 的数组,元素为方块 id 或 null。null 表示该格必须为空。
 // result 为 {kind,id,count?}。可放置的 crafting_table 方块本游戏未定义,故用 planks 作演示结果。
-// 合成配方表(2×2):pattern 是 4 格的方块 id(或 null=空),result 是产出
-// shapeless:true 表示无序(任意位置都可),false 表示必须精确位置
-const RECIPES = [
-  // 基础:木头→木板(1 木头 = 4 木板,无序)
-  { name: '木板', pattern: ['wood',null,null,null], result: { kind: 'block', id: 'planks' }, count: 4, shapeless: true },
-  // 木板→木棍(2 木板 = 4 木棍,纵向排列)
-  { name: '木棍', pattern: ['planks',null,'planks',null], result: { kind: 'item', id: 'arrow', count: 4 }, shapeless: false },
-  // 4 木板→工作台(用 planks 表示,演示)
-  { name: '压缩木板', pattern: ['planks','planks','planks','planks'], result: { kind: 'block', id: 'planks' }, count: 1, shapeless: true },
-  // 4 石头→石砖(用 brick 表示)
-  { name: '石砖', pattern: ['stone','stone','stone','stone'], result: { kind: 'block', id: 'brick' }, count: 2, shapeless: true },
-  // 4 砖块→砖块(压缩,演示)
-  { name: '砖块', pattern: ['brick','brick','brick','brick'], result: { kind: 'block', id: 'brick' }, count: 1, shapeless: true },
-  // 4 沙子→沙砾
-  { name: '沙砾', pattern: ['sand','sand','sand','sand'], result: { kind: 'block', id: 'gravel' }, count: 2, shapeless: true },
-  // 4 雪块→冰(用 snow→water 表示,演示)
-  { name: '融雪', pattern: ['snow','snow','snow','snow'], result: { kind: 'block', id: 'water' }, count: 1, shapeless: true },
-  // 木门:2 木板(横向)→1 门
-  { name: '木门', pattern: ['planks','planks',null,null], result: { kind: 'block', id: 'door' }, count: 1, shapeless: false },
-  // 铁门:4 铁锭(2×2)→1 铁门
-  { name: '铁门', pattern: ['gem_gold','gem_gold','gem_gold','gem_gold'], result: { kind: 'block', id: 'door_iron' }, count: 1, shapeless: true },
-  // 石门:2 石头(纵向)→1 石门(有序,与石砖的4石头区分)
-  { name: '石门', pattern: ['stone',null,'stone',null], result: { kind: 'block', id: 'door_stone' }, count: 1, shapeless: false },
-  // 金门:2 金锭(横向)→1 金门(有序,与铁门的4金锭区分)
-  { name: '金门', pattern: ['gem_gold','gem_gold',null,null], result: { kind: 'block', id: 'door_gold' }, count: 1, shapeless: false },
-  // 钻石门:4 钻石(2×2)→1 钻石门
-  { name: '钻石门', pattern: ['gem_diamond','gem_diamond','gem_diamond','gem_diamond'], result: { kind: 'block', id: 'door_diamond' }, count: 1, shapeless: true },
-];
+// 合成配方表与匹配逻辑已提取到 craft.js(CRAFTLIB.RECIPES / CRAFTLIB.matchRecipe,可单测)
 
 // 合成格状态:长度 4 的数组,每格为 null 或 {kind,id}(方块演示)
 const craftGrid = [null, null, null, null];
 
-// 当前配方匹配结果(null = 无匹配)
+// 当前配方匹配结果(null = 无匹配);核心逻辑在 craft.js(纯函数,可单测)
 function matchRecipe() {
-  // 网格归一化(非空项的 id 列表)
-  const gridItems = craftGrid.filter(x => x !== null).map(x => x.id);
-  if (gridItems.length === 0) return null;
-  const gridSorted = [...gridItems].sort().join(',');
-  for (const r of RECIPES) {
-    const recipeItems = r.pattern.filter(x => x !== null);
-    if (r.shapeless) {
-      // 无序:排序后比较
-      const recipeSorted = [...recipeItems].sort().join(',');
-      if (recipeSorted === gridSorted) return r;
-    } else {
-      // 有序:精确位置匹配
-      let ok = true;
-      for (let i = 0; i < 4; i++) {
-        const want = r.pattern[i] || null;
-        const got = craftGrid[i];
-        if ((want === null) !== (got === null)) { ok = false; break; }
-        if (want && (!got || got.id !== want)) { ok = false; break; }
-      }
-      if (ok) return r;
-    }
-  }
-  return null;
+  return CRAFTLIB.matchRecipe(craftGrid, CRAFTLIB.RECIPES);
 }
 
 function renderCraftGrid() {

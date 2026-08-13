@@ -17,3 +17,6 @@
 node_modules/
 .eslintcache
 npm-debug.log*
+
+# 临时日志
+_t

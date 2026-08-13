@@ -1,13 +1,18 @@
 // ============================================================
 // 单元测试 - 确定性函数验证(Node 环境)
 // 用法: node test/unit.test.js
-// 测试对象: 从 game.js 提取的纯函数(heightAt/biomeAt/存档序列化等)
+// 测试对象: 从 game.js 提取的纯函数层
+//   - worldgen.js: heightAt/biomeAt/哈希/噪声
+//   - craft.js: matchRecipe/breakCost/RECIPES
 // 这些函数不依赖 DOM/Three.js,可直接在 Node 跑
 // ============================================================
 const assert = require('assert');
 
 // ---- 从 worldgen.js 模块加载(单一数据源,不再手抄) ----
 const { hash2, hash3, valueNoise2D, fbm2D, BIOMES, biomeAt, heightAt } = require('../worldgen.js');
+
+// ---- 从 craft.js 模块加载(合成/破坏计算的单一数据源) ----
+const { RECIPES, matchRecipe, breakCost } = require('../craft.js');
 
 // ---- 测试用例 ----
 let passed = 0, failed = 0;
@@ -118,6 +123,76 @@ test('seed=0 正确处理(不用||回退)', () => {
   const rec = { seed: 0 };
   const worldSeed = (typeof rec.seed === 'number') ? rec.seed : 999;
   assert.strictEqual(worldSeed, 0, 'seed 0 should be preserved');
+});
+
+console.log('\n=== 合成配方(matchRecipe / RECIPES) ===');
+test('RECIPES 结构完整(pattern 长度 4)', () => {
+  assert(RECIPES.length >= 10, 'recipes missing');
+  for (const r of RECIPES) {
+    assert.strictEqual(r.pattern.length, 4, r.name + ' pattern length');
+    assert(r.result && r.result.id, r.name + ' result');
+    assert((r.count >= 1) || (r.result.count >= 1), r.name + ' count');
+  }
+});
+test('matchRecipe 空网格返回 null', () => {
+  assert.strictEqual(matchRecipe([null, null, null, null], RECIPES), null);
+});
+test('matchRecipe 无匹配返回 null', () => {
+  const grid = [{ id: 'grass' }, { id: 'dirt' }, null, null];
+  assert.strictEqual(matchRecipe(grid, RECIPES), null);
+});
+test('matchRecipe 无序配方(4 木板→压缩木板)', () => {
+  const grid = [{ id: 'planks' }, { id: 'planks' }, { id: 'planks' }, { id: 'planks' }];
+  const r = matchRecipe(grid, RECIPES);
+  assert(r && r.name === '压缩木板', 'got: ' + (r && r.name));
+});
+test('matchRecipe 无序与位置无关(4 石头→石砖)', () => {
+  const r = matchRecipe([{ id: 'stone' }, { id: 'stone' }, { id: 'stone' }, { id: 'stone' }], RECIPES);
+  assert(r && r.name === '石砖', 'got: ' + (r && r.name));
+});
+test('matchRecipe 有序配方精确位置(2 木板横向→木门)', () => {
+  const r = matchRecipe([{ id: 'planks' }, { id: 'planks' }, null, null], RECIPES);
+  assert(r && r.name === '木门', 'got: ' + (r && r.name));
+});
+test('matchRecipe 有序区分纵横(纵向 2 木板→木棍)', () => {
+  const r = matchRecipe([{ id: 'planks' }, null, { id: 'planks' }, null], RECIPES);
+  assert(r && r.name === '木棍', 'got: ' + (r && r.name));
+});
+test('matchRecipe 有序拒绝错位(横向 2 石头≠石门)', () => {
+  const r = matchRecipe([{ id: 'stone' }, { id: 'stone' }, null, null], RECIPES);
+  assert(r === null || r.name !== '石门', 'should not match 石门: ' + (r && r.name));
+});
+test('matchRecipe 只按 id 匹配(忽略 kind/数量字段)', () => {
+  const r = matchRecipe([{ kind: 'block', id: 'wood' }, null, null, null], RECIPES);
+  assert(r && r.name === '木板' && r.count === 4, 'got: ' + (r && r.name));
+});
+
+console.log('\n=== 破坏耗时(breakCost) ===');
+test('breakCost 无工具 = round(hardness×3)', () => {
+  assert.strictEqual(breakCost({ hardness: 1.5, tool: 'pickaxe' }, null), 5);   // 4.5 → 5
+  assert.strictEqual(breakCost({ hardness: 0.5, tool: 'shovel' }, null), 2);    // 1.5 → 2
+});
+test('breakCost 匹配工具加速', () => {
+  // 石头: base 5,石镐 speed 2.5 → 5/2.5 = 2
+  assert.strictEqual(breakCost({ hardness: 1.5, tool: 'pickaxe' }, { tool: 'pickaxe', speed: 2.5 }), 2);
+  // 泥土: base 2,铁铲 speed 4 → 2/4 = 0.5 → 1(最小 1)
+  assert.strictEqual(breakCost({ hardness: 0.5, tool: 'shovel' }, { tool: 'shovel', speed: 4.0 }), 1);
+});
+test('breakCost 错误工具不加速', () => {
+  assert.strictEqual(breakCost({ hardness: 1.5, tool: 'pickaxe' }, { tool: 'axe', speed: 8.0 }), 5);
+});
+test('breakCost 最小 1(软方块/高速工具)', () => {
+  assert.strictEqual(breakCost({ hardness: 0.3, tool: 'axe' }, null), 1);
+  assert.strictEqual(breakCost({ hardness: 0.3, tool: 'axe' }, { tool: 'axe', speed: 8.0 }), 1);
+});
+test('breakCost 液体类(water, hardness 100, tool any)', () => {
+  assert.strictEqual(breakCost({ hardness: 100, tool: 'any' }, null), 300);
+});
+test('breakCost 确定性(同输入同输出)', () => {
+  assert.strictEqual(
+    breakCost({ hardness: 2.0, tool: 'pickaxe' }, { tool: 'pickaxe', speed: 4.0 }),
+    breakCost({ hardness: 2.0, tool: 'pickaxe' }, { tool: 'pickaxe', speed: 4.0 })
+  );
 });
 
 console.log('\n=== 总结 ===');

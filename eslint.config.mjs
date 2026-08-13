@@ -26,6 +26,11 @@ const WORLDGEN_GLOBALS = {
   heightAt: 'readonly',
 };
 
+// craft.js 在浏览器以 <script> 加载后挂到全局的命名空间(game.js 直接调用)
+const CRAFTLIB_GLOBALS = {
+  CRAFTLIB: 'readonly',
+};
+
 export default [
   // —— 全局忽略 ——
   {
@@ -48,6 +53,7 @@ export default [
       globals: {
         ...globals.browser,
         ...WORLDGEN_GLOBALS,
+        ...CRAFTLIB_GLOBALS,
       },
     },
     rules: {
@@ -65,6 +71,27 @@ export default [
   // —— UMD 模块:worldgen.js(浏览器挂全局 + Node module.exports)——
   {
     files: ['worldgen.js'],
+    languageOptions: {
+      ecmaVersion: 2021,
+      sourceType: 'script',
+      globals: {
+        ...globals.browser,
+        ...globals.node,   // UMD 用到 module/require/global
+      },
+    },
+    rules: {
+      'no-empty': ['error', { allowEmptyCatch: true }],
+      'no-unused-vars': ['warn', {
+        argsIgnorePattern: '^_',
+        varsIgnorePattern: '^_',
+        caughtErrors: 'none',
+      }],
+    },
+  },
+
+  // —— UMD 模块:craft.js(浏览器挂全局 + Node module.exports)——
+  {
+    files: ['craft.js'],
     languageOptions: {
       ecmaVersion: 2021,
       sourceType: 'script',

@@ -13,16 +13,28 @@
 - 产品文档:`docs/architecture.md`(架构与数据流)、`docs/worldgen.md`(世界生成模块 API)、
   `CONTRIBUTING.md`(贡献指南)、本 `CHANGELOG.md`
 - README 精修:徽章、目录、Quick Start、Development、License 段
+- **`craft.js` 纯函数模块**:`RECIPES` / `matchRecipe` / `breakCost` 从 `game.js` 提取(UMD,
+  浏览器挂 `CRAFTLIB` + Node `module.exports`),新增 15 项配方/破坏耗时单元测试(共 32 项)
+- README 补充合成(2×2 配方)、农作物(小麦 60 秒成熟)、健康系统(20 HP / 跌落 / 溺水)文档,
+  方块数修正为 20 种(8 基础 + 水/雪/沙砾 + 4 羊毛 + 5 门)
 
 ### 变更
 - `.gitignore` 追加 `node_modules/`、`.eslintcache`
+- 射线检测完全移除 `raycastTargets` 死代码(数组/脏标记/重建函数 + 2 处残留调用),
+  `docs/architecture.md` 同步更新为 DDA 体素步进描述
 
 ### 移除
 - 清理游离的 0 字节垃圾文件 `_t`
+- 删除 `raycastTargets` / `rebuildRaycastTargets` / `markRaycastDirty`、未使用的
+  `Raycaster` / `screenCenter` 死代码
 
 ### 修复
 - 农作物跨会话成熟回归:`updateCrops`/`tryPlantCrop` 改回 `Date.now()`(cropTimers 持久化,需绝对时间),并加注释防止再次回归
 - 移除未使用的 `_daytimeEl` 死代码
+
+### 性能
+- `updatePlayer` 向量池化:触屏摇杆输入改用 `addScaledVector`(不再 `clone()` 分配);
+  `raycastTarget` 命中结果/法线改池化对象与向量 —— 每帧主循环热路径零 GC 分配
 
 ## [2.0.0] - 2026-08-07
 

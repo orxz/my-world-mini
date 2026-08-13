@@ -3,7 +3,7 @@
 `worldgen.js` 是**确定性世界生成的纯函数层**:不依赖 DOM / Three.js,
 可在浏览器(`game.js` 经 `<script>` 直引)和 Node(`test/unit.test.js` 经 `require`)中复用。
 
-> 测试见 [`../test/unit.test.js`](../test/unit.test.js)(17 项)。整体架构见 [`architecture.md`](./architecture.md)。
+> 测试见 [`../test/unit.test.js`](../test/unit.test.js)(worldgen 部分 17 项;另有 craft 合成/破坏部分)。整体架构见 [`architecture.md`](./architecture.md)。
 
 ## 设计要点:确定性
 

@@ -131,16 +131,21 @@ npm run serve    # python3 -m http.server 8843
   - 剑(伤害值:钻石 8 > 铁 6 > 石 4 = 金 4 > 木 3)
   - 盾(举盾时抬高到身前)
   - 弓(配箭使用,抛物线飞行 + 重力)
-- **5 种材料**(可堆叠 64):钻石、金锭、铁锭、绿宝石、箭
+- **6 种材料**(可堆叠 64):钻石、金锭、铁锭、绿宝石、箭、木棍
 - 所有工具带耐久度,使用消耗,耗尽自动移除
 
 ### 🔨 合成系统(2×2 配方)
 - 背包(E)→ 合成区:2×2 合成格 + 结果预览 + 合成按钮
-- 10 种配方(在 `craft.js` 定义,可单测):
-  - **建材**:1 木头→4 木板;4 石头→2 石砖;4 沙子→2 沙砾;4 雪→水
-  - **装备**:2 木板(横向)→木门;2 石头(纵向)→石门;2 金锭(横向)→金门;
-    4 铁锭→铁门;4 钻石→钻石门;2 木板(纵向)→4 箭
-- 无序配方任意摆放即可,有序配方(门/箭)必须精确位置
+- **35 种配方**(在 `craft.js` 定义,可单测),完整覆盖材料链 → 工具 → 武器 → 门:
+  - **材料链**:1 木头→4 木板;2 木板(纵向)→4 木棍;木棍+沙砾→4 箭;
+    4 石头→2 石砖;4 沙子→2 沙砾;4 雪→水
+  - **工具(20 种)**:五档材质(木/石/铁/金/钻石)× 镐/斧/铲/剑,统一 2×2 图案:
+    镐=`[材,材,材,棍]`、斧=`[材,材,棍,∅]`、剑=`[材,材,∅,棍]`、铲=`[材,∅,棍,∅]`
+    (木档材质=木板,石档=石头,金属档=对应锭)
+  - **弓盾**:3 木棍→弓;4 木板→木盾;木板+铁锭交错→铁盾;木板+钻石交错→钻石盾
+  - **门(5 种)**:2 木板(横向)→木门;2 石头(纵向)→石门;2 金锭(横向)→金门;
+    4 铁锭→铁门;4 钻石→钻石门
+- 无序配方任意摆放即可,有序配方(工具/门)必须精确位置;合成的工具自动带满耐久
 - 合成匹配与破坏耗时逻辑在 `craft.js`(纯函数),`matchRecipe`/`breakCost` 有单元测试覆盖
 
 ### 🌾 农作物(小麦)
@@ -186,14 +191,14 @@ npm run serve    # python3 -m http.server 8843
 
 ```bash
 npm install      # 安装开发依赖(ESLint 9)
-npm test         # 跑确定性函数单元测试(33 项)
+npm test         # 跑确定性函数单元测试(46 项)
 npm run lint     # ESLint 静态检查
 npm run serve    # 启动本地静态服务器 http://localhost:8843/
 ```
 
 - **测试**:`test/unit.test.js` 覆盖 `worldgen.js`(哈希/噪声/群系/高度/存档序列化)与
   `craft.js`(配方匹配/破坏耗时)的纯函数
-- **浏览器冒烟测试(可选)**:`test/smoke.cdp.mjs` 通过 CDP 驱动 headless Chrome 做 15 项端到端断言
+- **浏览器冒烟测试(可选)**:`test/smoke.cdp.mjs` 通过 CDP 驱动 headless Chrome 做 16 项端到端断言
   (触屏物理/门持久化/树木标脏/存档往返等),用法见文件头注释
 - **Lint**:`eslint.config.mjs`(flat config);`game.js`/`worldgen.js`/`craft.js` 是经典 script(非 ES module)
 - **CI**:GitHub Actions 在 push/PR 自动跑 `npm test` + `npm run lint`
@@ -208,7 +213,7 @@ myword/
 ├── worldgen.js         世界生成模块(噪声/生物群系/地形高度,纯函数可独立测试)
 ├── craft.js            合成与破坏计算模块(RECIPES/matchRecipe/breakCost,纯函数可独立测试)
 ├── three.min.js        Three.js r160(已内置,离线可玩)
-├── test/unit.test.js   Node 单元测试(确定性函数验证,33 项)
+├── test/unit.test.js   Node 单元测试(确定性函数验证,46 项)
 ├── docs/               架构与模块文档(architecture.md / worldgen.md)
 ├── eslint.config.mjs   ESLint 9 flat config(仅开发期)
 ├── package.json        npm scripts(test / serve / lint)

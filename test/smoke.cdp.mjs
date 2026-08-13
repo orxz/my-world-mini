@@ -9,7 +9,7 @@
 //   2) 运行: node test/smoke.cdp.mjs
 // 覆盖:P0/P1 修复回归 —— 触屏物理(B1)、门跨卸载持久化(B2)、
 //   树木跨区块标脏(B3)、农作物计时器(B4)、存档往返(改动/位置/门状态)、
-//   损坏存档防御(B12)、FOV 设置、死亡重生状态、无未捕获异常。
+//   损坏存档防御(B12)、合成配方+耐久注入、FOV 设置、死亡重生状态、无未捕获异常。
 // ============================================================
 // CDP deep smoke test for myword (run against headless Chrome with --remote-debugging-port=9333)
 const CDP = 'http://127.0.0.1:9333';
@@ -181,6 +181,21 @@ async function main() {
     return s.map(x => x === null ? 'null' : x.id + ':' + x.durability).join(',') + ' | ' + itemName({ kind: 'block', id: 'nope' });
   })()`);
   check('B12 sanitizeItem + itemName hardening', san === 'null,null,pickaxe_wood:60 | ?', 'san=' + san);
+
+  // 10.5 crafting: tool recipe match + durability injection via performCraft
+  const craft = await evl(`(() => {
+    craftGrid[0] = { kind: 'block', id: 'planks' };
+    craftGrid[1] = { kind: 'block', id: 'planks' };
+    craftGrid[2] = { kind: 'block', id: 'planks' };
+    craftGrid[3] = { kind: 'item', id: 'stick' };
+    const r = matchRecipe();
+    performCraft();
+    const item = hotbar[currentSlot];
+    const full = TOOL_TYPES.pickaxe_wood ? TOOL_TYPES.pickaxe_wood.durability : 60;
+    return JSON.stringify({ matched: r ? r.name : null, slot: item ? item.kind + ':' + item.id : null, dur: item ? item.durability : null, full, gridCleared: craftGrid.every(x => x === null) });
+  })()`);
+  const craftObj = JSON.parse(craft);
+  check('crafting: wood pickaxe + full durability injected', craftObj.matched === '木镐' && craftObj.slot === 'tool:pickaxe_wood' && craftObj.dur === craftObj.full && craftObj.gridCleared === true, craft);
 
   // 11. B13 respawn clears flying
   const rf = await evl(`(() => { isFlying = true; respawnPlayer(); return isFlying; })()`);

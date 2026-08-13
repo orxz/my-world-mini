@@ -80,8 +80,9 @@ const ITEM_TYPES = {
   gem_iron:    { name: '铁锭',   color: '#d8d8e0', shape: 'ingot' },
   gem_emerald: { name: '绿宝石', color: '#3fd17a', shape: 'gem' },
   arrow:       { name: '箭',     color: '#caa472', shape: 'arrow' },
+  stick:       { name: '木棍',   color: '#8a6430', shape: 'stick' },
 };
-const ITEM_ORDER = ['gem_diamond','gem_gold','gem_iron','gem_emerald','arrow'];
+const ITEM_ORDER = ['gem_diamond','gem_gold','gem_iron','gem_emerald','arrow','stick'];
 
 // ============================================================
 // 第三部分:像素纹理与图集(用于区块合并网格)
@@ -999,6 +1000,7 @@ function buildMaterialMesh(itemId) {
   const mat = new THREE.MeshLambertMaterial({ color: def.color });
   if (def.shape === 'gem') { g.add(new THREE.Mesh(new THREE.OctahedronGeometry(0.14), mat)); }
   else if (def.shape === 'ingot') { g.add(new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.08, 0.14), mat)); }
+  else if (def.shape === 'stick') { g.add(new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.35), mat)); }
   else { g.add(new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.3), mat)); }
   g.rotation.set(0.3, 0.6, 0.2);
   g.position.set(0, -0.05, 0);
@@ -1657,6 +1659,12 @@ function drawMaterialIcon(ctx, itemId, size) {
     ctx.closePath(); ctx.fill(); ctx.stroke();
     ctx.fillStyle = 'rgba(255,255,255,0.35)';
     ctx.fillRect(-size * 0.18, -size * 0.12, size * 0.36, size * 0.06);
+  } else if (def.shape === 'stick') {
+    // 木棍:斜放圆角短棒
+    ctx.strokeStyle = def.color; ctx.lineWidth = size * 0.1; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-size * 0.3, size * 0.28); ctx.lineTo(size * 0.3, -size * 0.28); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.25)';
+    ctx.fillRect(-size * 0.02, -size * 0.02, size * 0.22, size * 0.08);
   } else {
     ctx.strokeStyle = def.color; ctx.lineWidth = size * 0.06;
     ctx.beginPath(); ctx.moveTo(-size * 0.28, size * 0.2); ctx.lineTo(size * 0.22, -size * 0.22); ctx.stroke();
@@ -3332,7 +3340,7 @@ function refreshCraftResult() {
   } else {
     if (btn) btn.disabled = true;
     const hasItem = craftGrid.some(x => x !== null);
-    if (hint) hint.textContent = hasItem ? '无匹配配方(尝试 4 个同种方块)' : '右键点击下方物品放入合成格,左键放入快捷栏';
+    if (hint) hint.textContent = hasItem ? '无匹配配方(工具=3材料+木棍;试试 4 同种方块)' : '右键点击下方物品放入合成格,左键放入快捷栏';
   }
 }
 
@@ -3342,6 +3350,10 @@ function performCraft() {
   // 产出物品(含数量)
   const res = { ...r.result };
   if (!res.count) res.count = r.count || 1;
+  // 工具类配方不携带耐久度(纯函数层无 TOOL_TYPES 依赖),在此注入满耐久
+  if (res.kind === 'tool' && !Number.isFinite(res.durability)) {
+    res.durability = TOOL_TYPES[res.id] ? TOOL_TYPES[res.id].durability : 0;
+  }
   // 放入当前快捷栏格
   putInSlot(currentSlot, res);
   // 清空合成格(创造模式不消耗材料,但仍清空格表示完成)

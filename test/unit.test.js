@@ -127,7 +127,7 @@ test('seed=0 正确处理(不用||回退)', () => {
 
 console.log('\n=== 合成配方(matchRecipe / RECIPES) ===');
 test('RECIPES 结构完整(pattern 长度 4)', () => {
-  assert(RECIPES.length >= 10, 'recipes missing');
+  assert(RECIPES.length >= 30, 'recipes missing, got ' + RECIPES.length);
   for (const r of RECIPES) {
     assert.strictEqual(r.pattern.length, 4, r.name + ' pattern length');
     assert(r.result && r.result.id, r.name + ' result');
@@ -161,9 +161,13 @@ test('matchRecipe 有序配方精确位置(2 木板横向→木门)', () => {
   const r = matchRecipe([{ id: 'planks' }, { id: 'planks' }, null, null], RECIPES);
   assert(r && r.name === '木门', 'got: ' + (r && r.name));
 });
-test('matchRecipe 有序区分纵横(纵向 2 木板→木棍)', () => {
+test('matchRecipe 有序区分纵横(纵向 2 木板→木棍×4)', () => {
   const r = matchRecipe([{ id: 'planks' }, null, { id: 'planks' }, null], RECIPES);
-  assert(r && r.name === '木棍', 'got: ' + (r && r.name));
+  assert(r && r.name === '木棍' && r.result.id === 'stick' && r.result.count === 4, 'got: ' + (r && r.name));
+});
+test('matchRecipe 木棍+沙砾→箭×4(无序)', () => {
+  const r = matchRecipe([null, { id: 'gravel' }, { id: 'stick' }, null], RECIPES);
+  assert(r && r.name === '箭' && r.result.id === 'arrow' && r.result.count === 4, 'got: ' + (r && r.name));
 });
 test('matchRecipe 有序拒绝错位(横向 2 石头≠石门)', () => {
   const r = matchRecipe([{ id: 'stone' }, { id: 'stone' }, null, null], RECIPES);
@@ -172,6 +176,63 @@ test('matchRecipe 有序拒绝错位(横向 2 石头≠石门)', () => {
 test('matchRecipe 只按 id 匹配(忽略 kind/数量字段)', () => {
   const r = matchRecipe([{ kind: 'block', id: 'wood' }, null, null, null], RECIPES);
   assert(r && r.name === '木板' && r.count === 4, 'got: ' + (r && r.name));
+});
+
+console.log('\n=== 工具/弓盾配方(五档材质 × 镐/斧/铲/剑) ===');
+test('工具配方齐备:5 档 × 4 种 = 20,id 与名称一致', () => {
+  const tools = RECIPES.filter(r => r.result.kind === 'tool');
+  assert.strictEqual(tools.length, 24, 'tool recipes = 20 工具 + 弓 + 3 盾, got ' + tools.length);
+  const want = ['pickaxe', 'axe', 'sword', 'shovel'].flatMap(t =>
+    ['wood', 'stone', 'iron', 'gold', 'diamond'].map(tier => t + '_' + tier));
+  for (const id of want) {
+    const r = RECIPES.find(x => x.result.id === id);
+    assert(r, 'missing tool recipe: ' + id);
+    assert(r.name.length >= 2, 'bad name: ' + id);
+  }
+});
+test('木镐 = [木板,木板,木板,木棍]', () => {
+  const r = matchRecipe([{ id: 'planks' }, { id: 'planks' }, { id: 'planks' }, { id: 'stick' }], RECIPES);
+  assert(r && r.name === '木镐' && r.result.id === 'pickaxe_wood', 'got: ' + (r && r.name));
+});
+test('石剑 = [石头,石头,∅,木棍]', () => {
+  const r = matchRecipe([{ id: 'stone' }, { id: 'stone' }, null, { id: 'stick' }], RECIPES);
+  assert(r && r.name === '石剑' && r.result.id === 'sword_stone', 'got: ' + (r && r.name));
+});
+test('铁铲 = [铁锭,∅,木棍,∅]', () => {
+  const r = matchRecipe([{ id: 'gem_iron' }, null, { id: 'stick' }, null], RECIPES);
+  assert(r && r.name === '铁铲' && r.result.id === 'shovel_iron', 'got: ' + (r && r.name));
+});
+test('金斧 = [金锭,金锭,木棍,∅]', () => {
+  const r = matchRecipe([{ id: 'gem_gold' }, { id: 'gem_gold' }, { id: 'stick' }, null], RECIPES);
+  assert(r && r.name === '金斧' && r.result.id === 'axe_gold', 'got: ' + (r && r.name));
+});
+test('钻石镐 = [钻石,钻石,钻石,木棍]', () => {
+  const r = matchRecipe([{ id: 'gem_diamond' }, { id: 'gem_diamond' }, { id: 'gem_diamond' }, { id: 'stick' }], RECIPES);
+  assert(r && r.name === '钻石镐' && r.result.id === 'pickaxe_diamond', 'got: ' + (r && r.name));
+});
+test('弓 = 3 木棍(无序)', () => {
+  const r = matchRecipe([{ id: 'stick' }, null, { id: 'stick' }, { id: 'stick' }], RECIPES);
+  assert(r && r.result.id === 'bow', 'got: ' + (r && r.name));
+});
+test('木盾 = 4 木板(无序)', () => {
+  const r = matchRecipe([{ id: 'planks' }, { id: 'planks' }, { id: 'planks' }, { id: 'planks' }], RECIPES);
+  assert(r && r.result.id === 'shield_wood', 'got: ' + (r && r.name));
+});
+test('铁盾 = 木板+铁锭交错(有序)', () => {
+  const r = matchRecipe([{ id: 'planks' }, { id: 'gem_iron' }, { id: 'planks' }, { id: 'gem_iron' }], RECIPES);
+  assert(r && r.result.id === 'shield_iron', 'got: ' + (r && r.name));
+});
+test('钻石盾 = 木板+钻石交错(有序)', () => {
+  const r = matchRecipe([{ id: 'planks' }, { id: 'gem_diamond' }, { id: 'planks' }, { id: 'gem_diamond' }], RECIPES);
+  assert(r && r.result.id === 'shield_diamond', 'got: ' + (r && r.name));
+});
+test('4 木板不匹配木门(图案互斥)', () => {
+  const r = matchRecipe([{ id: 'planks' }, { id: 'planks' }, { id: 'planks' }, { id: 'planks' }], RECIPES);
+  assert(!r || r.result.id !== 'door', '4 木板不应合成木门: ' + (r && r.name));
+});
+test('3 石头+木棍不匹配石砖/石门(图案互斥)', () => {
+  const r = matchRecipe([{ id: 'stone' }, { id: 'stone' }, { id: 'stone' }, { id: 'stick' }], RECIPES);
+  assert(r && r.result.id === 'pickaxe_stone', '应匹配石镐: ' + (r && r.name));
 });
 
 console.log('\n=== 破坏耗时(breakCost) ===');

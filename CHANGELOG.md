@@ -5,7 +5,50 @@
 
 ## [Unreleased]
 
+### 修复(生产级全面修复轮)
+- **触屏设备无法移动(P0)**:`updatePlayer` 原以 pointer lock 状态为运行标志,触屏设备不请求锁定导致
+  移动/重力/跳跃全部失效;现改为触屏设备用 `gameStarted` 标志,桌面保持 pointer lock 语义
+- **门在区块卸载时被永久删除(P0)**:`updateChunks` 不再删除远离玩家的门数据,只释放 mesh,
+  进入范围且区块已加载时重建;玩家建筑不再因走远而丢失
+- **树木跨区块不渲染(P0)**:`plantTreeAt` 跨区块写入树叶/树干后未标脏相邻区块 mesh,
+  导致"半棵树/隐形树";现写入即 `meshDirty = true`
+- **农作物远离后永不成熟(P1)**:`updateCrops` 不再把"区块未加载(getBlock 返回 null)"误判为
+  "被替换"而删除计时器;成熟后同帧清理计时器
+- **第三人称切回第一人称后模型残留(P1)**:`updateThirdPersonCamera` 中 `cameraMode===0` 死分支移除,
+  改在渲染循环第一人称分支隐藏模型
+- **剑/弓/盾无冷却(P1)**:`toolCooldown` 原先只在"镐/斧/铲右键展示"分支写入,现所有成功动作都写入;
+  举盾计时在切换武器后正常衰减
+- **关闭背包后视角失效(P1)**:关闭背包自动重新请求指针锁定(失败时点击画面兜底重试)
+- **门开关状态不存档(P1)**:`toggleDoor` 补 `markDirtySave()`
+- **出生广场长树/浮空树冠(P2)**:种树前校验树基为未修改的自然地表(grass/dirt/sand/snow)且上方为空气
+- **配方修正(P2)**:铁门改用 4×铁锭(新增 `gem_iron` 物品);移除"4 木板→1 木板"、"4 砖→1 砖"净亏配方
+- **手持物 GPU 资源泄漏(P2)**:工具/材料 mesh 改为模板缓存 + 克隆复用,不再每次切槽位新建材质/几何体
+- **损坏存档健壮性(P2)**:新增 `sanitizeItem` 丢弃非法物品 id;`itemName`/`updateHoldAnim` 防崩溃;
+  `loadSlot` 读取异常不再挂起 promise;存档管理器位置显示防 `toFixed` 崩溃;playerPos/yaw/pitch/cameraMode 校验
+- **死亡状态残留(P3)**:重生不再继承飞行状态;更新 `lastSafePos` 防止虚空救援回到坠落前危险位置
+- **Shift 下蹲未实现(P3)**:地面按住 Shift 现在减速潜行(飞行下降不变)
+- **FOV 设置从未生效(P3)**:设置面板新增视野(65/75/85/100)下拉,持久化并即时生效
+- **昼夜时间不入存档(P3)**:存档记录新增 `dayTime`(含 `version` 字段),读档恢复当天时刻
+- **隔墙开关门(P3)**:`raycastDoor` 增加固体遮挡检测
+- **"重置世界(新地形)"名不副实(P3)**:`resetWorld` 现生成新随机种子(出生广场为确定性结构不受影响)
+- **出生广场地形缺陷(P2,浏览器冒烟测试发现)**:出生点落在山地时天然山体穿透广场表面——
+  广场范围内高于广场面的地形现在被平整清除;四角灯塔从 (±24,±24) 移入 (±18,±18)
+  (原位置对角距离 33.9 > 广场圆半径 28,基座悬空);外围小山丘改为贴合各列天然地表高度,不再悬空
+
+### 变更
+- `settings.fov` / `settings.dayCycleSpeed` 等设置增加范围钳制与类型校验
+- 工具/物品定义新增 `gem_iron`(铁锭),材料由 4 种增至 5 种
+- `index.html` 脚本引入统一版本号(`?v=20260813b`)防缓存,设置面板新增 FOV 控件
+- 单元测试更新至 33 项(沙砾配方用例 + 铁门/金门配方区分用例),ESLint 清零全部 12 个警告
+
+### 移除
+- 死代码:`findSafeSpawn`、`saveGame`、`lastSelectedBlock`、`holdItem`、`hasMesh`、
+  `btn-load` 处理器、`raycastTarget` 未用变量、`updateDayNight` 未用变量等
+
 ### 新增
+- **浏览器端到端冒烟测试**(`test/smoke.cdp.mjs`,CDP 驱动 headless Chrome,可选开发工具):
+  15 项断言覆盖触屏物理/门跨卸载持久化/树木跨区块标脏/农作物计时器/存档往返/
+  损坏存档防御/FOV/死亡重生,可在本机 Chrome 上回归验证
 - 项目基础设施:`package.json`(npm scripts:`test` / `serve` / `lint`)
 - ESLint 9 flat config(`eslint.config.mjs`),含 browser/node 环境与忽略规则
 - GitHub Actions CI(`.github/workflows/ci.yml`):push/PR 自动跑测试 + lint

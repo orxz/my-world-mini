@@ -128,4 +128,23 @@ export default [
       }],
     },
   },
+
+  // —— Node 冒烟测试脚本(CDP,ESM + 顶层 await):test/**/*.mjs——
+  {
+    files: ['test/**/*.mjs'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: {
+        ...globals.node,   // console/process/fetch/WebSocket/setTimeout
+      },
+    },
+    rules: {
+      'no-empty': ['error', { allowEmptyCatch: true }],
+      'no-unused-vars': ['warn', {
+        argsIgnorePattern: '^_',
+        caughtErrors: 'none',
+      }],
+    },
+  },
 ];

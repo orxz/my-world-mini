@@ -141,14 +141,21 @@ test('matchRecipe 无匹配返回 null', () => {
   const grid = [{ id: 'grass' }, { id: 'dirt' }, null, null];
   assert.strictEqual(matchRecipe(grid, RECIPES), null);
 });
-test('matchRecipe 无序配方(4 木板→压缩木板)', () => {
-  const grid = [{ id: 'planks' }, { id: 'planks' }, { id: 'planks' }, { id: 'planks' }];
+test('matchRecipe 无序配方(4 沙→沙砾)', () => {
+  const grid = [{ id: 'sand' }, { id: 'sand' }, { id: 'sand' }, { id: 'sand' }];
   const r = matchRecipe(grid, RECIPES);
-  assert(r && r.name === '压缩木板', 'got: ' + (r && r.name));
+  assert(r && r.name === '沙砾', 'got: ' + (r && r.name));
 });
 test('matchRecipe 无序与位置无关(4 石头→石砖)', () => {
   const r = matchRecipe([{ id: 'stone' }, { id: 'stone' }, { id: 'stone' }, { id: 'stone' }], RECIPES);
   assert(r && r.name === '石砖', 'got: ' + (r && r.name));
+});
+test('matchRecipe 铁门=4 铁锭(gem_iron),不再用金锭', () => {
+  const r = matchRecipe([{ id: 'gem_iron' }, { id: 'gem_iron' }, { id: 'gem_iron' }, { id: 'gem_iron' }], RECIPES);
+  assert(r && r.name === '铁门' && r.result.id === 'door_iron', 'got: ' + (r && r.name));
+  // 4 金锭不再匹配任何配方(金门=2 金锭横向)
+  const r2 = matchRecipe([{ id: 'gem_gold' }, { id: 'gem_gold' }, { id: 'gem_gold' }, { id: 'gem_gold' }], RECIPES);
+  assert.strictEqual(r2, null, '4 金锭不应匹配: ' + (r2 && r2.name));
 });
 test('matchRecipe 有序配方精确位置(2 木板横向→木门)', () => {
   const r = matchRecipe([{ id: 'planks' }, { id: 'planks' }, null, null], RECIPES);

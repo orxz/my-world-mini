@@ -13,12 +13,8 @@
     { name: '木板', pattern: ['wood', null, null, null], result: { kind: 'block', id: 'planks' }, count: 4, shapeless: true },
     // 木板→木棍(2 木板 = 4 木棍,纵向排列)
     { name: '木棍', pattern: ['planks', null, 'planks', null], result: { kind: 'item', id: 'arrow', count: 4 }, shapeless: false },
-    // 4 木板→工作台(用 planks 表示,演示)
-    { name: '压缩木板', pattern: ['planks', 'planks', 'planks', 'planks'], result: { kind: 'block', id: 'planks' }, count: 1, shapeless: true },
     // 4 石头→石砖(用 brick 表示)
     { name: '石砖', pattern: ['stone', 'stone', 'stone', 'stone'], result: { kind: 'block', id: 'brick' }, count: 2, shapeless: true },
-    // 4 砖块→砖块(压缩,演示)
-    { name: '砖块', pattern: ['brick', 'brick', 'brick', 'brick'], result: { kind: 'block', id: 'brick' }, count: 1, shapeless: true },
     // 4 沙子→沙砾
     { name: '沙砾', pattern: ['sand', 'sand', 'sand', 'sand'], result: { kind: 'block', id: 'gravel' }, count: 2, shapeless: true },
     // 4 雪块→冰(用 snow→water 表示,演示)
@@ -26,10 +22,10 @@
     // 木门:2 木板(横向)→1 门
     { name: '木门', pattern: ['planks', 'planks', null, null], result: { kind: 'block', id: 'door' }, count: 1, shapeless: false },
     // 铁门:4 铁锭(2×2)→1 铁门
-    { name: '铁门', pattern: ['gem_gold', 'gem_gold', 'gem_gold', 'gem_gold'], result: { kind: 'block', id: 'door_iron' }, count: 1, shapeless: true },
+    { name: '铁门', pattern: ['gem_iron', 'gem_iron', 'gem_iron', 'gem_iron'], result: { kind: 'block', id: 'door_iron' }, count: 1, shapeless: true },
     // 石门:2 石头(纵向)→1 石门(有序,与石砖的4石头区分)
     { name: '石门', pattern: ['stone', null, 'stone', null], result: { kind: 'block', id: 'door_stone' }, count: 1, shapeless: false },
-    // 金门:2 金锭(横向)→1 金门(有序,与铁门的4金锭区分)
+    // 金门:2 金锭(横向)→1 金门(有序,与铁门的4铁锭区分)
     { name: '金门', pattern: ['gem_gold', 'gem_gold', null, null], result: { kind: 'block', id: 'door_gold' }, count: 1, shapeless: false },
     // 钻石门:4 钻石(2×2)→1 钻石门
     { name: '钻石门', pattern: ['gem_diamond', 'gem_diamond', 'gem_diamond', 'gem_diamond'], result: { kind: 'block', id: 'door_diamond' }, count: 1, shapeless: true },

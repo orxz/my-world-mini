@@ -35,7 +35,7 @@
 └─────────────────────────────────────────────────────────┘
                 ▲
 ┌───────────────┴─────────────────────────────────────────┐
-│  test/unit.test.js  ── Node 单元测试(32 项)           │  测试
+│  test/unit.test.js  ── Node 单元测试(33 项)           │  测试
 │    require('../worldgen.js') + require('../craft.js')   │
 └─────────────────────────────────────────────────────────┘
 
@@ -58,12 +58,12 @@ three.min.js  ── Three.js r160(第三方渲染库,内置,离线)
 | 3 | 像素纹理与图集 | `makePixelTexture` / `buildAtlas` / `makeBlockMaterials` |
 | 4 | 区块系统 | `chunks` Map、`modifications` Map、`generateChunkData`、`getBlock`/`setBlock`/`isSolidAt` |
 | 5 | 区块网格构建 | `buildChunkMesh`:面剔除 + atlas UV + 合并为单 BufferGeometry |
-| 6 | 区块加载/卸载 | `updateChunks`(分帧)、远端门清理 |
+| 6 | 区块加载/卸载 | `updateChunks`(分帧)、门实体 mesh 同步(数据不随卸载丢失) |
 | 7 | 全局状态 | 玩家 pos/velocity/keys/hotbar、相机、云朵、池化向量(热路径零 GC) |
 | 8 | 玩家模型 | `buildPlayerModel`(第三人称人形) |
 | 9 | 手持物品与工具模型 | `buildHoldGroup` / `updateHoldItem` / `buildToolMesh` |
 | 10 | 第三人称相机 | `updateThirdPersonCamera` / 相机碰撞 / 视角切换 |
-| 11 | 初始化 | `init` / 出生广场 `buildSpawnPlaza` / `findSafeSpawn` / `clearWorld` / `resetWorld` |
+| 11 | 初始化 | `init` / 出生广场 `buildSpawnPlaza` / `clearWorld` / `resetWorld` |
 | 12 | 快捷栏/背包 | `initInventory` / `buildHotbar` / 图标渲染 |
 | 13 | 输入 | 键盘/鼠标/触屏事件、Pointer Lock、音频初始化钩子 |
 | 14 | 射线检测 | DDA 体素步进(`raycastTarget`)+ 门实体射线(`raycastDoor`),结果池化零分配 |
@@ -124,12 +124,16 @@ raycastTarget():
 ### 4.4 存档/读档(IndexedDB)
 
 ```
-存档记录 = { id, name, seed, playerPos, yaw, pitch, cameraMode, isFlying,
-             hotbar, currentSlot, modifications: [[key, type|null], ...], timestamp }
+存档记录 = { version, id, name, seed, playerPos, yaw, pitch, cameraMode, isFlying,
+             playerHP, dayTime, hotbar, currentSlot,
+             modifications: [[key, type|null], ...],
+             doorsData: [[key, {x,y,z,type,open,facing}], ...],
+             cropTimersData: [[key, plantTime], ...], timestamp }
 ```
 
 - **只存种子 + 玩家改动 diff**(非全量方块)→ 容量小、加载快
 - 读档:恢复 seed + modifications + 玩家状态 → `clearWorld` → 重新生成中心区块(自动应用 diff)
+- 损坏存档防御:非法物品 id 丢弃(`sanitizeItem`)、位置/角度/配方数据校验、读取失败不挂起
 - 自动保存:有当前存档时,30 秒 + 暂停 + 改动防抖
 - 多存档:IndexedDB 自增 id,每个存档独立
 

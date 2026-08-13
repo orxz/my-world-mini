@@ -297,6 +297,16 @@
           <option value="10">极远 (10)</option>
         </select>
       </div>
+      <!-- 视野(FOV) -->
+      <div style="margin:10px 0;display:flex;justify-content:space-between;align-items:center;">
+        <span style="color:#fff;font-size:14px;">👁 视野 (FOV)</span>
+        <select id="set-fov" style="padding:4px 8px;background:rgba(0,0,0,0.3);color:#fff;border:1px solid rgba(255,255,255,0.2);border-radius:4px;">
+          <option value="65">65 (窄)</option>
+          <option value="75" selected>75 (默认)</option>
+          <option value="85">85 (宽)</option>
+          <option value="100">100 (极宽)</option>
+        </select>
+      </div>
       <!-- 掉落物 -->
       <div style="margin:10px 0;display:flex;justify-content:space-between;align-items:center;">
         <span style="color:#fff;font-size:14px;">📦 掉落物</span>
@@ -340,9 +350,9 @@
   </div>
 </div>
 
-<script src="worldgen.js"></script>
-<script src="craft.js"></script>
+<script src="worldgen.js?v=20260813b"></script>
+<script src="craft.js?v=20260813b"></script>
 <script src="three.min.js?v=r160"></script>
-<script src="game.js?v=20260812a"></script>
+<script src="game.js?v=20260813b"></script>
 </body>
 </html>

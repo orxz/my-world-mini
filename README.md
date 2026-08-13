@@ -64,7 +64,7 @@ npm run serve    # python3 -m http.server 8843
 | 下蹲 / 飞行下降 | `Shift` |
 | 飞行模式(切换) | 连按两次 `空格` |
 | 游泳上浮 | 水中按 `空格` |
-| 视角旋转 | 鼠标移动(进入游戏后自动锁定) |
+| 视角旋转 | 鼠标移动(进入游戏后自动锁定;退出背包后自动重新锁定,失败时点击画面恢复) |
 | **破坏方块** | 鼠标左键(按准星,持续点击累积进度) |
 | **放置 / 使用** | 鼠标右键(方块=放置,工具=挥砍/射箭/举盾) |
 | **种植小麦** | 手持「雪」,对草方块右键(60 秒成熟) |
@@ -72,6 +72,8 @@ npm run serve    # python3 -m http.server 8843
 | 背包 | `E` |
 | 切换视角 | `F5`(第一人称 / 第三人称背后 / 第三人称正面) |
 | 暂停菜单 | `Esc` |
+
+> **触屏设备**:自动显示虚拟摇杆 + 跳跃/挖掘/放置按钮,右半屏拖动转视角(无需鼠标锁定)。
 
 ## ✨ 核心系统
 
@@ -129,15 +131,15 @@ npm run serve    # python3 -m http.server 8843
   - 剑(伤害值:钻石 8 > 铁 6 > 石 4 = 金 4 > 木 3)
   - 盾(举盾时抬高到身前)
   - 弓(配箭使用,抛物线飞行 + 重力)
-- **4 种材料**(可堆叠 64):钻石、金锭、绿宝石、箭
+- **5 种材料**(可堆叠 64):钻石、金锭、铁锭、绿宝石、箭
 - 所有工具带耐久度,使用消耗,耗尽自动移除
 
 ### 🔨 合成系统(2×2 配方)
 - 背包(E)→ 合成区:2×2 合成格 + 结果预览 + 合成按钮
-- 12 种配方(在 `craft.js` 定义,可单测):
-  - **建材**:1 木头→4 木板;4 木板→压缩木板;4 石头→2 石砖;4 砖块→砖块(压缩);4 沙子→2 沙砾;4 雪→水
+- 10 种配方(在 `craft.js` 定义,可单测):
+  - **建材**:1 木头→4 木板;4 石头→2 石砖;4 沙子→2 沙砾;4 雪→水
   - **装备**:2 木板(横向)→木门;2 石头(纵向)→石门;2 金锭(横向)→金门;
-    4 金锭→铁门;4 钻石→钻石门;2 木板(纵向)→4 箭
+    4 铁锭→铁门;4 钻石→钻石门;2 木板(纵向)→4 箭
 - 无序配方任意摆放即可,有序配方(门/箭)必须精确位置
 - 合成匹配与破坏耗时逻辑在 `craft.js`(纯函数),`matchRecipe`/`breakCost` 有单元测试覆盖
 
@@ -168,6 +170,7 @@ npm run serve    # python3 -m http.server 8843
 ## 🎨 视觉优化
 - **光照**:环境光 0.42 + 半球光 0.25 + 方向光(太阳对齐),方块立体明暗分明
 - **ACES 色调映射**:防止高光过曝,画面通透
+- **视野设置**:设置面板可调 FOV(65/75/85/100,持久化保存)
 - **粒子效果**:破坏方块迸溅彩色碎屑(取方块本色),重力下落 + 缩小淡出;放置方块少量粒子
 - **准星**:黑白描边,亮暗背景都清晰可见
 - **UI**:toast 上移不挡准星;破坏进度条(不再刷屏)
@@ -183,13 +186,15 @@ npm run serve    # python3 -m http.server 8843
 
 ```bash
 npm install      # 安装开发依赖(ESLint 9)
-npm test         # 跑确定性函数单元测试(32 项)
+npm test         # 跑确定性函数单元测试(33 项)
 npm run lint     # ESLint 静态检查
 npm run serve    # 启动本地静态服务器 http://localhost:8843/
 ```
 
 - **测试**:`test/unit.test.js` 覆盖 `worldgen.js`(哈希/噪声/群系/高度/存档序列化)与
   `craft.js`(配方匹配/破坏耗时)的纯函数
+- **浏览器冒烟测试(可选)**:`test/smoke.cdp.mjs` 通过 CDP 驱动 headless Chrome 做 15 项端到端断言
+  (触屏物理/门持久化/树木标脏/存档往返等),用法见文件头注释
 - **Lint**:`eslint.config.mjs`(flat config);`game.js`/`worldgen.js`/`craft.js` 是经典 script(非 ES module)
 - **CI**:GitHub Actions 在 push/PR 自动跑 `npm test` + `npm run lint`
 - 详细代码组织、数据流、扩展点见 **[docs/architecture.md](./docs/architecture.md)**
@@ -203,7 +208,7 @@ myword/
 ├── worldgen.js         世界生成模块(噪声/生物群系/地形高度,纯函数可独立测试)
 ├── craft.js            合成与破坏计算模块(RECIPES/matchRecipe/breakCost,纯函数可独立测试)
 ├── three.min.js        Three.js r160(已内置,离线可玩)
-├── test/unit.test.js   Node 单元测试(确定性函数验证,32 项)
+├── test/unit.test.js   Node 单元测试(确定性函数验证,33 项)
 ├── docs/               架构与模块文档(architecture.md / worldgen.md)
 ├── eslint.config.mjs   ESLint 9 flat config(仅开发期)
 ├── package.json        npm scripts(test / serve / lint)

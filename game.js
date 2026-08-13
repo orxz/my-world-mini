@@ -77,10 +77,11 @@ const TOOL_ORDER = [
 const ITEM_TYPES = {
   gem_diamond: { name: '钻石',   color: '#5fe3e8', shape: 'gem' },
   gem_gold:    { name: '金锭',   color: '#ffd54a', shape: 'ingot' },
+  gem_iron:    { name: '铁锭',   color: '#d8d8e0', shape: 'ingot' },
   gem_emerald: { name: '绿宝石', color: '#3fd17a', shape: 'gem' },
   arrow:       { name: '箭',     color: '#caa472', shape: 'arrow' },
 };
-const ITEM_ORDER = ['gem_diamond','gem_gold','gem_emerald','arrow'];
+const ITEM_ORDER = ['gem_diamond','gem_gold','gem_iron','gem_emerald','arrow'];
 
 // ============================================================
 // 第三部分:像素纹理与图集(用于区块合并网格)
@@ -308,7 +309,6 @@ function buildAtlas() {
 // 给图标/手持物用的独立材质(保留旧的单方块材质,用于 UI 图标和手持模型)
 let materials = {};
 function makeBlockMaterials(type) {
-  const def = BLOCK_TYPES[type];
   let st = (BLOCK_ID[type] * 2654435761) >>> 0;
   const rand = () => { st = (st * 1664525 + 1013904223) >>> 0; return st / 4294967296; };
 
@@ -401,7 +401,14 @@ function chunkIdx(lx, y, lz) {
 
 // 在世界坐标系种一棵树:树干/树叶可跨越区块边界,写入对应区块的数据数组
 // 玩家改动 diff 优先级最高 —— 如果玩家在该位置改过方块,保留玩家的改动
-function plantTreeAt(wx, baseY, wz, biome) {
+function plantTreeAt(wx, baseY, wz) {
+  // 树基合法性检查:玩家改动过的地表(出生广场/玩家建筑)不长树;
+  // 树基必须是自然地表,且上方一格为空(否则树干被埋,只长出悬浮树冠)
+  if (modifications.has(blockKey(wx, baseY, wz))) return;
+  const ground = getBlock(wx, baseY, wz);
+  if (!ground || !['grass', 'dirt', 'sand', 'snow'].includes(ground)) return;
+  if (isSolidAt(wx, baseY + 1, wz)) return;
+
   const trunk = 3 + Math.floor(hash3(wx, baseY, wz, worldSeed + 11) * 3);
   const leafType = BLOCK_ID.leaves;
   const trunkType = BLOCK_ID.wood;
@@ -416,7 +423,10 @@ function plantTreeAt(wx, baseY, wz, biome) {
     const lx = x - ccx * CHUNK_SIZE, lz = z - ccz * CHUNK_SIZE;
     const idx = chunkIdx(lx, y, lz);
     // 仅在空气或树叶位置写入(不覆盖树干/地形)
-    if (ch.data[idx] === 0 || ch.data[idx] === leafType) ch.data[idx] = id;
+    if (ch.data[idx] === 0 || ch.data[idx] === leafType) {
+      ch.data[idx] = id;
+      ch.meshDirty = true;   // 跨区块写入必须标脏:否则已建好 mesh 的相邻区块里的树冠/树干不渲染
+    }
   };
   for (let i = 1; i <= trunk; i++) putWorld(wx, baseY + i, wz, trunkType);
   const top = baseY + trunk;
@@ -434,7 +444,7 @@ function ensureChunk(cx, cz) {
   const key = chunkKey(cx, cz);
   let ch = chunks.get(key);
   if (!ch) {
-    ch = { cx, cz, key, data: generateChunkData(cx, cz), mesh: null, meshDirty: true, hasMesh: false };
+    ch = { cx, cz, key, data: generateChunkData(cx, cz), mesh: null, meshDirty: true };
     chunks.set(key, ch);
     // 本区块生成时积累的待种树:现在本区块数据已就绪,种下
     // 同时检查相邻区块(半径2,树冠最远延伸)中可能伸入本区块的树
@@ -467,7 +477,7 @@ function growTreesInChunk(cx, cz) {
       const height = heightAt(wx, wz, worldSeed, biome);
       if (height <= SEA_LEVEL) continue;
       const r = hash2(wx, wz, worldSeed + 999);
-      if (r < b.treeChance) plantTreeAt(wx, height, wz, biome);
+      if (r < b.treeChance) plantTreeAt(wx, height, wz);
     }
   }
 }
@@ -595,7 +605,6 @@ function buildChunkMesh(ch) {
   }
   ch.mesh = {};
   ch.meshDirty = false;
-  ch.hasMesh = false;
 
   const buildGeo = (P, N, U, I, C) => {
     const g = new THREE.BufferGeometry();
@@ -613,7 +622,6 @@ function buildChunkMesh(ch) {
     m.userData.cx = ch.cx; m.userData.cz = ch.cz;
     scene.add(m);
     ch.mesh.solid = m;
-    ch.hasMesh = true;
   }
   if (wPositions.length) {
     const wm = new THREE.Mesh(buildGeo(wPositions, wNormals, wUvs, wIndices), matWaterChunk);
@@ -623,7 +631,6 @@ function buildChunkMesh(ch) {
     wm.renderOrder = 1;
     scene.add(wm);
     ch.mesh.water = wm;
-    ch.hasMesh = true;
   }
 }
 
@@ -648,13 +655,15 @@ function updateChunks(playerWX, playerWZ) {
       chunks.delete(key);
     }
   }
-  // 清理远离玩家的门(距离 > 渲染范围 + 2 chunk,避免内存泄漏)
-  const _doorMaxDist = (RENDER_DISTANCE + 2) * CHUNK_SIZE;
-  for (const [key, d] of doors) {
+  // 门 mesh 同步(不删除门数据!):远离玩家的门只释放 mesh,数据保留(玩家建筑不丢失)
+  // 走进范围且其所在区块已加载时,重新创建 mesh
+  const _doorSyncDist = (RENDER_DISTANCE + 2) * CHUNK_SIZE;
+  for (const d of doors.values()) {
     const dist = Math.max(Math.abs(d.x - playerWX), Math.abs(d.z - playerWZ));
-    if (dist > _doorMaxDist) {
-      if (d.group) { disposeDoorGroup(d.group); scene.remove(d.group); }
-      doors.delete(key);
+    if (dist > _doorSyncDist) {
+      if (d.group) { disposeDoorGroup(d.group); scene.remove(d.group); d.group = null; }
+    } else if (!d.group && chunks.has(chunkKey(Math.floor(d.x / CHUNK_SIZE), Math.floor(d.z / CHUNK_SIZE)))) {
+      d.group = createDoorMesh(d); scene.add(d.group);
     }
   }
 
@@ -713,7 +722,6 @@ const WALK_SPEED = 5.5;
 const FLY_SPEED = 9;
 
 let selectedType = 'grass';
-let lastSelectedBlock = 'grass';
 
 let hotbar = [];
 const HOTBAR_SIZE = 9;
@@ -726,13 +734,14 @@ let cameraMode = 0;
 let playerModel = null;
 
 let holdGroup = null;
-let holdItem = null;
 let holdSwingT = 0;
 let shieldActive = 0;
 
 let breakTargetKey = null;
 let breakProgress = 0;
 let inventoryOpen = false;
+let gameStarted = false;   // 是否已进入游戏(不支持 pointer lock 的设备用此标志驱动物理更新)
+const IS_TOUCH_DEVICE = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
 
 const velocity = new THREE.Vector3();
 const playerPos = new THREE.Vector3(0, 30, 0);
@@ -894,23 +903,25 @@ function buildHoldGroup() {
 // 刷新手持物(FP 屏幕右下 + TP 玩家右手),在 selectSlot 时调用
 // 刷新手持物:方块/工具/材料都在 FP(屏幕右下)和 TP(玩家右手)显示
 // 在 selectSlot 时调用。默认第1格是方块 → 持续手持显示。
-// 刷新手持物:方块/工具/材料都在 FP(屏幕右下)和 TP(玩家右手)显示
 function updateHoldItem() {
   if (holdGroup) { while (holdGroup.children.length) holdGroup.remove(holdGroup.children[0]); }
   const heldMount = playerModel ? playerModel.userData.heldMount : null;
   if (heldMount) { while (heldMount.children.length) heldMount.remove(heldMount.children[0]); }
 
   const item = hotbar[currentSlot];
-  if (!item) { holdItem = null; return; }
+  if (!item) return;
 
   let base;
   if (item.kind === 'block') {
+    if (!BLOCK_TYPES[item.id]) return;   // 损坏数据防护:未知 id 不渲染
     base = new THREE.Mesh(blockGeo, materials[item.id]);   // 1x1x1
   } else if (item.kind === 'tool') {
-    base = buildToolMesh(item.id);                          // Group,内部已缩放好
+    if (!TOOL_TYPES[item.id]) return;
+    base = getToolTemplate(item.id);      // 模板缓存:克隆复用,不再每次新建材质/几何体
   } else if (item.kind === 'item') {
-    base = buildMaterialMesh(item.id);                      // Group
-  } else { holdItem = null; return; }
+    if (!ITEM_TYPES[item.id]) return;
+    base = getItemTemplate(item.id);      // 模板缓存:同上
+  } else return;
 
   // 第一人称(屏幕右下)
   if (holdGroup) {
@@ -919,7 +930,6 @@ function updateHoldItem() {
     else if (item.kind === 'tool') { fp.scale.setScalar(1.0); fp.rotation.set(0.1, 0.3, 0); }   // 工具保留原尺寸
     else { fp.scale.setScalar(0.6); fp.rotation.set(0.3, 0.6, 0.2); }
     holdGroup.add(fp);
-    holdItem = fp;
   }
   // 第三人称(玩家右手):工具保留原尺寸(不双重缩放)
   if (heldMount) {
@@ -996,6 +1006,19 @@ function buildMaterialMesh(itemId) {
   return g;
 }
 
+// 手持物模板缓存:每个工具/材料 id 只构建一次,之后克隆复用(共享材质/几何体)
+// 修复:原实现每次切槽位都新建材质与几何体且从不 dispose,长时间游玩累积 GPU 泄漏
+const toolMeshCache = {};
+const itemMeshCache = {};
+function getToolTemplate(toolId) {
+  if (!toolMeshCache[toolId]) toolMeshCache[toolId] = buildToolMesh(toolId);
+  return toolMeshCache[toolId];
+}
+function getItemTemplate(itemId) {
+  if (!itemMeshCache[itemId]) itemMeshCache[itemId] = buildMaterialMesh(itemId);
+  return itemMeshCache[itemId];
+}
+
 function swingHoldItem() { holdSwingT = 0.001; }
 
 // 第一人称手持物动画:空闲浮动 + 使用挥动 + 举盾
@@ -1003,11 +1026,12 @@ function swingHoldItem() { holdSwingT = 0.001; }
 const HOLD_BASE = { x: 0.55, y: -0.45, z: -0.85 };
 function updateHoldAnim(dt) {
   if (!holdGroup) return;
+  if (shieldActive > 0) shieldActive -= dt;   // 无论当前手持何物,举盾计时都衰减(切武器不会"冻结"盾)
   const item = hotbar[currentSlot];
-  const isShield = item && item.kind === 'tool' && TOOL_TYPES[item.id].tool === 'shield';
+  const tdef = item && item.kind === 'tool' ? TOOL_TYPES[item.id] : null;
+  const isShield = tdef && tdef.tool === 'shield';
   // 举盾:盾抬到正前方居中
   if (isShield && shieldActive > 0) {
-    shieldActive -= dt;
     holdGroup.position.set(0, -0.20, -0.75);
     holdGroup.rotation.set(0, 0, 0);
     return;
@@ -1096,11 +1120,6 @@ function makeHeadMaterials(skinMat, hairMat) {
 // 第三人称相机:背后(模式1)/正面(模式2)
 // 设计:距离 3.5 米(人物占屏幕较大),相机高度=玩家眼睛+0.5(略俯视),碰撞时拉近
 function updateThirdPersonCamera() {
-  if (cameraMode === 0) {
-    playerModel.visible = false;
-    if (camera.fov !== 75) { camera.fov = 75; camera.updateProjectionMatrix(); }
-    return;
-  }
   playerModel.visible = true;
   // 模型锚点:碰撞盒底(模型 model-space 脚底=0,故脚踩地)
   playerModel.position.set(playerPos.x, playerPos.y - PLAYER_HEIGHT * 0.5, playerPos.z);
@@ -1230,7 +1249,7 @@ function init() {
   // 构建全部已生成区块的 mesh
   for (const ch of chunks.values()) buildChunkMesh(ch);
 
-  // 出生点固定在广场中心(不用 findSafeSpawn,确保每次都在广场)
+  // 出生点固定在广场中心(确定性出生,确保每次都在广场)
   const plazaH = SEA_LEVEL + 6;
   playerPos.set(0.5, plazaH + 1 + PLAYER_HEIGHT * 0.5, 0.5);
 
@@ -1289,6 +1308,18 @@ function buildSpawnPlaza() {
     }
   }
 
+  // 平整广场上方地形:出生点落在山地时,天然山体穿透广场表面(广场被埋)或建筑被地形顶起。
+  // 只对"天然高度 > 广场面"的列写入 null 改动(数量少,存档增量小)
+  for (let dx = -plazaR; dx <= plazaR; dx++) {
+    for (let dz = -plazaR; dz <= plazaR; dz++) {
+      if (Math.sqrt(dx * dx + dz * dz) > plazaR) continue;
+      const nh = heightAt(dx, dz, worldSeed, biomeAt(dx, dz, worldSeed));
+      if (nh > platH) {
+        for (let y = platH + 1; y <= nh; y++) set(dx, y, dz, null);
+      }
+    }
+  }
+
   // 2. 中央 Owen 字样(木板底座 + 树叶字)
   const padR = 11;
   for (let dx = -padR; dx <= padR; dx++)
@@ -1306,7 +1337,9 @@ function buildSpawnPlaza() {
   }
 
   // 3. 四角灯塔
-  const tR = plazaR - 4;
+  // 修复:原 tR=24 的对角距离 √(24²+24²)=33.9 > 广场圆半径 28,基座在圆外悬空;
+  // 改为 18(对角 25.5),灯塔落回广场石板环内
+  const tR = 18;
   for (const [tx, tz] of [[tR,tR],[-tR,tR],[tR,-tR],[-tR,-tR]]) {
     for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) set(tx + dx, platH + 1, tz + dz, 'stone');
     for (let h = 2; h <= 5; h++) set(tx, platH + h, tz, 'brick');
@@ -1397,52 +1430,22 @@ function buildSpawnPlaza() {
   }
 
   // 12. 起伏小山丘(广场南侧外围,地形层次):用 dirt/grass 堆几个圆丘
+  // 修复:原先固定从 platH+1 起堆,天然地表低于广场面时山丘悬空;现贴合各列的天然高度
   const hills = [[0, plazaR + 6], [10, plazaR + 8], [-10, plazaR + 8]];
   for (const [hx, hz] of hills) {
+    const gh = heightAt(hx, hz, worldSeed, biomeAt(hx, hz, worldSeed));
     for (let dx = -3; dx <= 3; dx++) {
       for (let dz = -3; dz <= 3; dz++) {
         const d = Math.sqrt(dx * dx + dz * dz);
         if (d <= 3) {
           const h = Math.round(3 - d);     // 中心高,边缘低
-          for (let y = 1; y <= h; y++) set(hx + dx, platH + y, hz + dz, y === h ? 'grass' : 'dirt');
+          for (let y = 1; y <= h; y++) set(hx + dx, gh + y, hz + dz, y === h ? 'grass' : 'dirt');
         }
       }
     }
   }
 }
 
-
-// 寻找安全出生点:返回 {x, y, z},y 是脚下方块的 y(玩家站在 y+1 上)
-// 必须是干燥陆地(海平面之上)、非树叶/木头/水、有实地支撑、头顶两格空
-function findSafeSpawn() {
-  const isDryGround = (x, y, z) => {
-    if (y <= SEA_LEVEL) return false;
-    const b = getBlock(x, y, z);
-    if (!b) return false;
-    if (b === 'leaves' || b === 'wood' || b === 'water') return false;
-    if (!isSolidAt(x, y - 1, z)) return false;
-    return true;
-  };
-  const tryAt = (x, z) => {
-    ensureChunk(Math.floor(x / CHUNK_SIZE), Math.floor(z / CHUNK_SIZE));
-    for (let y = WORLD_HEIGHT - 1; y >= 1; y--) {
-      if (isDryGround(x, y, z) && !isSolidAt(x, y + 1, z) && !isSolidAt(x, y + 2, z)) return { x, y, z };
-    }
-    return null;
-  };
-  // 原点优先(广场中心),螺旋向外搜
-  const origin = tryAt(0, 0);
-  if (origin) return origin;
-  for (let r = 1; r <= 48; r++) {
-    for (let dx = -r; dx <= r; dx++) {
-      for (const dz of [-r, r]) { const s = tryAt(dx, dz); if (s) return s; }
-    }
-    for (let dz = -r + 1; dz <= r - 1; dz++) {
-      for (const dx of [-r, r]) { const s = tryAt(dx, dz); if (s) return s; }
-    }
-  }
-  return { x: 0, y: SEA_LEVEL + 1, z: 0 };
-}
 
 function clearWorld() {
   for (const ch of chunks.values()) {
@@ -1467,7 +1470,8 @@ function clearWorld() {
 
 function resetWorld() {
   clearWorld();
-  // 固定种子:重置仍回到同一个出生广场场景(不换随机种子)
+  // 新随机种子:按钮文案为"重置世界(新地形)",每次重置生成全新地形(出生广场为确定性结构,不受种子影响)
+  worldSeed = (Math.random() * 4294967296) >>> 0;
   velocity.set(0, 0, 0);
   isFlying = false;
   yaw = 0; pitch = 0;
@@ -1516,7 +1520,6 @@ function initInventory() {
 
 // 方块图标的伪 3D 等距渲染:顶面(亮)+ 右侧面(中)+ 左侧面(暗),模拟立体感
 function drawBlockIcon3D(ctx, id, size) {
-  const def = BLOCK_TYPES[id];
   const topTex = materials[id][2].map, sideTex = materials[id][1].map;
   if (!topTex || !topTex.image || !sideTex || !sideTex.image) return;
   ctx.save();
@@ -1694,13 +1697,32 @@ function buildHotbar() {
 
 function itemName(item) {
   if (!item) return '(空)';
-  if (item.kind === 'block') return BLOCK_TYPES[item.id].name;
-  if (item.kind === 'tool') return TOOL_TYPES[item.id].name;
+  if (item.kind === 'block') return (BLOCK_TYPES[item.id] || { name: '?' }).name;
+  if (item.kind === 'tool') return (TOOL_TYPES[item.id] || { name: '?' }).name;
   if (item.kind === 'item') {
     const n = item.count || 1;
-    return ITEM_TYPES[item.id].name + (n > 1 ? ` ×${n}` : '');
+    return (ITEM_TYPES[item.id] || { name: '?' }).name + (n > 1 ? ` ×${n}` : '');
   }
   return '?';
+}
+
+// 存档数据修复:丢弃未知 id 的损坏物品,补齐缺失字段(durability/count)
+// 修复:损坏存档曾让 itemName/updateHoldAnim 抛 TypeError,热路径崩溃导致游戏冻结
+function sanitizeItem(item) {
+  if (!item || typeof item !== 'object') return null;
+  if (item.kind === 'block') {
+    return BLOCK_TYPES[item.id] ? { kind: 'block', id: item.id } : null;
+  }
+  if (item.kind === 'tool') {
+    if (!TOOL_TYPES[item.id]) return null;
+    const maxDur = TOOL_TYPES[item.id].durability;
+    return { kind: 'tool', id: item.id, durability: Number.isFinite(item.durability) ? Math.max(1, Math.min(maxDur, item.durability)) : maxDur };
+  }
+  if (item.kind === 'item') {
+    if (!ITEM_TYPES[item.id]) return null;
+    return { kind: 'item', id: item.id, count: Math.max(1, (item.count | 0) || 1) };
+  }
+  return null;
 }
 
 let currentSlot = 0;
@@ -1708,9 +1730,7 @@ function selectSlot(i) {
   if (i < 0 || i >= HOTBAR_SIZE || !Number.isInteger(i)) return;
   currentSlot = i;
   const item = hotbar[i];
-  if (item) {
-    if (item.kind === 'block') { selectedType = item.id; lastSelectedBlock = item.id; }
-  }
+  if (item && item.kind === 'block') selectedType = item.id;
   document.querySelectorAll('#hotbar .slot').forEach(s => {
     s.classList.toggle('active', +s.dataset.slot === i);
   });
@@ -1723,6 +1743,20 @@ function putInSlot(i, item) {
   buildHotbar();
   if (i === currentSlot) selectSlot(i);
   markDirtySave();
+}
+
+// 统一指针锁定入口:不支持 pointer lock 的设备跳过;失败静默(冷却期失败由画布点击兜底重试)
+function lockPointer() {
+  if (!supportsPointerLock()) return;
+  if (document.pointerLockElement) return;
+  try {
+    const p = renderer.domElement.requestPointerLock();
+    if (p && typeof p.catch === 'function') p.catch(() => {});
+  } catch (e) {}
+}
+// 当前环境是否支持 pointer lock API(触屏浏览器如 iOS/安卓 Chrome 大多不支持)
+function supportsPointerLock() {
+  return !!(renderer && renderer.domElement && typeof renderer.domElement.requestPointerLock === 'function');
 }
 
 // ============================================================
@@ -1754,26 +1788,20 @@ function setupInput() {
 
   const overlay = document.getElementById('overlay');
   const pauseMenu = document.getElementById('pause-menu');
-  let gameStarted = false;
 
   function enterGame() {
+    gameStarted = true;
     // 1. 最重要:先隐藏开始遮罩(无论后续音频/锁定是否成功,游戏都能进入)
     overlay.classList.add('hidden');
     const pm = document.getElementById('pause-menu');
     if (pm) pm.classList.add('hidden');
-    // 2. 尝试锁定鼠标指针(失败不影响游戏,只是不能用鼠标转视角)
-    if (renderer) {
-      try {
-        if (!('ontouchstart' in window)) { const p = renderer.domElement.requestPointerLock();
-        if (p && typeof p.catch === 'function') p.catch(() => {}); }
-      } catch (e) {}
-    }
+    // 2. 尝试锁定鼠标指针(失败不影响游戏,只是不能用鼠标转视角;触屏用摇杆)
+    lockPointer();
     // 3. 初始化音频(失败静默,不影响游戏)
     try { audio.init(); } catch (e) {}
   }
 
   overlay.addEventListener('click', () => {
-    if (!gameStarted) gameStarted = true;
     overlay.classList.add('hidden');   // 直接隐藏开始遮罩(不依赖 pointer lock)
     enterGame();                        // 尝试锁定指针(失败也不影响进入)
   });
@@ -1783,7 +1811,7 @@ function setupInput() {
   if (cont) cont.addEventListener('click', (e) => {
     e.stopPropagation();
     loadGame().then(ok => {
-      if (ok) { if (!gameStarted) gameStarted = true; enterGame(); }
+      if (ok) enterGame();
       else showToast('没有存档,开始新世界');
     });
   });
@@ -1815,21 +1843,12 @@ function setupInput() {
   document.getElementById('btn-controls').addEventListener('click', () => {
     document.getElementById('pause-controls').classList.toggle('hidden');
   });
-  // 存档按钮
-
-  const btnLoad = document.getElementById('btn-load');
-  if (btnLoad) btnLoad.addEventListener('click', () => {
-    loadGame().then(ok => {
-      if (ok) { showToast('已读取,点击继续游戏'); document.getElementById('pause-menu').classList.remove('hidden'); }
-      else showToast('没有存档');
-    });
-  });
-
   // ---------- 设置面板 ----------
   const setPanel = document.getElementById('settings-panel');
   const setSound = document.getElementById('set-sound');
   const setVolume = document.getElementById('set-volume');
   const setRender = document.getElementById('set-render');
+  const setFov = document.getElementById('set-fov');
   const setDrops = document.getElementById('set-drops');
   const setDN = document.getElementById('set-daynight');
   const setDNSpeed = document.getElementById('set-dayspeed');
@@ -1848,6 +1867,7 @@ function setupInput() {
     if (setSound) setSound.textContent = settings.soundEnabled ? '开' : '关';
     if (setVolume) setVolume.value = Math.round(settings.volume * 100);
     if (setRender) setRender.value = String(settings.renderDist);
+    if (setFov) setFov.value = String(settings.fov);
     if (setDrops) setDrops.textContent = settings.dropItems ? '开' : '关';
     if (setDN) {
       setDN.textContent = settings.dayNightEnabled ? '开' : '关';
@@ -1880,6 +1900,10 @@ function setupInput() {
     RENDER_DISTANCE = Math.max(1, settings.renderDist | 0);
     FOG_FAR = (RENDER_DISTANCE * CHUNK_SIZE) + 8;
     saveSettings();
+  });
+  if (setFov) setFov.addEventListener('change', () => {
+    settings.fov = Math.max(50, Math.min(110, parseInt(setFov.value) || 75));
+    saveSettings(); refreshSettingsUI();
   });
   if (setDrops) setDrops.addEventListener('click', () => {
     settings.dropItems = !settings.dropItems;
@@ -1952,6 +1976,10 @@ function setupInput() {
     pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, pitch));
   });
 
+  renderer.domElement.addEventListener('click', () => {
+    // 兜底:关闭背包或 pointer lock 失败(浏览器约 1.25s 冷却期)后,点击画面重新锁定视角
+    if (gameStarted && !inventoryOpen) lockPointer();
+  });
   renderer.domElement.addEventListener('mousedown', (e) => {
     if (document.pointerLockElement !== renderer.domElement) return;
     if (e.button === 0) breakBlock();
@@ -1968,8 +1996,7 @@ function setupInput() {
 
 
   // ---------- 移动端触屏 ----------
-  const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
-  if (isTouch) {
+  if (IS_TOUCH_DEVICE) {
     const tc = document.getElementById('touch-controls');
     if (tc) tc.style.display = '';
     // 摇杆
@@ -2066,9 +2093,6 @@ function raycastTarget() {
   const tDeltaY = dir.y !== 0 ? Math.abs(1 / dir.y) : Infinity;
   const tDeltaZ = dir.z !== 0 ? Math.abs(1 / dir.z) : Infinity;
   // 初始 tMax(到第一个边界)
-  const fracX = stepX > 0 ? (x + 1 - eye.x) : (eye.x - x);
-  const fracY = stepY > 0 ? (y + 1 - eye.y) : (eye.y - y);
-  const fracZ = stepZ > 0 ? (z + 1 - eye.z) : (eye.z - z);
   let tMaxX = dir.x !== 0 ? (stepX > 0 ? (x + 1 - eye.x) / dir.x : (eye.x - x) / -dir.x) : Infinity;
   let tMaxY = dir.y !== 0 ? (stepY > 0 ? (y + 1 - eye.y) / dir.y : (eye.y - y) / -dir.y) : Infinity;
   let tMaxZ = dir.z !== 0 ? (stepZ > 0 ? (z + 1 - eye.z) / dir.z : (eye.z - z) / -dir.z) : Infinity;
@@ -2222,6 +2246,7 @@ function useTool(item) {
     showToast(`挥砍:${def.name} · 伤害${def.damage}` + (t ? ' · 命中' : ''));
     audio.play('break');
     consumeToolDurability(item);
+    toolCooldown[item.id] = now;   // 修复:冷却必须在成功动作后写入,剑/弓/盾才有真实冷却
   } else if (def.tool === 'bow') {
     const arrowSlot = hotbar.findIndex(s => s && s.kind === 'item' && s.id === 'arrow' && s.count > 0);
     if (arrowSlot < 0) { showToast('没有箭,无法射击(背包取箭)'); return; }
@@ -2233,11 +2258,13 @@ function useTool(item) {
     swingHoldItem();
     audio.play('place');
     showToast(`射箭 · 剩余 ${hotbar[arrowSlot] ? hotbar[arrowSlot].count : 0} 支`);
+    toolCooldown[item.id] = now;
   } else if (def.tool === 'shield') {
     shieldActive = 0.6;
     swingHoldItem();
     showToast(`举盾:${def.name}`);
     consumeToolDurability(item);
+    toolCooldown[item.id] = now;
   } else {
     showToast(`${def.name}:用于破坏方块(左键),右键只是展示`);
     toolCooldown[item.id] = now;
@@ -2323,6 +2350,7 @@ function toggleDoor(x, y, z) {
   d.animT = 0;  // 触发动画(在 animate 里推进)
   audio.play('step');
   showToast(d.open ? '🚪 开门' : '🚪 关门');
+  markDirtySave();   // 修复:门开关状态必须存档,否则刷新/读档后回退
   return true;
 }
 // 门开关动画推进(在 animate 里调用)
@@ -2349,7 +2377,16 @@ function getDoorAt(x, y, z) {
 function raycastDoor() {
   _rayEye.set(playerPos.x, playerPos.y, playerPos.z);
   _rayDir.set(-Math.sin(yaw)*Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw)*Math.cos(pitch));
-  for (let t = 0.3; t <= 4; t += 0.25) { const d = getDoorAt(Math.floor(_rayEye.x+_rayDir.x*t), Math.floor(_rayEye.y+_rayDir.y*t), Math.floor(_rayEye.z+_rayDir.z*t)); if (d) return d; }
+  // 从眼睛向外逐点采样:先查门,再查固体遮挡(隔墙不能再开关门)
+  for (let t = 0.3; t <= 4; t += 0.25) {
+    const bx = Math.floor(_rayEye.x + _rayDir.x * t);
+    const by = Math.floor(_rayEye.y + _rayDir.y * t);
+    const bz = Math.floor(_rayEye.z + _rayDir.z * t);
+    const d = getDoorAt(bx, by, bz);
+    if (d) return d;
+    const b = getBlock(bx, by, bz);
+    if (b && b !== 'water' && BLOCK_TYPES[b].solid) return null;   // 视线被挡住,身后的门不可达
+  }
   return null;
 }
 // 释放门 mesh 的 geometry/material(避免 GPU 泄漏)
@@ -2408,7 +2445,6 @@ function spawnDroppedItem(x, y, z, blockType) {
     life: 30,          // 30 秒后消失
     pickupDelay: 0.5,  // 生成后 0.5 秒内不可拾取,避免刚破坏就吸回
     vy: 1.5 + Math.random() * 1.0,   // 初始上抛一点
-    baseY: 0,
   };
   scene.add(mesh);
   droppedItems.push(mesh);
@@ -2539,8 +2575,10 @@ function respawnPlayer() {
   const plazaH = SEA_LEVEL + 6;
   playerPos.set(0.5, plazaH + 1 + PLAYER_HEIGHT * 0.5, 0.5);
   velocity.set(0, 0, 0);
+  isFlying = false;   // 修复:死亡后不再继承飞行状态
   playerHP = PLAYER_MAX_HP;
   breathTimer = 0;
+  lastSafePos.copy(playerPos);   // 更新安全点,防止虚空救援把玩家送回坠落前的危险位置
   updateHPBar();
   // 显示"你死了"遮罩,2 秒后淡出
   const el = document.getElementById('death-overlay');
@@ -2682,8 +2720,9 @@ function updatePlayer(dt, prevVy) {
       if (velocity.y < -3) velocity.y = -3;   // 下沉速度上限,避免加速到海底
     }
   } else {
-    velocity.x = move.x * speed;
-    velocity.z = move.z * speed;
+    const crouchSpeed = sprint ? speed * 0.45 : speed;   // Shift=下蹲(潜行):地面移动减速
+    velocity.x = move.x * crouchSpeed;
+    velocity.z = move.z * crouchSpeed;
     velocity.y -= GRAVITY * dt;
     if (keys['Space'] && onGround) {
       velocity.y = JUMP_SPEED;
@@ -2820,9 +2859,6 @@ function updateDayNight(dt) {
 
   // 天空颜色:在 夜(0x0a0a2a) / 黄昏黎明(0xff8844) / 白天(0x87ceeb) 间插值
   // 黄昏/黎明出现在 dayTime≈0.25(日出)与 0.75(日落):用 |sunH| 在低角度时凸显橙红
-  // 简化:用 cos(sunAngle) 的正负区分日出/日落,但颜色相同;用 sunH 控制日夜,|水平分量|控制黄昏
-  const horiz = Math.cos(sunAngle);          // -1..1(日出时为正,日落后为负;|horiz|小=靠近地平线)
-  // 白天-夜晚混合(基于 sunH 的 smoothstep)
   const tDay = Math.max(0, Math.min(1, (sunH + 0.15) / 0.35));
   // 黄昏强度:太阳在地平线附近(sunH 接近 0)时最强
   const dusk = Math.max(0, 1 - Math.abs(sunH) / 0.3) * (1 - tDay) * 0.85;
@@ -2860,8 +2896,11 @@ function animate() {
   if (dt > 0.05) dt = 0.05;
 
   const locked = document.pointerLockElement === renderer.domElement;
+  // 修复:不支持 pointer lock 的浏览器(手机/平板)locked 恒为 false,原实现导致移动/重力/跳跃完全失效。
+  // 支持 pointer lock 的环境保持"解锁=暂停"语义;不支持的环境以 gameStarted 为运行标志。
+  const running = supportsPointerLock() ? locked : gameStarted;
   const prevVy = velocity.y;
-  if (locked) updatePlayer(dt, prevVy);
+  if (running) updatePlayer(dt, prevVy);
   updateArrows(dt);
   updateDroppedItems(dt);
   updateParticles(dt);   // 粒子效果
@@ -2880,11 +2919,12 @@ function animate() {
   }
 
   if (cameraMode === 0) {
+    playerModel.visible = false;   // 修复:从第三人称切回后模型残留、与相机穿模
     camera.position.copy(playerPos);
     camera.rotation.order = 'YXZ';
     camera.rotation.y = yaw;
     camera.rotation.x = pitch;
-    if (camera.fov !== 75) { camera.fov = 75; camera.updateProjectionMatrix(); }
+    if (camera.fov !== settings.fov) { camera.fov = settings.fov; camera.updateProjectionMatrix(); }
   } else {
     updateThirdPersonCamera();
   }
@@ -2993,8 +3033,13 @@ function updateCrops() {
   for (const [key, plantTime] of cropTimers.entries()) {
     if (now - plantTime < 60000) continue;
     const [x, y, z] = key.split(',').map(Number);
-    if (getBlock(x, y, z) === 'snow') { setBlock(x, y, z, 'leaves'); showToast('小麦成熟了'); }
-    else if (getBlock(x, y, z) !== 'snow') cropTimers.delete(key);
+    // 修复:区块未加载时 getBlock 返回 null,不能当作"被替换"而删除计时器,
+    // 否则远离农场的作物会永久失去成熟资格(数据由 modifications 保留,计时器却丢了)
+    const cx = Math.floor(x / CHUNK_SIZE), cz = Math.floor(z / CHUNK_SIZE);
+    if (!chunks.has(chunkKey(cx, cz))) continue;
+    const cur = getBlock(x, y, z);
+    if (cur === 'snow') { setBlock(x, y, z, 'leaves'); showToast('小麦成熟了'); }
+    cropTimers.delete(key);   // 已成熟(leaves)或被替换/破坏(空气)时清理,不再留给下一秒兜底
   }
 }
 
@@ -3003,23 +3048,31 @@ function applySave(rec) {
   clearWorld();
   worldSeed = (typeof rec.seed === 'number') ? rec.seed : worldSeed;
   modifications.clear();
-  if (rec.modifications) for (const [k, v] of rec.modifications) modifications.set(k, v);
-  if (rec.playerPos && rec.playerPos.y > 1 && rec.playerPos.y < WORLD_HEIGHT
-      && Number.isFinite(rec.playerPos.x) && Number.isFinite(rec.playerPos.z)) {
+  if (Array.isArray(rec.modifications)) for (const [k, v] of rec.modifications) modifications.set(k, v);
+  if (rec.playerPos && Number.isFinite(rec.playerPos.x) && Number.isFinite(rec.playerPos.y)
+      && Number.isFinite(rec.playerPos.z) && rec.playerPos.y > 1 && rec.playerPos.y < WORLD_HEIGHT) {
     playerPos.set(rec.playerPos.x, rec.playerPos.y, rec.playerPos.z);
   } else {
     // 存档位置异常 → 回广场中心
     const plazaH = SEA_LEVEL + 6;
     playerPos.set(0.5, plazaH + 1 + PLAYER_HEIGHT * 0.5, 0.5);
   }
-  yaw = rec.yaw || 0; pitch = rec.pitch || 0;
-  cameraMode = rec.cameraMode || 0; isFlying = rec.isFlying || false;
+  yaw = Number.isFinite(rec.yaw) ? rec.yaw : 0;
+  pitch = Number.isFinite(rec.pitch) ? Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, rec.pitch)) : 0;
+  cameraMode = [0, 1, 2].includes(rec.cameraMode) ? rec.cameraMode : 0;
+  isFlying = !!rec.isFlying;
   velocity.set(0, 0, 0);
   wasOnGround = false; wasInWater = false;
   playerHP = (typeof rec.playerHP === 'number') ? Math.max(0, Math.min(PLAYER_MAX_HP, rec.playerHP)) : PLAYER_MAX_HP;
   breathTimer = 0;
-  if (rec.hotbar) { hotbar = rec.hotbar; } else initInventory();
+  if (Array.isArray(rec.hotbar)) {
+    hotbar = rec.hotbar.map(sanitizeItem).slice(0, HOTBAR_SIZE);
+    while (hotbar.length < HOTBAR_SIZE) hotbar.push(null);
+  } else {
+    initInventory();
+  }
   currentSlot = Math.max(0, Math.min(HOTBAR_SIZE - 1, (rec.currentSlot | 0) || 0));
+  if (Number.isFinite(rec.dayTime) && rec.dayTime >= 0 && rec.dayTime < 1) dayTime = rec.dayTime;
   // 预热玩家所在区域区块
   const pcx = Math.floor(playerPos.x / CHUNK_SIZE);
   const pcz = Math.floor(playerPos.z / CHUNK_SIZE);
@@ -3034,16 +3087,17 @@ function applySave(rec) {
   if (rec.doorsData) {
     for (const [key, d] of rec.doorsData) {
       try {
+        if (!d || !Number.isInteger(d.x) || !Number.isInteger(d.y) || !Number.isInteger(d.z)) continue;
         // 确保门位置区块已生成(避免在未加载区块创建门)
         ensureChunk(Math.floor(d.x / CHUNK_SIZE), Math.floor(d.z / CHUNK_SIZE));
-        const door = { x: d.x, y: d.y, z: d.z, type: d.type || 'door', open: !!d.open, facing: d.facing || 0 };
+        const door = { x: d.x, y: d.y, z: d.z, type: BLOCK_TYPES[d.type] ? d.type : 'door', open: !!d.open, facing: d.facing || 0 };
         doors.set(key, door);
         door.group = createDoorMesh(door);
         scene.add(door.group);
       } catch (e) { /* 跳过损坏的门数据 */ }
     }
   }
-  if (rec.cropTimersData) { cropTimers.clear(); for (const [k,v] of rec.cropTimersData) cropTimers.set(k,v); }
+  if (Array.isArray(rec.cropTimersData)) { cropTimers.clear(); for (const [k, v] of rec.cropTimersData) cropTimers.set(k, v); }
   saveDirty = false;
 }
 
@@ -3107,7 +3161,8 @@ function openSaveManager() {
     }
     list.innerHTML = saves.map(s => {
       const time = new Date(s.timestamp).toLocaleString('zh-CN', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
-      const pos = s.playerPos ? `(${s.playerPos.x.toFixed(0)},${s.playerPos.y.toFixed(0)},${s.playerPos.z.toFixed(0)})` : '';
+      const okPos = s.playerPos && Number.isFinite(s.playerPos.x) && Number.isFinite(s.playerPos.y) && Number.isFinite(s.playerPos.z);
+      const pos = okPos ? `(${Math.round(s.playerPos.x)},${Math.round(s.playerPos.y)},${Math.round(s.playerPos.z)})` : '(未知)';
       const cur = (s.id === currentSaveId) ? ' <span style="color:#5fd35f;">●当前</span>' : '';
       return `<div class="save-item">
         <div class="save-info">
@@ -3148,6 +3203,7 @@ function toggleInventory(open) {
   } else {
     panel.classList.add('hidden');
     clearCraftGrid();
+    lockPointer();   // 修复:关闭背包后重新锁定指针,否则视角永久失效(失败时点击画面兜底)
   }
 }
 
@@ -3404,8 +3460,14 @@ function loadSettings() {
     if (s) { const parsed = JSON.parse(s); Object.assign(settings, parsed); }
     settings.renderDist = Math.max(1, Math.min(10, settings.renderDist|0 || 5));
     var _vol = Number(settings.volume); settings.volume = Math.max(0, Math.min(1, Number.isFinite(_vol) ? _vol : 0.35));
+    var _fov = Number(settings.fov); settings.fov = Math.max(50, Math.min(110, Number.isFinite(_fov) ? _fov : 75));
+    var _dcs = Number(settings.dayCycleSpeed); settings.dayCycleSpeed = Math.max(10, Math.min(600, Number.isFinite(_dcs) ? _dcs : 120));
+    settings.soundEnabled = !!settings.soundEnabled;
+    settings.dropItems = !!settings.dropItems;
+    settings.dayNightEnabled = settings.dayNightEnabled !== false;
   } catch (e) {}
   // 应用设置
+  if (camera) { camera.fov = settings.fov; camera.updateProjectionMatrix(); }   // 修复:settings.fov 此前从未生效
   if (audio.masterGain) audio.masterGain.gain.value = settings.soundEnabled ? settings.volume : 0;
   audio.enabled = settings.soundEnabled;
   audio.volume = settings.volume;
@@ -3441,7 +3503,6 @@ function openDB() {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = (e) => {
       const d = e.target.result;
-      const tx = e.target.transaction;
       // v2:新建自增 id 的 saves store
       if (!d.objectStoreNames.contains(STORE)) {
         const os = d.createObjectStore(STORE, { keyPath: 'id', autoIncrement: true });
@@ -3467,11 +3528,13 @@ async function saveSlot(name) {
     const db = await openDB();
     if (!db) return null;
     const rec = {
+      version: 2,          // 存档格式版本(预留向前兼容)
       name: name || ('存档 ' + new Date().toLocaleString('zh-CN')),
       seed: worldSeed,
       playerPos: { x: playerPos.x, y: playerPos.y, z: playerPos.z },
       yaw, pitch, cameraMode, isFlying,
       playerHP, breathTimer: 0,
+      dayTime,            // 修复:昼夜时间此前不入存档,读档总是回到早晨
       hotbar, currentSlot,
       modifications: Array.from(modifications.entries()),
       cropTimersData: Array.from(cropTimers.entries()),
@@ -3487,21 +3550,19 @@ async function saveSlot(name) {
   } catch (e) { return null; }
 }
 
-// 覆盖保存当前存档(若 currentSaveId 存在)
-async function saveGame() {
-  if (currentSaveId !== null) return overwriteSave(currentSaveId);
-  return saveSlot();  // 无当前存档则新建
-}
+// 覆盖保存当前存档(若 currentSaveId 存在);无当前存档则新建槽
 async function overwriteSave(id) {
   try {
     const db = await openDB();
     if (!db) return false;
     const rec = {
+      version: 2,
       id, name: ('存档 ' + new Date().toLocaleString('zh-CN')),
       seed: worldSeed,
       playerPos: { x: playerPos.x, y: playerPos.y, z: playerPos.z },
       yaw, pitch, cameraMode, isFlying,
       playerHP, breathTimer: 0,
+      dayTime,
       hotbar, currentSlot,
       doorsData: Array.from(doors.entries()).map(function(e){return [e[0], {x:e[1].x,y:e[1].y,z:e[1].z,type:e[1].type,open:e[1].open,facing:e[1].facing}];}),
       modifications: Array.from(modifications.entries()),  // C2:不能丢失!
@@ -3551,9 +3612,16 @@ async function loadSlot(id) {
       const r = tx.objectStore(STORE).get(id);
       r.onsuccess = () => {
         if (!r.result) { resolve(false); return; }
-        currentSaveId = id;
-        applySave(r.result);
-        resolve(true);
+        try {
+          currentSaveId = id;
+          applySave(r.result);
+          resolve(true);
+        } catch (e) {
+          // 修复:applySave 抛异常时 promise 永不 resolve,"继续游戏"无限挂起;现在降级为读取失败
+          console.error('loadSlot: 存档数据损坏,读取失败', e);
+          currentSaveId = null;
+          resolve(false);
+        }
       };
       r.onerror = () => resolve(false);
     });

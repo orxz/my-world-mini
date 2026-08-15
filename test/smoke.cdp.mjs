@@ -387,9 +387,10 @@ async function main() {
   const t7o = JSON.parse(t7);
   check('T7 modsByChunk reverse index consistency + bucketed generateChunkData', t7o.badPlacement === 0 && t7o.sameAsMap && t7o.afterSet && t7o.afterDel && t7o.afterHardDel && t7o.modApplied, t7);
 
-  // 16.8 T8 greedy meshing: aTile 属性 + 三角形数下降 + 覆盖与独立扫描一致
+  // 16.8 T8 greedy meshing: aTile 属性 + 三角形数下降 + 拓扑覆盖与独立扫描全等
   const t8 = await evl(`(() => {
     const ch = chunks.get(chunkKey(0, 0)) || chunks.values().next().value;
+    const ox2 = ch.cx * 16, oz2 = ch.cz * 16;
     let tris = 0, hasTile = true, hasNonWater = false;
     for (const p of ['solid', 'leaves', 'water']) {
       const m = ch.mesh && ch.mesh[p];
@@ -397,9 +398,33 @@ async function main() {
       tris += m.geometry.index.count / 3;
       if (p !== 'water') { hasNonWater = true; if (!m.geometry.attributes.aTile) hasTile = false; }
     }
-    // 独立扫描可见面数(与旧逐块算法的 quad 数一致,即参考三角形数 = faces*2)
-    let faces = 0;
-    const ox2 = ch.cx * 16, oz2 = ch.cz * 16;
+    // 拓扑等价:从 mesh 反推每个 quad 覆盖的 (cell,面方向) 集合
+    const cov = new Set();
+    for (const p of ['solid', 'leaves', 'water']) {
+      const m = ch.mesh && ch.mesh[p];
+      if (!m) continue;
+      const pos = m.geometry.attributes.position.array;
+      const idx = m.geometry.index.array;
+      const nrm = m.geometry.attributes.normal.array;
+      for (let q = 0; q < idx.length; q += 6) {
+        const ci = [idx[q], idx[q+1], idx[q+2], idx[q+5]];
+        const vs = ci.map(k => [pos[k*3], pos[k*3+1], pos[k*3+2]]);
+        const n = [nrm[ci[0]*3], nrm[ci[0]*3+1], nrm[ci[0]*3+2]];
+        const mn = [0,1,2].map(a => Math.round(Math.min(vs[0][a], vs[1][a], vs[2][a], vs[3][a])));
+        const mx = [0,1,2].map(a => Math.round(Math.max(vs[0][a], vs[1][a], vs[2][a], vs[3][a])));
+        const axis = n[0] !== 0 ? 0 : n[1] !== 0 ? 1 : 2;
+        const s1 = (axis + 1) % 3, s2 = (axis + 2) % 3;
+        for (let u = mn[s1]; u < mx[s1]; u++)
+          for (let v = mn[s2]; v < mx[s2]; v++) {
+            const oc = [0, 0, 0];
+            oc[axis] = n[axis] > 0 ? mn[axis] - 1 : mn[axis];
+            oc[s1] = u; oc[s2] = v;
+            cov.add(oc[0] + '|' + oc[1] + '|' + oc[2] + '|' + axis + '|' + (n[axis] > 0 ? 1 : 0));
+          }
+      }
+    }
+    // 独立扫描可见面集合(第三实现,不依赖两种 builder)
+    const visible = new Set();
     for (let y = 0; y < 48; y++) for (let lz = 0; lz < 16; lz++) for (let lx = 0; lx < 16; lx++) {
       const id = ch.data[chunkIdx(lx, y, lz)];
       if (!id) continue;
@@ -411,13 +436,17 @@ async function main() {
           const ndef = BLOCK_TYPES[nb];
           if (isWater ? (ndef.solid || nb === 'water') : ndef.solid) continue;
         }
-        faces++;
+        const axis = F.n[0] !== 0 ? 0 : F.n[1] !== 0 ? 1 : 2;
+        visible.add(lx + '|' + y + '|' + lz + '|' + axis + '|' + (F.n[axis] > 0 ? 1 : 0));
       }
     }
-    return JSON.stringify({ tris, faces, refTris: faces * 2, hasTile, hasNonWater, reduced: tris < faces * 2 });
+    let onlyCov = 0, onlyVis = 0;
+    for (const k of cov) if (!visible.has(k)) onlyCov++;
+    for (const k of visible) if (!cov.has(k)) onlyVis++;
+    return JSON.stringify({ tris, faces: visible.size, refTris: visible.size * 2, hasTile, hasNonWater, reduced: tris < visible.size * 2, topologyExact: onlyCov === 0 && onlyVis === 0 });
   })()`);
   const t8o = JSON.parse(t8);
-  check('T8 greedy meshing: aTile attr + triangle reduction vs per-block', t8o.hasTile && t8o.hasNonWater && t8o.reduced && t8o.tris > 0, t8);
+  check('T8 greedy meshing: aTile attr + tris reduced + topology == independent scan', t8o.hasTile && t8o.hasNonWater && t8o.reduced && t8o.tris > 0 && t8o.topologyExact === true, t8);
 
   // 17. no JS exceptions during session
   check('no uncaught JS exceptions', jsErrors.length === 0, JSON.stringify(jsErrors.slice(0, 3)));

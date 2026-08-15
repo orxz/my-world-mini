@@ -321,6 +321,8 @@ function buildAtlas() {
       shader.vertexShader = shader.vertexShader
         .replace('#include <uv_pars_vertex>', '#include <uv_pars_vertex>\nattribute vec2 aTile;\nuniform vec2 uTileSize;')
         .replace('#include <uv_vertex>', '#include <uv_vertex>\n#ifdef USE_MAP\n\tvMapUv = aTile + fract( uv ) * uTileSize;\n#endif');
+      // 防御:three 升级改掉 include 名时 replace 静默失效,贴图会大范围错乱而无异常
+      if (shader.vertexShader.indexOf('aTile') < 0) console.warn('chunkTiling: uv_vertex 注入失败,贴图平铺已失效');
     };
     mat.customProgramCacheKey = () => 'chunkTiled';
   };
@@ -636,7 +638,9 @@ function disposeChunkMesh(ch) {
 // 区块网格构建(贪心合并):同面方向 + 同方块类型的连续面合并为大四边形,
 // 三套几何(实体不透明 / 树叶 alphaTest / 水半透明)分别合并。
 // 合并条件仅看 (面方向, 方块 id)——贴图与烘焙色都由二者决定,合并后视觉不变;
-// 贴图重复由材质补丁的 fract 平铺承担(aTile + 局部 uv),顶点色/法线/绕向保持逐块语义
+// 贴图重复由材质补丁的 fract 平铺承担(aTile + 局部 uv),顶点色/法线/绕向保持逐块语义。
+// 已知权衡:贪心引入 1:N 边(T-junction),相邻面接缝处偶有亚像素缝隙
+// (与像素对比 0.0035% 差异同量级,视觉不可辨);区块间不跨边界合并
 function buildChunkMesh(ch) {
   // 按面法线烘焙顶点色(Minecraft 风格:顶亮/侧中/底暗),不依赖光照方向就有立体感
   const FACE_SHADE = [0.86, 0.86, 1.0, 0.55, 0.72, 0.72];  // +x,-x,+y(top),-y(bottom),+z,-z
@@ -3658,7 +3662,8 @@ function collectSaveRecord(id) {
     timestamp: Date.now(),
   };
   // id 只在覆盖保存时写入:add 路径若带 id:undefined,keyPath 求值非法会 DataError
-  if (id !== undefined) rec.id = id;
+  // (!= 同时拦 null:overwriteSave(null) 也会让 put 抛 DataError)
+  if (id != null) rec.id = id;
   return rec;
 }
 

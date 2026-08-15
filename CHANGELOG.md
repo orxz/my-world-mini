@@ -5,6 +5,17 @@
 
 ## [Unreleased]
 
+### 加固(性能轮代码审查)
+- **T8 拓扑断言固化(Important)**:冒烟 T8 从"三角形数下降+属性存在"升级为
+  拓扑全等断言——从 mesh 几何反推每个 quad 覆盖的 (cell,面方向) 集合,与独立扫描
+  的可见面集合做双向差集比对(零差异);能捕获"合并不该合并的面/掩码多剔漏剔/
+  quad 错位"这类静默回归
+- **shader 补丁防御**:uv_vertex 注入失败(three 升级改 include 名)时 console.warn,
+  贴图错乱不再静默
+- **collectSaveRecord 的 id 判空收紧**:`!= null` 同时拦 undefined 与 null,
+  `overwriteSave(null)` 不再可能写出 DataError
+- 注释记录贪心合并的 T-junction 已知权衡(亚像素缝隙,与 0.0035% 像素差异同量级)
+
 ### 性能(贪心网格合并,路线图 4)
 - **同面同材质连续面合并**:`buildChunkMesh` 重写为逐面方向切片扫描 + 贪心扩宽扩高,
   同(面方向,方块 id)的连续面合并为大四边形;实测 121 区块三角形

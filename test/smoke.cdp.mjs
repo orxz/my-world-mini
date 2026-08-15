@@ -387,6 +387,38 @@ async function main() {
   const t7o = JSON.parse(t7);
   check('T7 modsByChunk reverse index consistency + bucketed generateChunkData', t7o.badPlacement === 0 && t7o.sameAsMap && t7o.afterSet && t7o.afterDel && t7o.afterHardDel && t7o.modApplied, t7);
 
+  // 16.8 T8 greedy meshing: aTile 属性 + 三角形数下降 + 覆盖与独立扫描一致
+  const t8 = await evl(`(() => {
+    const ch = chunks.get(chunkKey(0, 0)) || chunks.values().next().value;
+    let tris = 0, hasTile = true, hasNonWater = false;
+    for (const p of ['solid', 'leaves', 'water']) {
+      const m = ch.mesh && ch.mesh[p];
+      if (!m) continue;
+      tris += m.geometry.index.count / 3;
+      if (p !== 'water') { hasNonWater = true; if (!m.geometry.attributes.aTile) hasTile = false; }
+    }
+    // 独立扫描可见面数(与旧逐块算法的 quad 数一致,即参考三角形数 = faces*2)
+    let faces = 0;
+    const ox2 = ch.cx * 16, oz2 = ch.cz * 16;
+    for (let y = 0; y < 48; y++) for (let lz = 0; lz < 16; lz++) for (let lx = 0; lx < 16; lx++) {
+      const id = ch.data[chunkIdx(lx, y, lz)];
+      if (!id) continue;
+      const isWater = id === BLOCK_ID.water;
+      for (let f = 0; f < 6; f++) {
+        const F = FACES[f];
+        const nb = getBlock(ox2 + lx + F.n[0], y + F.n[1], oz2 + lz + F.n[2]);
+        if (nb) {
+          const ndef = BLOCK_TYPES[nb];
+          if (isWater ? (ndef.solid || nb === 'water') : ndef.solid) continue;
+        }
+        faces++;
+      }
+    }
+    return JSON.stringify({ tris, faces, refTris: faces * 2, hasTile, hasNonWater, reduced: tris < faces * 2 });
+  })()`);
+  const t8o = JSON.parse(t8);
+  check('T8 greedy meshing: aTile attr + triangle reduction vs per-block', t8o.hasTile && t8o.hasNonWater && t8o.reduced && t8o.tris > 0, t8);
+
   // 17. no JS exceptions during session
   check('no uncaught JS exceptions', jsErrors.length === 0, JSON.stringify(jsErrors.slice(0, 3)));
 

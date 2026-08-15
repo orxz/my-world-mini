@@ -309,6 +309,23 @@ function buildAtlas() {
   matLeavesChunk = new THREE.MeshLambertMaterial({ map: atlasTexture, alphaTest: 0.1, vertexColors: true });
   // 水用 MeshBasicMaterial(不受光照影响,显示纯清水蓝;Lambert 受法线/光照会压暗变灰)
   matWaterChunk = new THREE.MeshBasicMaterial({ color: 0x2a8fd6, transparent: true, opacity: 0.78, depthWrite: false });
+
+  // 贪心网格合并的贴图平铺:几何 uv 存块级局部坐标(0..w/h),aTile 存贴图原点(u0,v0'),
+  // 顶点着色器里 fract(uv)*tileSize + aTile 实现逐块重复采样——大四边形内每个方块
+  // 仍显示完整贴图,与逐块面视觉一致。水无贴图不参与;注入点在标准 include 上,仅影响区块材质
+  const patchTiling = (mat) => {
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.uTileSize = { value: new THREE.Vector2(1 / cols, 1 / 3) };
+      // r160 的贴图采样走 vMapUv(旧版才是 vUv):在标准 include 之后覆写,
+      // fract(块级局部 uv)*tileSize + 贴图原点 → 大四边形内逐块重复贴图
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <uv_pars_vertex>', '#include <uv_pars_vertex>\nattribute vec2 aTile;\nuniform vec2 uTileSize;')
+        .replace('#include <uv_vertex>', '#include <uv_vertex>\n#ifdef USE_MAP\n\tvMapUv = aTile + fract( uv ) * uTileSize;\n#endif');
+    };
+    mat.customProgramCacheKey = () => 'chunkTiled';
+  };
+  patchTiling(matSolidChunk);
+  patchTiling(matLeavesChunk);
 }
 
 // 给图标/手持物用的独立材质(保留旧的单方块材质,用于 UI 图标和手持模型)
@@ -593,6 +610,18 @@ const FACES = [
   { n: [0, 0,-1], v: [[1,0,0],[0,0,0],[0,1,0],[1,1,0]], face: 'side' },   // -z
 ];
 
+// 贪心合并的逐面扫描参数(由 FACES 推导,不手写):d=法线轴,u/v=面内两轴(取自
+// 角0→角1 与 角0→角3 的边向量,保证合并方向与原逐块面的贴图方向一致),
+// su/sv=两轴方向,o_d=面在法线轴上的平面偏移(正面向=1,负面向=0)
+const FACE_SWEEP = FACES.map(F => {
+  const dAxis = F.n[0] !== 0 ? 0 : (F.n[1] !== 0 ? 1 : 2);
+  const e1 = [F.v[1][0] - F.v[0][0], F.v[1][1] - F.v[0][1], F.v[1][2] - F.v[0][2]];
+  const e2 = [F.v[3][0] - F.v[0][0], F.v[3][1] - F.v[0][1], F.v[3][2] - F.v[0][2]];
+  const uAxis = e1[0] !== 0 ? 0 : (e1[1] !== 0 ? 1 : 2);
+  const vAxis = e2[0] !== 0 ? 0 : (e2[1] !== 0 ? 1 : 2);
+  return { dAxis, uAxis, vAxis, su: e1[uAxis], sv: e2[vAxis], od: F.v[0][dAxis] };
+});
+
 // 释放区块的全部 mesh(实体/树叶/水):几何体 dispose + 移出场景
 // buildChunkMesh 重建 / updateChunks 卸载 / clearWorld 清世界 三处共用,避免遗漏新部位
 function disposeChunkMesh(ch) {
@@ -604,63 +633,94 @@ function disposeChunkMesh(ch) {
   ch.mesh = null;
 }
 
-// 区块网格构建:实体(不透明)/树叶(alphaTest 镂空)/水(半透明)三套几何合并
+// 区块网格构建(贪心合并):同面方向 + 同方块类型的连续面合并为大四边形,
+// 三套几何(实体不透明 / 树叶 alphaTest / 水半透明)分别合并。
+// 合并条件仅看 (面方向, 方块 id)——贴图与烘焙色都由二者决定,合并后视觉不变;
+// 贴图重复由材质补丁的 fract 平铺承担(aTile + 局部 uv),顶点色/法线/绕向保持逐块语义
 function buildChunkMesh(ch) {
   // 按面法线烘焙顶点色(Minecraft 风格:顶亮/侧中/底暗),不依赖光照方向就有立体感
   const FACE_SHADE = [0.86, 0.86, 1.0, 0.55, 0.72, 0.72];  // +x,-x,+y(top),-y(bottom),+z,-z
   const ox = ch.cx * CHUNK_SIZE, oz = ch.cz * CHUNK_SIZE;
-  const positions = [], normals = [], uvs = [], indices = [], colors = [];
-  const lPositions = [], lNormals = [], lUvs = [], lIndices = [], lColors = [];  // 树叶(alphaTest,不透明队列)
-  const wPositions = [], wNormals = [], wUvs = [], wIndices = [];               // 水(半透明)
+  const positions = [], normals = [], uvs = [], tiles = [], indices = [], colors = [];
+  const lPositions = [], lNormals = [], lUvs = [], lTiles = [], lIndices = [], lColors = [];  // 树叶(alphaTest,不透明队列)
+  const wPositions = [], wNormals = [], wUvs = [], wIndices = [];                             // 水(半透明,无贴图)
+  const axisLen = [CHUNK_SIZE, WORLD_HEIGHT, CHUNK_SIZE];
+  const cell = [0, 0, 0], L = [0, 0, 0];
 
-  for (let y = 0; y < WORLD_HEIGHT; y++) {
-    for (let lz = 0; lz < CHUNK_SIZE; lz++) {
-      for (let lx = 0; lx < CHUNK_SIZE; lx++) {
-        const id = ch.data[chunkIdx(lx, y, lz)];
-        if (id === 0) continue;
-        const type = ID_TO_BLOCK[id];
-        const wx = ox + lx, wz = oz + lz;
-        const isWater = type === 'water';
-        const isLeaves = type === 'leaves';   // 树叶单独几何:与实体分材质分队列
+  for (let f = 0; f < 6; f++) {
+    const F = FACES[f], S = FACE_SWEEP[f];
+    const uLen = axisLen[S.uAxis], vLen = axisLen[S.vAxis];
+    const mask = new Int16Array(uLen * vLen);
 
-        for (let f = 0; f < 6; f++) {
-          const F = FACES[f];
-          const nbx = wx + F.n[0], nby = y + F.n[1], nbz = wz + F.n[2];
-          const neighbor = getBlock(nbx, nby, nbz);
-          // 面剔除规则:
-          //  - 当前是水:相邻"水"或"固体"都不显示(水内部界面)
-          //  - 当前是固体:相邻"固体"不显示;但相邻"水"仍要显示(透过半透明水能看到海底/水边)
-          if (neighbor) {
-            const ndef = BLOCK_TYPES[neighbor];
-            if (isWater) {
-              if (ndef.solid || neighbor === 'water') continue;
-            } else {
-              if (ndef.solid) continue;
-            }
+    for (let d = 0; d < axisLen[S.dAxis]; d++) {
+      // 1) 切片掩码:与旧逐块剔除规则完全一致(水:邻水/邻固体隐藏;固体:邻固体隐藏)
+      let any = false;
+      for (let j = 0; j < vLen; j++) {
+        for (let i = 0; i < uLen; i++) {
+          cell[S.dAxis] = d; cell[S.uAxis] = i; cell[S.vAxis] = j;
+          const id = ch.data[chunkIdx(cell[0], cell[1], cell[2])];
+          let m = 0;
+          if (id) {
+            const isWater = id === BLOCK_ID.water;
+            const nb = getBlock(ox + cell[0] + F.n[0], cell[1] + F.n[1], oz + cell[2] + F.n[2]);
+            if (nb) {
+              const ndef = BLOCK_TYPES[nb];
+              if (isWater ? !(ndef.solid || nb === 'water') : !ndef.solid) m = id;
+            } else m = id;
           }
+          mask[i + j * uLen] = m;
+          if (m) any = true;
+        }
+      }
+      if (!any) continue;
 
-          // UV
-          const uvBox = atlasUV[type][F.face];
-          const [u0, v0, u1, v1] = uvBox;
-          const base = F.v;
-          // 顶点顺序对应 UV: (u0,v0),(u1,v0),(u1,v1),(u0,v1)
-          const faceUV = [[u0, v1], [u1, v1], [u1, v0], [u0, v0]];
+      // 2) 贪心合并:沿 u 扩宽,再沿 v 扩高(掩码值相同才合并)
+      for (let j = 0; j < vLen; j++) {
+        for (let i = 0; i < uLen; ) {
+          const id = mask[i + j * uLen];
+          if (!id) { i++; continue; }
+          let w = 1;
+          while (i + w < uLen && mask[i + w + j * uLen] === id) w++;
+          let h = 1;
+          grow: while (j + h < vLen) {
+            for (let k = 0; k < w; k++) if (mask[i + k + (j + h) * uLen] !== id) break grow;
+            h++;
+          }
+          for (let dj = 0; dj < h; dj++) for (let k = 0; k < w; k++) mask[i + k + (j + dj) * uLen] = 0;
 
-          const tgtP = isWater ? wPositions : isLeaves ? lPositions : positions;
-          const tgtN = isWater ? wNormals : isLeaves ? lNormals : normals;
-          const tgtU = isWater ? wUvs : isLeaves ? lUvs : uvs;
-          const tgtI = isWater ? wIndices : isLeaves ? lIndices : indices;
-          const tgtC = isLeaves ? lColors : colors;
-          // 烘焙顶点色(按面方向,非水才加)
+          // 3) 发射合并四边形:角序 [P0, P0+u*w, P0+u*w+v*h, P0+v*h] 与旧逐块面的
+          //    [v0,v1,v2,v3] 同构(w=h=1 时完全一致),法线/绕向/贴图方向不变
+          const type = ID_TO_BLOCK[id];
+          const isWater = type === 'water', isLeaves = type === 'leaves';
+          const tp = isWater ? wPositions : isLeaves ? lPositions : positions;
+          const tn = isWater ? wNormals : isLeaves ? lNormals : normals;
+          const tu = isWater ? wUvs : isLeaves ? lUvs : uvs;
+          const tt = isWater ? null : isLeaves ? lTiles : tiles;
+          const ti = isWater ? wIndices : isLeaves ? lIndices : indices;
+          const tc = isWater ? null : isLeaves ? lColors : colors;
           const shade = FACE_SHADE[f];
-          const start = tgtP.length / 3;
+          const uvBox = atlasUV[type][F.face];
+          const tU = uvBox[0], tV = uvBox[3];   // 贴图原点 = 角0 的贴图坐标
+          L[S.dAxis] = d + S.od;
+          L[S.uAxis] = S.su > 0 ? i : i + w;
+          L[S.vAxis] = S.sv > 0 ? j : j + h;
+          const cu = S.uAxis, cv = S.vAxis;
+          const quv = [[0, 0], [S.su * w, 0], [S.su * w, S.sv * h], [0, S.sv * h]];
+          const lu = [0, w, w, 0], lv = [0, 0, h, h];
+          const start = tp.length / 3;
           for (let k = 0; k < 4; k++) {
-            tgtP.push(wx + base[k][0], y + base[k][1], wz + base[k][2]);
-            tgtN.push(F.n[0], F.n[1], F.n[2]);
-            tgtU.push(faceUV[k][0], faceUV[k][1]);
-            if (!isWater) tgtC.push(shade, shade, shade);
+            tp.push(
+              ox + L[0] + (cu === 0 ? quv[k][0] : 0) + (cv === 0 ? quv[k][1] : 0),
+              L[1] + (cu === 1 ? quv[k][0] : 0) + (cv === 1 ? quv[k][1] : 0),
+              oz + L[2] + (cu === 2 ? quv[k][0] : 0) + (cv === 2 ? quv[k][1] : 0)
+            );
+            tn.push(F.n[0], F.n[1], F.n[2]);
+            tu.push(lu[k], lv[k]);
+            if (tt) tt.push(tU, tV);
+            if (tc) tc.push(shade, shade, shade);
           }
-          tgtI.push(start, start + 1, start + 2, start, start + 2, start + 3);
+          ti.push(start, start + 1, start + 2, start, start + 2, start + 3);
+          i += w;
         }
       }
     }
@@ -671,25 +731,26 @@ function buildChunkMesh(ch) {
   ch.mesh = {};
   ch.meshDirty = false;
 
-  const buildGeo = (P, N, U, I, C) => {
+  const buildGeo = (P, N, U, I, C, T) => {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
     g.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
     g.setAttribute('uv', new THREE.Float32BufferAttribute(U, 2));
+    if (T) g.setAttribute('aTile', new THREE.Float32BufferAttribute(T, 2));
     if (C) g.setAttribute('color', new THREE.Float32BufferAttribute(C, 3));
     g.setIndex(I);
     return g;
   };
 
   if (positions.length) {
-    const m = new THREE.Mesh(buildGeo(positions, normals, uvs, indices, colors), matSolidChunk);
+    const m = new THREE.Mesh(buildGeo(positions, normals, uvs, indices, colors, tiles), matSolidChunk);
     m.userData.isChunk = true;
     m.userData.cx = ch.cx; m.userData.cz = ch.cz;
     scene.add(m);
     ch.mesh.solid = m;
   }
   if (lPositions.length) {
-    const lm = new THREE.Mesh(buildGeo(lPositions, lNormals, lUvs, lIndices, lColors), matLeavesChunk);
+    const lm = new THREE.Mesh(buildGeo(lPositions, lNormals, lUvs, lIndices, lColors, lTiles), matLeavesChunk);
     lm.userData.isChunk = true;
     lm.userData.cx = ch.cx; lm.userData.cz = ch.cz;
     scene.add(lm);

@@ -301,6 +301,41 @@ async function main() {
   const t5o = JSON.parse(t5);
   check('T5 durability refresh is partial (canvas kept, width updated)', t5o.kept === true && t5o.width === '25%', t5);
 
+  // 16.5 T6 hold-to-mine: auto re-hit + crack overlay stage + instant mining
+  const t6 = await evl(`(async () => {
+    const _s = (ms) => new Promise((r) => setTimeout(r, ms));
+    const _f = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    document.getElementById('overlay').classList.add('hidden');
+    playerPos.set(0.5, 40, 0.5); velocity.set(0, 0, 0); isFlying = true;
+    yaw = 0; pitch = -0.5;
+    const dy = Math.sin(pitch), dz = -Math.cos(pitch);
+    const bx = Math.floor(0.5), by = Math.floor(40 + dy * 3), bz = Math.floor(0.5 + dz * 3);
+    setBlock(bx, by, bz, 'stone');
+    // a) 空手(stone cost 5):首击 + 按住自动复击(250ms 节拍),进度累积,裂纹阶段与进度一致
+    hotbar[0] = null; selectSlot(0);
+    miningHeld = true; lastMiningTick = performance.now(); breakBlock();
+    await _s(700);
+    miningHeld = false; await _f();          // 停拍后读稳定状态(animate 已按当前进度刷新裂纹)
+    const p2 = breakProgress;                // 手动首击 + ~2 次节拍复击(慢帧容忍 2..4)
+    const cracked = !!(crackMesh && crackTextures && crackTextures.length === 10 && crackMesh.visible === true);
+    const stageOK = !!(crackMesh && crackMesh.material.map === crackTextures[Math.min(9, Math.floor((p2 / breakTargetCost) * 10))]);
+    // b) 挖空后裂纹隐藏
+    for (let i = 0; i < 12 && getBlock(bx, by, bz) !== null; i++) { breakBlock(); }
+    await _f();
+    const cleared = getBlock(bx, by, bz) === null && crackMesh.visible === false;
+    // c) Instant Mining:木镐对石头一击即碎
+    hotbar[0] = { kind: 'tool', id: 'pickaxe_wood', durability: 60 };
+    selectSlot(0);
+    setBlock(bx, by, bz, 'stone');
+    breakTargetKey = null; breakProgress = 0;
+    breakBlock();
+    const instant = getBlock(bx, by, bz) === null && breakProgress === 0;
+    setBlock(bx, by, bz, null);
+    return JSON.stringify({ p2, accumulated: p2 >= 2 && p2 <= 4, cracked, stageOK, cleared, instant });
+  })()`, true);
+  const t6o = JSON.parse(t6);
+  check('T6 hold-to-mine accumulates + crack overlay + instant mine', t6o.accumulated && t6o.cracked && t6o.stageOK && t6o.cleared && t6o.instant, t6);
+
   // 17. no JS exceptions during session
   check('no uncaught JS exceptions', jsErrors.length === 0, JSON.stringify(jsErrors.slice(0, 3)));
 

@@ -773,6 +773,10 @@ let shieldActive = 0;
 
 let breakTargetKey = null;
 let breakProgress = 0;
+let breakTargetCost = 1;       // 当前破坏目标总耗时(次数),裂纹阶段换算用
+let miningHeld = false;        // 按住左键持续挖掘(mousedown 置位,mouseup/失锁/暂停复位)
+let lastMiningTick = 0;
+const MINING_INTERVAL = 250;   // 持续挖掘自动复击间隔(ms),对齐 MC 挥击节奏
 let inventoryOpen = false;
 let gameStarted = false;   // 是否已进入游戏(不支持 pointer lock 的设备用此标志驱动物理更新)
 const IS_TOUCH_DEVICE = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
@@ -803,6 +807,46 @@ const highlightBox = new THREE.LineSegments(
   new THREE.EdgesGeometry(new THREE.BoxGeometry(1.002, 1.002, 1.002)),
   new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.4 })
 );
+
+// 破坏裂纹覆盖层(MC 风格 10 阶):程序化裂纹贴图,阶段越高裂纹越密
+// 懒构建:首次显示裂纹时才生成(与 highlightBox 同为常驻单例,无需 dispose)
+let crackTextures = null, crackMesh = null;
+function buildCrackTextures() {
+  if (crackTextures) return;
+  crackTextures = [];
+  for (let stage = 0; stage < 10; stage++) {
+    const c = document.createElement('canvas');
+    c.width = c.height = 16;
+    const ctx = c.getContext('2d');
+    let st = (stage * 2654435761 + 12345) >>> 0;   // 每阶段固定种子:确定性生成
+    const rand = () => { st = (st * 1664525 + 1013904223) >>> 0; return st / 4294967296; };
+    ctx.strokeStyle = 'rgba(20,20,20,0.85)';
+    ctx.lineWidth = 1;
+    const cracks = 2 + stage * 2;   // 裂纹条数随阶段加密
+    for (let i = 0; i < cracks; i++) {
+      let x = 8 + (rand() - 0.5) * 4, y = 8 + (rand() - 0.5) * 4;
+      ctx.beginPath();
+      ctx.moveTo(Math.floor(x), Math.floor(y));
+      const segs = 2 + Math.floor(rand() * 3);
+      for (let s = 0; s < segs; s++) {
+        x += (rand() - 0.5) * 9; y += (rand() - 0.5) * 9;
+        ctx.lineTo(Math.floor(Math.max(0, Math.min(15, x))), Math.floor(Math.max(0, Math.min(15, y))));
+      }
+      ctx.stroke();
+    }
+    const tex = new THREE.CanvasTexture(c);
+    tex.magFilter = THREE.NearestFilter;
+    tex.minFilter = THREE.NearestFilter;
+    crackTextures.push(tex);
+  }
+  crackMesh = new THREE.Mesh(
+    new THREE.BoxGeometry(1.002, 1.002, 1.002),
+    new THREE.MeshBasicMaterial({ map: crackTextures[0], transparent: true, depthWrite: false })
+  );
+  crackMesh.visible = false;
+  crackMesh.renderOrder = 2;   // 在水(1)之后叠加
+  scene.add(crackMesh);
+}
 
 // 云朵系统:扁平白色半透明面片,漂浮在高空,缓慢飘动
 const clouds = [];
@@ -1900,7 +1944,7 @@ function setupInput() {
 
   document.addEventListener('pointerlockchange', () => {
     const locked = document.pointerLockElement === renderer.domElement;
-    if (!locked) for (const code in keys) keys[code] = false;
+    if (!locked) { for (const code in keys) keys[code] = false; miningHeld = false; }
     if (locked) {
       overlay.classList.add('hidden');
       pauseMenu.classList.add('hidden');
@@ -2063,9 +2107,10 @@ function setupInput() {
   });
   renderer.domElement.addEventListener('mousedown', (e) => {
     if (document.pointerLockElement !== renderer.domElement) return;
-    if (e.button === 0) breakBlock();
+    if (e.button === 0) { miningHeld = true; lastMiningTick = performance.now(); breakBlock(); }
     else if (e.button === 2) placeBlock();
   });
+  addEventListener('mouseup', (e) => { if (e.button === 0) miningHeld = false; });
   renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
 
   addEventListener('wheel', (e) => {
@@ -2259,12 +2304,15 @@ function breakBlock() {
   if (type === 'water') { showToast('水不能破坏'); return; }
   const def = BLOCK_TYPES[type];
 
-  const cost = breakCost(type);
   const tool = currentTool();
+  // Instant Mining(对齐 MC 创造手感):工具类别与方块匹配(any 类装饰方块任意工具)时一击即碎
+  const instant = tool && (TOOL_TYPES[tool.id].tool === def.tool || def.tool === 'any');
+  const cost = instant ? 1 : breakCost(type);
   const key = blockKey(t.x, t.y, t.z);
   if (breakTargetKey !== key) {
     breakTargetKey = key;
     breakProgress = 0;
+    breakTargetCost = cost;
   }
   breakProgress++;
   showBreakOverlay(t, breakProgress / cost);
@@ -3056,6 +3104,14 @@ function animate() {
     }
   }
 
+  // 按住左键持续挖掘:固定节拍自动复击(mousedown 已做首击;松开/失锁由输入侧复位)
+  // 手持材料时不复击(单次点击的"不能破坏"提示不刷屏)
+  if (miningHeld && now - lastMiningTick >= MINING_INTERVAL) {
+    lastMiningTick = now;
+    const it = hotbar[currentSlot];
+    if (!it || it.kind !== 'item') { swingHoldItem(); breakBlock(); }
+  }
+
   const target = raycastTarget();
   if (target) {
     highlightBox.visible = true;
@@ -3067,6 +3123,15 @@ function animate() {
   if (curKey !== breakTargetKey && breakProgress > 0) {
     breakProgress = 0;
     hideBreakOverlay();
+  }
+  // 破坏裂纹(MC 风格 10 阶):有进度且仍瞄准同一目标时,在方块表面叠加对应阶段贴图
+  if (target && breakProgress > 0 && curKey === breakTargetKey) {
+    if (!crackMesh) buildCrackTextures();
+    crackMesh.material.map = crackTextures[Math.min(9, Math.floor((breakProgress / breakTargetCost) * 10))];
+    crackMesh.position.set(target.x + 0.5, target.y + 0.5, target.z + 0.5);
+    crackMesh.visible = true;
+  } else if (crackMesh) {
+    crackMesh.visible = false;
   }
 
   // 昼夜循环:推进 dayTime 并调整光照/天空/天体(updateDayNight 内部仅在非水下时覆盖背景/雾)

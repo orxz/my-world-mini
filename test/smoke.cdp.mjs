@@ -9,7 +9,9 @@
 //   2) 运行: node test/smoke.cdp.mjs
 // 覆盖:P0/P1 修复回归 —— 触屏物理(B1)、门跨卸载持久化(B2)、
 //   树木跨区块标脏(B3)、农作物计时器(B4)、存档往返(改动/位置/门状态)、
-//   损坏存档防御(B12)、合成配方+耐久注入、FOV 设置、死亡重生状态、无未捕获异常。
+//   损坏存档防御(B12)、合成配方+耐久注入、FOV 设置、死亡重生状态、
+//   暂停入口+条件保存(T1)、第三人称 FOV(T2)、广场差量存档+圆盘禁树(T3)、
+//   区块材质三分(T4)、耐久条局部刷新(T5)、无未捕获异常。
 // ============================================================
 // CDP deep smoke test for myword (run against headless Chrome with --remote-debugging-port=9333)
 const CDP = 'http://127.0.0.1:9333';
@@ -201,7 +203,105 @@ async function main() {
   const rf = await evl(`(() => { isFlying = true; respawnPlayer(); return isFlying; })()`);
   check('respawn clears flying state', rf === false, 'isFlying=' + rf);
 
-  // 12. no JS exceptions during session
+  // 12. T1 pause menu entry (touch ≡ path) + autosave only when dirty
+  const t1 = await evl(`(() => {
+    // 共用入口 showPauseMenu:菜单显示;无改动时不触发保存,有改动时才写库
+    window.__saveCalls = 0;
+    const orig = overwriteSave;
+    overwriteSave = function() { window.__saveCalls++; return orig.apply(this, arguments); };
+    saveDirty = false;
+    showPauseMenu();
+    const menuShown = !document.getElementById('pause-menu').classList.contains('hidden');
+    const noSaveWhenClean = window.__saveCalls === 0;
+    saveDirty = true;
+    showPauseMenu();
+    const savedWhenDirty = window.__saveCalls === 1;
+    overwriteSave = orig;
+    document.getElementById('pause-menu').classList.add('hidden');
+    return JSON.stringify({ menuShown, noSaveWhenClean, savedWhenDirty });
+  })()`);
+  const t1obj = JSON.parse(t1);
+  check('T1 showPauseMenu: menu shows + autosave only when dirty', t1obj.menuShown === true && t1obj.noSaveWhenClean === true && t1obj.savedWhenDirty === true, t1);
+
+  // 13. T2 third-person camera respects settings.fov (was hardcoded 70)
+  const fov3 = await evl(`(() => {
+    const saved = settings.fov;
+    settings.fov = 95;
+    cameraMode = 1;
+    updateThirdPersonCamera();
+    const f = camera.fov;
+    cameraMode = 0;
+    settings.fov = saved;
+    camera.fov = saved; camera.updateProjectionMatrix();
+    return f;
+  })()`);
+  check('T2 third-person camera uses settings.fov (not hardcoded 70)', fov3 === 95, 'fov=' + fov3);
+
+  // 14. T3 spawn plaza stores only diffs vs natural terrain + layout intact + no trees in disk
+  const t3 = await evl(`(() => {
+    // 采样列所在区块先确保加载(save/load 后玩家在远处,原点周边可能已卸载)
+    for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) ensureChunk(dx, dz);
+    // a) 差量不变式:每条广场改动都必须与自然地形不同(否则是冗余条目)
+    let checked = 0, bad = 0;
+    for (const [k, v] of modifications) {
+      const p = k.split(',');
+      if (naturalBlockAt(+p[0], +p[1], +p[2]) === v) bad++;
+      checked++;
+    }
+    // b) 广场实际布局不受差量化影响:表面草/外圈石环/喷泉水池/石柱/Owen 字样首笔
+    //    采样点选取:(0,20,15) 避开字样垫/喷泉/花坛 → 草;(0,20,28) 石环 d=28 且不落入
+    //    任何像素画(它们 z∈[-22..22]、x∈[-22..30],z=28 必不在画内)
+    const layoutOK = getBlock(0, 20, 15) === 'grass'
+      && getBlock(0, 20, 28) === 'stone'
+      && getBlock(0, 20, 8) === 'water'
+      && getBlock(0, 22, 8) === 'stone'
+      && getBlock(-12, 21, -3) === 'leaves';
+    // c) 广场圆盘内不长树:对广场内草地列直接种树,应被半径守卫拦下(数据不变)
+    const ch = chunks.get(chunkKey(0, 0));
+    const i0 = ch ? ch.data[chunkIdx(5, 21, 5)] : 0;
+    plantTreeAt(5, 20, 5);
+    const i1 = ch ? ch.data[chunkIdx(5, 21, 5)] : 0;
+    return JSON.stringify({ checked, bad, size: modifications.size, layoutOK, treeGuard: i0 === i1 });
+  })()`);
+  const t3o = JSON.parse(t3);
+  check('T3 plaza modifications are true diffs (no redundant entries)', t3o.bad === 0 && t3o.checked > 1000, t3);
+  check('T3 plaza layout intact + no tree planted inside disk', t3o.layoutOK === true && t3o.treeGuard === true, t3);
+
+  // 15. T4 chunk materials split: opaque solids / alphaTest leaves / transparent water
+  const t4 = await evl(`(() => {
+    let target = null;
+    for (const ch of chunks.values()) {
+      for (let i = 0; i < ch.data.length; i++) if (ch.data[i] === BLOCK_ID.leaves) { target = ch; break; }
+      if (target) break;
+    }
+    let leavesMesh = false;
+    if (target) { buildChunkMesh(target); leavesMesh = !!(target.mesh && target.mesh.leaves); }
+    return JSON.stringify({
+      solidOpaque: !!matSolidChunk && matSolidChunk.transparent !== true && !matSolidChunk.alphaTest,
+      leavesMat: !!matLeavesChunk && matLeavesChunk.alphaTest > 0,
+      waterTransparent: !!matWaterChunk && matWaterChunk.transparent === true,
+      foundLeavesChunk: !!target, leavesMesh,
+    });
+  })()`);
+  const t4o = JSON.parse(t4);
+  check('T4 chunk materials split (opaque/leaves/water)', t4o.solidOpaque && t4o.leavesMat && t4o.waterTransparent && (!t4o.foundLeavesChunk || t4o.leavesMesh), t4);
+
+  // 16. T5 durability bar partial refresh (no full hotbar rebuild)
+  const t5 = await evl(`(() => {
+    hotbar[0] = { kind: 'tool', id: 'pickaxe_wood', durability: 60 };
+    currentSlot = 0; buildHotbar();
+    const q = '#hotbar .slot[data-slot="0"]';
+    const canvas1 = document.querySelector(q + ' canvas');
+    hotbar[0].durability = 15;
+    refreshSlotDurability(0);
+    const canvas2 = document.querySelector(q + ' canvas');
+    const width = document.querySelector(q + ' .dur span').style.width;
+    return JSON.stringify({ kept: canvas1 === canvas2 && canvas1.isConnected, width });
+  })()`);
+  const t5o = JSON.parse(t5);
+  check('T5 durability refresh is partial (canvas kept, width updated)', t5o.kept === true && t5o.width === '25%', t5);
+
+  // 17. no JS exceptions during session
   check('no uncaught JS exceptions', jsErrors.length === 0, JSON.stringify(jsErrors.slice(0, 3)));
 
   console.log(results.join('\n'));

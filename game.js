@@ -260,6 +260,7 @@ function drawBlockFace(ctx, type, face, s, seedRand) {
 const ATLAS_TILE = 16;       // 每格 16 像素
 let atlasTexture = null;     // CanvasTexture
 let matSolidChunk = null;    // 共享区块实体材质(性能:避免每区块 new)
+let matLeavesChunk = null;   // 共享树叶材质(alphaTest 镂空,不透明队列)
 let matWaterChunk = null;    // 共享水材质
 let atlasUV = {};            // type -> { top:[u0,v0,u1,v1], side, bottom } (已归一化到 0..1)
 
@@ -301,8 +302,11 @@ function buildAtlas() {
   atlasTexture.minFilter = THREE.NearestFilter;
   atlasTexture.colorSpace = THREE.SRGBColorSpace;
 
-  // 共享区块材质:所有区块的 solid/water mesh 复用这两个材质,避免每区块 new ~242 个 Material
-  matSolidChunk = new THREE.MeshLambertMaterial({ map: atlasTexture, alphaTest: 0.1, transparent: true, vertexColors: true });  // vertexColors:烘焙面色
+  // 共享区块材质:所有区块的 solid/leaves/water mesh 复用这三个材质,避免每区块 new ~360 个 Material
+  // 实体:纯不透明(不进透明队列,保留深度测武的 early-z 剔除);
+  // 树叶:alphaTest 镂空但不 transparent(仍在不透明队列,深度正确且不被排序)
+  matSolidChunk = new THREE.MeshLambertMaterial({ map: atlasTexture, vertexColors: true });  // vertexColors:烘焙面色
+  matLeavesChunk = new THREE.MeshLambertMaterial({ map: atlasTexture, alphaTest: 0.1, vertexColors: true });
   // 水用 MeshBasicMaterial(不受光照影响,显示纯清水蓝;Lambert 受法线/光照会压暗变灰)
   matWaterChunk = new THREE.MeshBasicMaterial({ color: 0x2a8fd6, transparent: true, opacity: 0.78, depthWrite: false });
 }
@@ -332,6 +336,7 @@ let RENDER_DISTANCE = 5;  // let:可被设置修改      // 加载半径(chunk �
 const FOG_NEAR = 30;
 let FOG_FAR = (RENDER_DISTANCE * CHUNK_SIZE) + 8;  // let:随 RENDER_DISTANCE 设置变化
 const SEA_LEVEL = 14;           // 海平面
+const PLAZA_DISK_R = 28;        // 出生广场圆盘半径(buildSpawnPlaza 与 plantTreeAt 排除区共用)
 
 // 区块存储: key "cx,cz" -> chunk
 const chunks = new Map();
@@ -344,6 +349,29 @@ function blockKey(x, y, z) { return `${x},${y},${z}`; }
 // 噪声/生物群系/地形函数已提取到 worldgen.js(由 <script> 全局加载,此处不再定义)
 
 
+// 列级自然地形信息(与 generateChunkData 完全一致的噪声调用链)
+// 供出生广场差量记录使用:只存「与自然地形不同」的方块,存档体积大幅缩小
+function naturalColumnInfo(wx, wz) {
+  const mtn = fbm2D(wx * 0.008, wz * 0.008, worldSeed + 555, 4);  // 山地强度(算一次,biome/height 共用)
+  const biome = biomeAt(wx, wz, worldSeed, mtn);
+  const height = heightAt(wx, wz, worldSeed, biome, mtn);
+  return { biome, height };
+}
+// 某列某层的自然方块(仅地形,不含树木/玩家改动)——generateChunkData 的单一数据源,
+// 保证差量比较与地形生成永不分叉
+function terrainBlockAt(y, biome, height) {
+  const b = BIOMES[biome];
+  if (y > height) return y <= SEA_LEVEL ? 'water' : null;   // 海平面以下填水,以上为空气
+  if (y === height) return (height <= SEA_LEVEL && b.top === 'grass') ? 'sand' : b.top;  // 海岸表层变沙
+  if (y >= height - 3) return b.sub;
+  return 'stone';
+}
+// 世界坐标的自然方块(col 可传入预计算的列信息,避免重复噪声计算)
+function naturalBlockAt(wx, y, wz, col) {
+  const c = col || naturalColumnInfo(wx, wz);
+  return terrainBlockAt(y, c.biome, c.height);
+}
+
 // 生成一个区块的数据(16×WORLD_HEIGHT×16)
 function generateChunkData(cx, cz) {
   const data = new Uint8Array(CHUNK_SIZE * WORLD_HEIGHT * CHUNK_SIZE);
@@ -352,25 +380,10 @@ function generateChunkData(cx, cz) {
   for (let lx = 0; lx < CHUNK_SIZE; lx++) {
     for (let lz = 0; lz < CHUNK_SIZE; lz++) {
       const wx = ox + lx, wz = oz + lz;
-      const mtn = fbm2D(wx * 0.008, wz * 0.008, worldSeed + 555, 4);  // 山地强度(算一次,biome/height 共用)
-      const biome = biomeAt(wx, wz, worldSeed, mtn);
-      const height = heightAt(wx, wz, worldSeed, biome, mtn);
-      const b = BIOMES[biome];
+      const { biome, height } = naturalColumnInfo(wx, wz);
 
       for (let y = 0; y <= Math.max(height, SEA_LEVEL); y++) {
-        let type = null;
-        if (y > height) {
-          // 海平面以下填水
-          if (y <= SEA_LEVEL) type = 'water';
-        } else if (y === height) {
-          type = b.top;
-          // 海岸:海平面附近表层变沙
-          if (height <= SEA_LEVEL && (b.top === 'grass')) type = 'sand';
-        } else if (y >= height - 3) {
-          type = b.sub;
-        } else {
-          type = 'stone';
-        }
+        const type = terrainBlockAt(y, biome, height);
         if (type) data[chunkIdx(lx, y, lz)] = BLOCK_ID[type];
       }
 
@@ -403,6 +416,9 @@ function chunkIdx(lx, y, lz) {
 // 在世界坐标系种一棵树:树干/树叶可跨越区块边界,写入对应区块的数据数组
 // 玩家改动 diff 优先级最高 —— 如果玩家在该位置改过方块,保留玩家的改动
 function plantTreeAt(wx, baseY, wz) {
+  // 出生广场圆盘内不长树:差量记录后广场表面可能与自然地表完全重合(该列没有 modifications),
+  // 下方"树基必须是未改动地表"的检查会放行 → 广场上冒出随机树;显式按半径排除,与全量记录时期行为一致
+  if (wx * wx + wz * wz <= PLAZA_DISK_R * PLAZA_DISK_R) return;
   // 树基合法性检查:玩家改动过的地表(出生广场/玩家建筑)不长树;
   // 树基必须是自然地表,且上方一格为空(否则树干被埋,只长出悬浮树冠)
   if (modifications.has(blockKey(wx, baseY, wz))) return;
@@ -445,7 +461,7 @@ function ensureChunk(cx, cz) {
   const key = chunkKey(cx, cz);
   let ch = chunks.get(key);
   if (!ch) {
-    ch = { cx, cz, key, data: generateChunkData(cx, cz), mesh: null, meshDirty: true };
+    ch = { cx, cz, key, data: generateChunkData(cx, cz), mesh: null, meshDirty: true, treesGrown: false };
     chunks.set(key, ch);
     // 本区块生成时积累的待种树:现在本区块数据已就绪,种下
     // 同时检查相邻区块(半径2,树冠最远延伸)中可能伸入本区块的树
@@ -468,6 +484,8 @@ function ensureChunk(cx, cz) {
 function growTreesInChunk(cx, cz) {
   const ch = chunks.get(chunkKey(cx, cz));
   if (!ch) return;
+  if (ch.treesGrown) return;   // 已种过:确定性幂等,跳过 ~6400 列噪声重扫(ensureChunk 每个新区块会对 5×5 邻域重复调用)
+  ch.treesGrown = true;
   const ox = cx * CHUNK_SIZE, oz = cz * CHUNK_SIZE;
   for (let lx = 0; lx < CHUNK_SIZE; lx++) {
     for (let lz = 0; lz < CHUNK_SIZE; lz++) {
@@ -540,13 +558,25 @@ const FACES = [
   { n: [0, 0,-1], v: [[1,0,0],[0,0,0],[0,1,0],[1,1,0]], face: 'side' },   // -z
 ];
 
-// 实心方块网格(不透明 + 树叶 alphaTest)
+// 释放区块的全部 mesh(实体/树叶/水):几何体 dispose + 移出场景
+// buildChunkMesh 重建 / updateChunks 卸载 / clearWorld 清世界 三处共用,避免遗漏新部位
+function disposeChunkMesh(ch) {
+  if (!ch.mesh) return;
+  for (const part of ['solid', 'leaves', 'water']) {
+    const m = ch.mesh[part];
+    if (m) { scene.remove(m); m.geometry.dispose(); }
+  }
+  ch.mesh = null;
+}
+
+// 区块网格构建:实体(不透明)/树叶(alphaTest 镂空)/水(半透明)三套几何合并
 function buildChunkMesh(ch) {
   // 按面法线烘焙顶点色(Minecraft 风格:顶亮/侧中/底暗),不依赖光照方向就有立体感
   const FACE_SHADE = [0.86, 0.86, 1.0, 0.55, 0.72, 0.72];  // +x,-x,+y(top),-y(bottom),+z,-z
   const ox = ch.cx * CHUNK_SIZE, oz = ch.cz * CHUNK_SIZE;
   const positions = [], normals = [], uvs = [], indices = [], colors = [];
-  const wPositions = [], wNormals = [], wUvs = [], wIndices = []; // 水面/透明
+  const lPositions = [], lNormals = [], lUvs = [], lIndices = [], lColors = [];  // 树叶(alphaTest,不透明队列)
+  const wPositions = [], wNormals = [], wUvs = [], wIndices = [];               // 水(半透明)
 
   for (let y = 0; y < WORLD_HEIGHT; y++) {
     for (let lz = 0; lz < CHUNK_SIZE; lz++) {
@@ -556,6 +586,7 @@ function buildChunkMesh(ch) {
         const type = ID_TO_BLOCK[id];
         const wx = ox + lx, wz = oz + lz;
         const isWater = type === 'water';
+        const isLeaves = type === 'leaves';   // 树叶单独几何:与实体分材质分队列
 
         for (let f = 0; f < 6; f++) {
           const F = FACES[f];
@@ -580,10 +611,11 @@ function buildChunkMesh(ch) {
           // 顶点顺序对应 UV: (u0,v0),(u1,v0),(u1,v1),(u0,v1)
           const faceUV = [[u0, v1], [u1, v1], [u1, v0], [u0, v0]];
 
-          const tgtP = isWater ? wPositions : positions;
-          const tgtN = isWater ? wNormals : normals;
-          const tgtU = isWater ? wUvs : uvs;
-          const tgtI = isWater ? wIndices : indices;
+          const tgtP = isWater ? wPositions : isLeaves ? lPositions : positions;
+          const tgtN = isWater ? wNormals : isLeaves ? lNormals : normals;
+          const tgtU = isWater ? wUvs : isLeaves ? lUvs : uvs;
+          const tgtI = isWater ? wIndices : isLeaves ? lIndices : indices;
+          const tgtC = isLeaves ? lColors : colors;
           // 烘焙顶点色(按面方向,非水才加)
           const shade = FACE_SHADE[f];
           const start = tgtP.length / 3;
@@ -591,7 +623,7 @@ function buildChunkMesh(ch) {
             tgtP.push(wx + base[k][0], y + base[k][1], wz + base[k][2]);
             tgtN.push(F.n[0], F.n[1], F.n[2]);
             tgtU.push(faceUV[k][0], faceUV[k][1]);
-            if (!isWater) colors.push(shade, shade, shade);
+            if (!isWater) tgtC.push(shade, shade, shade);
           }
           tgtI.push(start, start + 1, start + 2, start, start + 2, start + 3);
         }
@@ -599,11 +631,8 @@ function buildChunkMesh(ch) {
     }
   }
 
-  // 释放旧 mesh
-  if (ch.mesh) {
-    if (ch.mesh.solid) { scene.remove(ch.mesh.solid); ch.mesh.solid.geometry.dispose(); }
-    if (ch.mesh.water) { scene.remove(ch.mesh.water); ch.mesh.water.geometry.dispose(); }
-  }
+  // 释放旧 mesh(实体/树叶/水)
+  disposeChunkMesh(ch);
   ch.mesh = {};
   ch.meshDirty = false;
 
@@ -623,6 +652,13 @@ function buildChunkMesh(ch) {
     m.userData.cx = ch.cx; m.userData.cz = ch.cz;
     scene.add(m);
     ch.mesh.solid = m;
+  }
+  if (lPositions.length) {
+    const lm = new THREE.Mesh(buildGeo(lPositions, lNormals, lUvs, lIndices, lColors), matLeavesChunk);
+    lm.userData.isChunk = true;
+    lm.userData.cx = ch.cx; lm.userData.cz = ch.cz;
+    scene.add(lm);
+    ch.mesh.leaves = lm;
   }
   if (wPositions.length) {
     const wm = new THREE.Mesh(buildGeo(wPositions, wNormals, wUvs, wIndices), matWaterChunk);
@@ -649,10 +685,7 @@ function updateChunks(playerWX, playerWZ) {
   // 卸载范围外的 chunk
   for (const [key, ch] of chunks) {
     if ((Math.abs(ch.cx - pcx) > R + 1 || Math.abs(ch.cz - pcz) > R + 1) && !(ch.cx === pcx && ch.cz === pcz)) {
-      if (ch.mesh) {
-        if (ch.mesh.solid) { scene.remove(ch.mesh.solid); ch.mesh.solid.geometry.dispose(); }
-        if (ch.mesh.water) { scene.remove(ch.mesh.water); ch.mesh.water.geometry.dispose(); }
-      }
+      disposeChunkMesh(ch);
       chunks.delete(key);
     }
   }
@@ -1151,8 +1184,8 @@ function updateThirdPersonCamera() {
   camera.rotation.y = yaw + (dir < 0 ? Math.PI : 0);
   // 略俯视(-0.15 弧度≈-8.6°)+ 鼠标 pitch 的一半
   camera.rotation.x = -0.15 + pitch * 0.5;
-  camera.fov = 70;
-  camera.updateProjectionMatrix();
+  // 修复:原先硬编码 70,切到第三人称会覆盖用户的 FOV 设置;现与第一人称分支一致
+  if (camera.fov !== settings.fov) { camera.fov = settings.fov; camera.updateProjectionMatrix(); }
 }
 
 function raycastCameraClearDist(x0, y0, z0, x1, y1, z1) {
@@ -1282,9 +1315,25 @@ const PIXEL_ART = {
 
 // 出生广场:确定性生成(modifications 记录,存档保留,每次固定)
 function buildSpawnPlaza() {
-  const plazaR = 28;
+  const plazaR = PLAZA_DISK_R;
   const platH = SEA_LEVEL + 6;
-  const set = (x, y, z, t) => { if (y >= 0 && y < WORLD_HEIGHT) modifications.set(blockKey(x, y, z), t); };
+  // 差量记录:与自然地形相同的方块不进 modifications(地下 stone/dirt 层大多与生成结果一致)。
+  // 出生广场从全量 ~5.2 万条降到差量(实测约减 40–60%,视种子地形而定),自动保存的
+  // IndexedDB 写入与存档体积同步缩小。
+  // 注意:新值==自然值时必须删除已有条目(同一位置可能先写结构再清空)
+  const colCache = new Map();   // "x,z" -> {biome,height}(自然列信息缓存,避免重复算噪声)
+  const naturalAt = (x, y, z) => {
+    const ck = x + ',' + z;
+    let col = colCache.get(ck);
+    if (!col) { col = naturalColumnInfo(x, z); colCache.set(ck, col); }
+    return naturalBlockAt(x, y, z, col);
+  };
+  const set = (x, y, z, t) => {
+    if (y < 0 || y >= WORLD_HEIGHT) return;
+    const k = blockKey(x, y, z);
+    if (naturalAt(x, y, z) === t) modifications.delete(k);
+    else modifications.set(k, t);
+  };
   const setArt = (ox, oz, font, colorMap) => {
     for (let row = 0; row < font.length; row++)
       for (let col = 0; col < font[row].length; col++) {
@@ -1450,12 +1499,7 @@ function buildSpawnPlaza() {
 
 
 function clearWorld() {
-  for (const ch of chunks.values()) {
-    if (ch.mesh) {
-      if (ch.mesh.solid) { scene.remove(ch.mesh.solid); ch.mesh.solid.geometry.dispose(); }
-      if (ch.mesh.water) { scene.remove(ch.mesh.water); ch.mesh.water.geometry.dispose(); }
-    }
-  }
+  for (const ch of chunks.values()) disposeChunkMesh(ch);
   chunks.clear();
   modifications.clear();
   for (const a of arrows) scene.remove(a);
@@ -1703,6 +1747,25 @@ function buildHotbar() {
   }
 }
 
+// 只刷新某格的耐久条:热路径(每破坏一个方块耐久-1)不再全量重建 9 格 hotbar DOM/图标
+function refreshSlotDurability(i) {
+  const slot = document.querySelector('#hotbar .slot[data-slot="' + i + '"]');
+  const item = hotbar[i];
+  let bar = slot && slot.querySelector('.dur');
+  if (!item || item.kind !== 'tool') { if (bar) bar.remove(); return; }
+  if (!slot) { buildHotbar(); return; }   // 面板尚未构建:退回全量
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.className = 'dur';
+    bar.innerHTML = '<span></span>';
+    slot.appendChild(bar);
+  }
+  const ratio = item.durability / TOOL_TYPES[item.id].durability;
+  const span = bar.firstChild;
+  span.style.width = Math.max(0, ratio) * 100 + '%';
+  span.style.background = ratio > 0.5 ? '#5fd35f' : ratio > 0.2 ? '#e0c040' : '#d35f5f';
+}
+
 function itemName(item) {
   if (!item) return '(空)';
   if (item.kind === 'block') return (BLOCK_TYPES[item.id] || { name: '?' }).name;
@@ -1765,6 +1828,17 @@ function lockPointer() {
 // 当前环境是否支持 pointer lock API(触屏浏览器如 iOS/安卓 Chrome 大多不支持)
 function supportsPointerLock() {
   return !!(renderer && renderer.domElement && typeof renderer.domElement.requestPointerLock === 'function');
+}
+
+// 显示暂停菜单(桌面 pointer lock 解锁 / 触屏 ≡ 按钮共用入口)
+// 修复:原先每次暂停都无条件 autosave(true) 全量覆盖存档(出生广场 modifications ~5 万条,
+// 每次都是 MB 级 IndexedDB 写入);现仅在 saveDirty 时保存。
+// 同时清空按键状态,避免暂停期间卡移动/跳跃。
+function showPauseMenu() {
+  for (const code in keys) keys[code] = false;
+  const pm = document.getElementById('pause-menu');
+  if (pm) pm.classList.remove('hidden');
+  if (saveDirty) autosave(true);
 }
 
 // ============================================================
@@ -1831,8 +1905,7 @@ function setupInput() {
       overlay.classList.add('hidden');
       pauseMenu.classList.add('hidden');
     } else if (gameStarted && !inventoryOpen) {
-      pauseMenu.classList.remove('hidden');
-      autosave(true);
+      showPauseMenu();   // 修复:仅在有未保存改动时覆盖保存(原先每次 Esc 无条件全量写库)
     }
   });
 
@@ -2045,6 +2118,16 @@ function setupInput() {
   addEventListener('blur', () => { keys['Space'] = false; });
     bindBtn('touch-break', () => { breakBlock(); });
     bindBtn('touch-place', () => { placeBlock(); });
+    // ≡ 暂停按钮:触屏设备无 pointer lock,pointerlockchange 永不触发,
+    // 暂停菜单(保存/设置/存档管理)原先在移动端完全无法到达(修复 P1)
+    const tp = document.getElementById('touch-pause');
+    if (tp) tp.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      if (!gameStarted || inventoryOpen) return;
+      const pm = document.getElementById('pause-menu');
+      if (pm.classList.contains('hidden')) showPauseMenu();
+      else pm.classList.add('hidden');
+    }, { passive: false });
     // 拖拽转视角(画面右半区拖动)
     let lookActive = false, lastX = 0, lastY = 0;
     renderer.domElement.addEventListener('touchstart', (e) => {
@@ -2199,9 +2282,9 @@ function breakBlock() {
     if (tool.durability <= 0) {
       showToast(`${TOOL_TYPES[tool.id].name} 坏了!`);
       hotbar[currentSlot] = null;
-      buildHotbar();
+      buildHotbar();                        // 槽位清空:需重画图标,全量重建
     } else {
-      buildHotbar();
+      refreshSlotDurability(currentSlot);   // 仅耐久-1:局部刷新耐久条,不重建整个 hotbar
     }
   }
   markDirtySave();
@@ -2285,12 +2368,15 @@ function consumeToolDurability(item) {
   if (item.durability <= 0) {
     showToast(`${TOOL_TYPES[item.id].name} 坏了!`);
     hotbar[currentSlot] = null;
+    buildHotbar();                        // 槽位清空:需重画图标,全量重建
+  } else {
+    refreshSlotDurability(currentSlot);   // 仅耐久-1:局部刷新耐久条
   }
-  buildHotbar();
   markDirtySave();
 }
 
 const arrows = [];
+const _arrowLook = new THREE.Vector3();   // 池化:箭矢朝向计算复用,避免每箭每帧分配
 let arrowGeo = null, arrowMat = null;
 function shootArrow() {
   if (!arrowGeo) { arrowGeo = new THREE.BoxGeometry(0.08, 0.08, 0.4); arrowMat = new THREE.MeshLambertMaterial({ color: 0xcaa472 }); }
@@ -2609,7 +2695,7 @@ function updateArrows(dt) {
     const a = arrows[i];
     a.userData.vel.y -= 9.8 * dt;
     a.position.addScaledVector(a.userData.vel, dt);
-    a.lookAt(a.position.clone().add(a.userData.vel));
+    a.lookAt(_arrowLook.copy(a.position).add(a.userData.vel));
     a.userData.life -= dt;
     const bx = Math.floor(a.position.x), by = Math.floor(a.position.y), bz = Math.floor(a.position.z);
     if (isSolidAt(bx, by, bz) || a.userData.life <= 0 || a.position.y < -10) {
@@ -3155,6 +3241,11 @@ function hideBreakOverlay() {
 // ============================================================
 // 第十七部分:背包面板(沿用旧实现)
 // ============================================================
+// HTML 转义:存档名等入库字符串回显前转义(防御性,避免拼 innerHTML)
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
 // 存档管理:打开面板 + 渲染存档列表
 function openSaveManager() {
   const panel = document.getElementById('save-manager');
@@ -3174,7 +3265,7 @@ function openSaveManager() {
       const cur = (s.id === currentSaveId) ? ' <span style="color:#5fd35f;">●当前</span>' : '';
       return `<div class="save-item">
         <div class="save-info">
-          <div class="save-name">${s.name || '未命名'}${cur}</div>
+          <div class="save-name">${escapeHtml(s.name || '未命名')}${cur}</div>
           <div class="save-meta">#${s.id} · ${time} · 位置${pos} · ${(s.modifications||[]).length}处改动</div>
         </div>
         <button class="load" onclick="loadSaveFromMgr(${s.id})">读取</button>
@@ -3682,7 +3773,10 @@ function autosave(force) {
   if (currentSaveId === null) { saveDirty = false; return; } // 避免无命名存档堆积
   saveDirty = false;
   lastAutosaveTime = performance.now();
-  overwriteSave(currentSaveId);
+  overwriteSave(currentSaveId).then(function(ok) {
+    // 保存失败(隐私模式/配额满等):恢复脏标记,30 秒后由 scheduleAutosave 自动重试,不静默丢档
+    if (!ok) { saveDirty = true; console.warn('自动保存失败,稍后将重试'); }
+  });
 }
 
 // ============================================================

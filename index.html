@@ -195,6 +195,8 @@
   <div id="touch-jump" style="position:fixed;right:30px;bottom:180px;width:60px;height:60px;background:rgba(255,255,255,0.2);border:2px solid rgba(255,255,255,0.4);border-radius:30px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:24px;z-index:20;touch-action:none;">⬆</div>
   <div id="touch-break" style="position:fixed;right:100px;bottom:120px;width:60px;height:60px;background:rgba(220,80,80,0.3);border:2px solid rgba(255,100,100,0.5);border-radius:30px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;z-index:20;touch-action:none;">挖</div>
   <div id="touch-place" style="position:fixed;right:30px;bottom:120px;width:60px;height:60px;background:rgba(80,180,80,0.3);border:2px solid rgba(100,200,100,0.5);border-radius:30px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;z-index:20;touch-action:none;">放</div>
+  <!-- ≡ 暂停按钮:触屏设备没有 pointer lock,pointerlockchange 永不触发,暂停菜单(保存/设置)原先在移动端无法到达 -->
+  <div id="touch-pause" style="position:fixed;right:24px;top:24px;width:52px;height:52px;background:rgba(0,0,0,0.35);border:2px solid rgba(255,255,255,0.4);border-radius:10px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:24px;z-index:20;touch-action:none;user-select:none;">≡</div>
 </div>
 
 <!-- 生命条(左下) -->
@@ -353,6 +355,6 @@
 <script src="worldgen.js?v=20260813b"></script>
 <script src="craft.js?v=20260813c"></script>
 <script src="three.min.js?v=r160"></script>
-<script src="game.js?v=20260813c"></script>
+<script src="game.js?v=20260813e"></script>
 </body>
 </html>

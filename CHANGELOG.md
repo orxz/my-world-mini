@@ -5,6 +5,37 @@
 
 ## [Unreleased]
 
+### 优化与健壮性收尾轮(性能 / 防御性)
+- **区块材质三分离(性能)**:原先单一实体材质因树叶 alphaTest 而 `transparent: true`,全部
+  实体几何都被追进透明队列(逐帧排序 + 丢失 early-z 剔除);现拆为实体(纯不透明)/
+  树叶(alphaTest 镂空,仍在不透明队列)/水(半透明)三套共享材质与几何,新增
+  `disposeChunkMesh` 统一释放三套 mesh(buildChunkMesh 重建/卸载/清世界共用)
+- **树木重扫浪费(性能)**:`ensureChunk` 每个新区块会对 5×5 邻域重复调
+  `growTreesInChunk`(~6400 列噪声重扫);新增 `treesGrown` 标记,已种过的区块直接跳过
+- **hotbar 全量重建(性能)**:每破坏一个方块(工具耐久-1)原先重建整个 9 格 hotbar DOM;
+  新增 `refreshSlotDurability` 只更新当前格耐久条(工具损坏清空格时仍全量重建)
+- **箭矢朝向零分配(性能)**:`updateArrows` 的 lookAt 改用池化向量,不再每箭每帧 clone
+- **存档名 HTML 转义(防御)**:存档管理列表的名称回显前经 `escapeHtml` 转义
+- **自动保存失败不再静默**:失败时恢复脏标记,30 秒后自动重试(隐私模式/配额满不再无声丢档)
+- **冒烟测试**:新增回归断言 —— 区块材质三分(T4)、耐久条局部刷新(T5),共 23 项
+
+### 修复(体验审查轮:移动端暂停 / FOV / 保存策略)
+- **出生广场存档差量化(P1 性能)**:广场原先把整根地柱全量写入 modifications(约 5.2 万条),
+  每次自动保存都是 MB 级 IndexedDB 写入;现仅记录与自然地形的差异(地下 stone/dirt 层与
+  生成结果一致的不记),条目数实测约减 40–60%(视种子地形而定)。`generateChunkData` 提取 `naturalColumnInfo`/
+  `terrainBlockAt` 作为单一数据源,保证差量比较与地形生成永不分叉;广场圆盘内显式禁止
+  种树(差量化后部分广场列无 modifications,原"树基未改动"检查会放行长出随机树)
+- **移动端无法暂停/保存/进设置(P1)**:暂停菜单原先只能由 pointer lock 解锁事件唤起,
+  触屏设备该事件永不触发;现触屏设备显示右上角「≡」按钮,与桌面共用 `showPauseMenu` 入口
+- **Esc 暂停无条件全量覆盖存档(P1)**:解锁即 `autosave(true)`(force),零改动也写库;出生广场
+  modifications 约 5 万条,每次都是 MB 级 IndexedDB 写入;现仅在 `saveDirty` 时保存
+- **第三人称 FOV 硬编码(P1)**:`updateThirdPersonCamera` 固定 `camera.fov = 70`,切第三人称会
+  覆盖用户 FOV 设置;现与第一人称分支一致使用 `settings.fov`
+- **文档口径修正**:README 跌落伤害阈值 6.5 格 → 4.3 格(v=15 ⇒ h=v²/2g);
+  「1 chunk = 1 draw call」→「实体与水至多 2 draw call」;触屏说明补「≡ 暂停按钮」
+- **冒烟测试**:新增回归断言 —— 暂停菜单唤起 + 仅脏时保存(T1)、第三人称 FOV 遵循设置(T2)、
+  广场差量不变式+布局完整+圆盘禁树(T3)
+
 ### 修复(生产级全面修复轮)
 - **触屏设备无法移动(P0)**:`updatePlayer` 原以 pointer lock 状态为运行标志,触屏设备不请求锁定导致
   移动/重力/跳跃全部失效;现改为触屏设备用 `gameStarted` 标志,桌面保持 pointer lock 语义

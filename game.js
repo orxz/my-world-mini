@@ -3563,6 +3563,10 @@ function loadSettings() {
     const s = localStorage.getItem(SETTINGS_KEY);
     if (s) { const parsed = JSON.parse(s); Object.assign(settings, parsed); }
     settings.renderDist = Math.max(1, Math.min(10, settings.renderDist|0 || 5));
+    // 对齐到设置面板下拉提供的合法档位(3/5/7/10):外部写入的任意整数会让 select 显示空
+    var _ro = [3, 5, 7, 10], _best = _ro[0];
+    for (var _i = 1; _i < _ro.length; _i++) if (Math.abs(_ro[_i] - settings.renderDist) <= Math.abs(_best - settings.renderDist)) _best = _ro[_i];
+    settings.renderDist = _best;
     var _vol = Number(settings.volume); settings.volume = Math.max(0, Math.min(1, Number.isFinite(_vol) ? _vol : 0.35));
     var _fov = Number(settings.fov); settings.fov = Math.max(50, Math.min(110, Number.isFinite(_fov) ? _fov : 75));
     var _dcs = Number(settings.dayCycleSpeed); settings.dayCycleSpeed = Math.max(10, Math.min(600, Number.isFinite(_dcs) ? _dcs : 120));

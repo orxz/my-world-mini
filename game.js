@@ -342,9 +342,47 @@ const PLAZA_DISK_R = 28;        // 出生广场圆盘半径(buildSpawnPlaza 与 
 const chunks = new Map();
 // 玩家改动 diff: key "x,y,z" -> type|null(覆盖生成结果)
 const modifications = new Map();
+// 反向索引: chunkKey "cx,cz" -> Set<"x,y,z">(仅本区块内的改动键)
+// generateChunkData 据此只遍历本区块的改动,替代原先 16×48×16=12288 次全列扫描;
+// 与 modifications 的同步收敛在 modsSet/modsDelete/modsClear/modsLoad 四个写点,
+// 其余代码一律通过它们写(读走 modifications 本体)
+const modsByChunk = new Map();
 
 function chunkKey(cx, cz) { return `${cx},${cz}`; }
 function blockKey(x, y, z) { return `${x},${y},${z}`; }
+
+function modsSet(k, t) {
+  modifications.set(k, t);
+  const p = k.split(',');
+  const ck = chunkKey(Math.floor(p[0] / CHUNK_SIZE), Math.floor(p[2] / CHUNK_SIZE));
+  let s = modsByChunk.get(ck);
+  if (!s) { s = new Set(); modsByChunk.set(ck, s); }
+  s.add(k);
+}
+function modsDelete(k) {
+  if (!modifications.delete(k)) return;
+  const p = k.split(',');
+  const ck = chunkKey(Math.floor(p[0] / CHUNK_SIZE), Math.floor(p[2] / CHUNK_SIZE));
+  const s = modsByChunk.get(ck);
+  if (s) { s.delete(k); if (s.size === 0) modsByChunk.delete(ck); }
+}
+function modsClear() {
+  modifications.clear();
+  modsByChunk.clear();
+}
+// 批量载入(读档/重放):一次同步两个结构
+function modsLoad(entries) {
+  modifications.clear();
+  modsByChunk.clear();
+  for (const [k, v] of entries) { modifications.set(k, v); }
+  for (const k of modifications.keys()) {
+    const p = k.split(',');
+    const ck = chunkKey(Math.floor(p[0] / CHUNK_SIZE), Math.floor(p[2] / CHUNK_SIZE));
+    let s = modsByChunk.get(ck);
+    if (!s) { s = new Set(); modsByChunk.set(ck, s); }
+    s.add(k);
+  }
+}
 
 // 噪声/生物群系/地形函数已提取到 worldgen.js(由 <script> 全局加载,此处不再定义)
 
@@ -392,17 +430,14 @@ function generateChunkData(cx, cz) {
     }
   }
 
-  // 应用玩家改动 diff
-  for (let lx = 0; lx < CHUNK_SIZE; lx++) {
-    for (let lz = 0; lz < CHUNK_SIZE; lz++) {
-      const wx = ox + lx, wz = oz + lz;
-      for (let y = 0; y < WORLD_HEIGHT; y++) {
-        const mk = blockKey(wx, y, wz);
-        if (modifications.has(mk)) {
-          const t = modifications.get(mk);
-          data[chunkIdx(lx, y, lz)] = t ? BLOCK_ID[t] : 0;
-        }
-      }
+  // 应用玩家改动 diff:经反向索引只遍历本区块的改动键(无改动的区块零成本),
+  // 替代原先对 16×48×16=12288 格逐格拼 blockKey + Map.has 的全扫描
+  const modKeys = modsByChunk.get(chunkKey(cx, cz));
+  if (modKeys) {
+    for (const mk of modKeys) {
+      const t = modifications.get(mk);
+      const p = mk.split(',');
+      data[chunkIdx(p[0] - ox, p[1] | 0, p[2] - oz)] = t ? BLOCK_ID[t] : 0;
     }
   }
 
@@ -530,8 +565,8 @@ function setBlock(x, y, z, type) {
   if (ch.data[idx] === newId) return false;
   ch.data[idx] = newId;
   ch.meshDirty = true;
-  // 记录改动 diff(用于存档)
-  modifications.set(blockKey(x, y, z), type);
+  // 记录改动 diff(用于存档;反向索引同步)
+  modsSet(blockKey(x, y, z), type);
   // 相邻 chunk 在边界时也需重建(面剔除跨边界)
   if (lx === 0) markChunkDirty(cx - 1, cz);
   if (lx === CHUNK_SIZE - 1) markChunkDirty(cx + 1, cz);
@@ -1375,8 +1410,8 @@ function buildSpawnPlaza() {
   const set = (x, y, z, t) => {
     if (y < 0 || y >= WORLD_HEIGHT) return;
     const k = blockKey(x, y, z);
-    if (naturalAt(x, y, z) === t) modifications.delete(k);
-    else modifications.set(k, t);
+    if (naturalAt(x, y, z) === t) modsDelete(k);
+    else modsSet(k, t);
   };
   const setArt = (ox, oz, font, colorMap) => {
     for (let row = 0; row < font.length; row++)
@@ -1545,7 +1580,7 @@ function buildSpawnPlaza() {
 function clearWorld() {
   for (const ch of chunks.values()) disposeChunkMesh(ch);
   chunks.clear();
-  modifications.clear();
+  modsClear();
   for (const a of arrows) scene.remove(a);
   arrows.length = 0;
   clearDroppedItems();   // 清掉落物,避免旧世界残留
@@ -3166,8 +3201,8 @@ function applySave(rec) {
   if (autosaveTimer) { clearTimeout(autosaveTimer); autosaveTimer = null; }
   clearWorld();
   worldSeed = (typeof rec.seed === 'number') ? rec.seed : worldSeed;
-  modifications.clear();
-  if (Array.isArray(rec.modifications)) for (const [k, v] of rec.modifications) modifications.set(k, v);
+  modsClear();
+  if (Array.isArray(rec.modifications)) modsLoad(rec.modifications);
   if (rec.playerPos && Number.isFinite(rec.playerPos.x) && Number.isFinite(rec.playerPos.y)
       && Number.isFinite(rec.playerPos.z) && rec.playerPos.y > 1 && rec.playerPos.y < WORLD_HEIGHT) {
     playerPos.set(rec.playerPos.x, rec.playerPos.y, rec.playerPos.z);

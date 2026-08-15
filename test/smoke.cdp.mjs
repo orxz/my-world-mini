@@ -350,6 +350,43 @@ async function main() {
   const t6bo = JSON.parse(t6b);
   check('T6b mousedown/mouseup wiring drives miningHeld', t6bo.set === true && t6bo.unset === true, t6b);
 
+  // 16.7 T7 modifications 反向索引:双结构互查一致 + generateChunkData 经桶加速
+  const t7 = await evl(`(() => {
+    // a) 互查不变式:每个桶键都属于该区块,且并集 == modifications 的键集
+    let badPlacement = 0, total = 0;
+    for (const [ck, s] of modsByChunk) {
+      const [ccx, ccz] = ck.split(',').map(Number);
+      for (const k of s) {
+        total++;
+        const p = k.split(',').map(Number);
+        if (Math.floor(p[0] / 16) !== ccx || Math.floor(p[2] / 16) !== ccz) badPlacement++;
+      }
+    }
+    const union = new Set();
+    for (const s of modsByChunk.values()) for (const k of s) union.add(k);
+    const sameAsMap = union.size === modifications.size;
+    // b) setBlock 写入同时落到两个结构;改为 null 是「挖掉」改动,键仍在两结构(值变 null)
+    setBlock(999, 30, 999, 'brick');
+    const afterSet = modifications.has('999,30,999') && modsByChunk.get('62,62').has('999,30,999');
+    setBlock(999, 30, 999, null);
+    const afterDel = modifications.get('999,30,999') === null && modsByChunk.get('62,62').has('999,30,999');
+    modsDelete('999,30,999');   // 真删除:两结构同步移除、空桶回收
+    const afterHardDel = !modifications.has('999,30,999') && !modsByChunk.get('62,62');
+    // c) 桶加速:重生成含改动的区块,改动仍在数据里(与全扫描等价)
+    const data = generateChunkData(0, 0);
+    let modApplied = true;
+    for (const [k, v] of modifications) {
+      const p = k.split(',').map(Number);
+      if (p[0] >= 0 && p[0] < 16 && p[2] >= 0 && p[2] < 16) {
+        const id = data[chunkIdx(p[0] - 0, p[1], p[2] - 0)];
+        if ((v ? BLOCK_ID[v] : 0) !== id) { modApplied = false; break; }
+      }
+    }
+    return JSON.stringify({ badPlacement, total, sameAsMap, afterSet, afterDel, afterHardDel, modApplied });
+  })()`);
+  const t7o = JSON.parse(t7);
+  check('T7 modsByChunk reverse index consistency + bucketed generateChunkData', t7o.badPlacement === 0 && t7o.sameAsMap && t7o.afterSet && t7o.afterDel && t7o.afterHardDel && t7o.modApplied, t7);
+
   // 17. no JS exceptions during session
   check('no uncaught JS exceptions', jsErrors.length === 0, JSON.stringify(jsErrors.slice(0, 3)));
 

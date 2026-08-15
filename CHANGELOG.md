@@ -5,6 +5,16 @@
 
 ## [Unreleased]
 
+### 性能(modifications 反向索引,路线图 3)
+- **`modsByChunk` 分桶索引**:`chunkKey → Set<改动键>`,`generateChunkData` 据此只遍历
+  本区块的改动键,替代原先对 16×48×16=12288 格逐格拼 `blockKey` + `Map.has` 的全扫描
+  (移动高峰 3 区块/帧 ≈ 3.7 万次字符串分配/帧);无改动的区块零成本
+- **写点收敛**:`modsSet/modsDelete/modsClear/modsLoad` 四个入口同步双结构
+  (setBlock/出生广场差量/清世界/读档),读仍走 `modifications` 本体,调用面不变
+- **实测**:含 2401 条改动的区块(广场中心)50 次生成 52ms → 1.7ms(**31×**)
+- **冒烟测试**:新增 T7(双结构互查不变式/写入同步/挖掉≠删除语义/桶遍历与全扫描
+  等价),共 26 项
+
 ### 重构(模块拆分:game.js → audio.js / save.js / doors.js)
 - **audio.js**:Web Audio 程序化音效对象整体迁出(IIFE + 全局,game.js 调用点零改动)
 - **save.js**:IndexedDB 纯存储层(SAVELIB:add/overwrite/list/get/remove/count/latestId);

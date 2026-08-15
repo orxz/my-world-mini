@@ -46,7 +46,9 @@ jobs:
         id: chrome
 
       - name: Start static server
-        run: python3 -m http.server 8843 &
+        run: |
+          python3 -m http.server 8843 &
+          curl --retry 10 --retry-connrefused --silent http://127.0.0.1:8843/ > /dev/null
 
       - name: Run CDP smoke test
         env:

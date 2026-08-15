@@ -336,6 +336,20 @@ async function main() {
   const t6o = JSON.parse(t6);
   check('T6 hold-to-mine accumulates + crack overlay + instant mine', t6o.accumulated && t6o.cracked && t6o.stageOK && t6o.cleared && t6o.instant, t6);
 
+  // 16.6 T6b mousedown wiring: 真实事件路径置位/复位 miningHeld(mock pointerLockElement)
+  const t6b = await evl(`(() => {
+    const el = renderer.domElement;
+    Object.defineProperty(document, 'pointerLockElement', { configurable: true, get: () => el });
+    el.dispatchEvent(new MouseEvent('mousedown', { button: 0 }));
+    const set = miningHeld === true;
+    window.dispatchEvent(new MouseEvent('mouseup', { button: 0 }));
+    const unset = miningHeld === false;
+    delete document.pointerLockElement;
+    return JSON.stringify({ set, unset });
+  })()`);
+  const t6bo = JSON.parse(t6b);
+  check('T6b mousedown/mouseup wiring drives miningHeld', t6bo.set === true && t6bo.unset === true, t6b);
+
   // 17. no JS exceptions during session
   check('no uncaught JS exceptions', jsErrors.length === 0, JSON.stringify(jsErrors.slice(0, 3)));
 

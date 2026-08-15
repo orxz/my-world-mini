@@ -5,6 +5,18 @@
 
 ## [Unreleased]
 
+### 修复(代码审查轮)
+- **按住左键 + 弓自动连发(Important)**:复击节拍原先只排除材料,手持弓按住左键会以
+  ~750ms/支 自动射光箭并耗尽耐久,剑则反复挥砍刷屏;现复击仅限空手/方块/镐斧铲
+- **死亡不停止挖掘(Important)**:`respawnPlayer` 复位 `miningHeld` 与破坏进度,
+  死亡遮罩期间不再在重生点继续自动挖掘
+- **切槽位重置挖掘进度**:与 MC「换手持即重挖」语义一致,同时消除
+  `breakTargetCost` 残留旧工具成本档的隐含契约
+- **CI 就绪门控**:静态服务器启动后加 `curl --retry` 等待,消除 Chrome 先于服务器
+  就绪的竞态
+- **冒烟测试**:T6b 断言 mousedown/mouseup 真实事件路径驱动 `miningHeld`(此前 T6
+  直接赋值状态,绕过了输入接线),共 25 项
+
 ### 工程与修复
 - **CI 纳入浏览器冒烟测试(路线图 1)**:新增 `smoke` job —— setup-chrome + headless
   swiftshader 软件渲染 + CDP 9333,与本地 `test/smoke.cdp.mjs` 同一入口(24 项断言,
@@ -32,7 +44,7 @@
   同步清理 game.js 4 处调用、单测、冒烟测试与 `docs/worldgen.md` API 参考
 - **操作文案与实现不符(P3)**:"破坏方块 左键(长按)"改为"持续点击"(实现为逐次点击累积进度)
 - **favicon 404(P3)**:`<link rel="icon" href="data:,">` 消除控制台噪音
-- **缓存版本号**:worldgen.js → 20260815a、game.js → 20260815b(随本轮修改 bump)
+- **缓存版本号**:worldgen.js → 20260815a、game.js 随各轮修改逐次 bump(当前 20260815e)
 
 ### 修复(深度审查轮)
 - **种植/成熟不触发自动保存(P1)**:`tryPlantCrop` 与 `updateCrops` 成功路径原先不调

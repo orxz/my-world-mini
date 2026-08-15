@@ -1844,6 +1844,9 @@ let currentSlot = 0;
 function selectSlot(i) {
   if (i < 0 || i >= HOTBAR_SIZE || !Number.isInteger(i)) return;
   currentSlot = i;
+  // 换手持即重置挖掘进度:与 MC 语义一致(换工具=重新开始挖),
+  // 也避免 breakTargetCost 残留旧工具的成本档(隐含契约显式化)
+  breakProgress = 0; breakTargetKey = null;
   const item = hotbar[i];
   if (item && item.kind === 'block') selectedType = item.id;
   document.querySelectorAll('#hotbar .slot').forEach(s => {
@@ -2718,6 +2721,7 @@ function respawnPlayer() {
   playerPos.set(0.5, plazaH + 1 + PLAYER_HEIGHT * 0.5, 0.5);
   velocity.set(0, 0, 0);
   isFlying = false;   // 修复:死亡后不再继承飞行状态
+  miningHeld = false; breakProgress = 0; breakTargetKey = null;   // 死亡即停挖:重生期间不能在广场上继续自动挖掘
   playerHP = PLAYER_MAX_HP;
   breathTimer = 0;
   lastSafePos.copy(playerPos);   // 更新安全点,防止虚空救援把玩家送回坠落前的危险位置
@@ -3105,11 +3109,13 @@ function animate() {
   }
 
   // 按住左键持续挖掘:固定节拍自动复击(mousedown 已做首击;松开/失锁由输入侧复位)
-  // 手持材料时不复击(单次点击的"不能破坏"提示不刷屏)
+  // 仅空手/方块/挖掘类工具(镐斧铲)复击;剑/弓/盾与材料不复击——
+  // 否则按住左键会让弓自动连发射光箭、剑反复挥砍刷屏(左键单次使用仍可用)
   if (miningHeld && now - lastMiningTick >= MINING_INTERVAL) {
     lastMiningTick = now;
     const it = hotbar[currentSlot];
-    if (!it || it.kind !== 'item') { swingHoldItem(); breakBlock(); }
+    const td = it && it.kind === 'tool' ? TOOL_TYPES[it.id] : null;
+    if (!td || td.tool === 'pickaxe' || td.tool === 'axe' || td.tool === 'shovel') { swingHoldItem(); breakBlock(); }
   }
 
   const target = raycastTarget();

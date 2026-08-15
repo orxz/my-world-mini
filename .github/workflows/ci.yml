@@ -27,3 +27,35 @@ jobs:
 
       - name: Lint
         run: npm run lint
+
+  # 浏览器端到端冒烟(24 项):headless Chrome 软件渲染(swiftshader)跑 test/smoke.cdp.mjs
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22   # 需全局 WebSocket(CDP 客户端)
+
+      - name: Setup Chrome
+        uses: browser-actions/setup-chrome@v1
+        id: chrome
+
+      - name: Start static server
+        run: python3 -m http.server 8843 &
+
+      - name: Run CDP smoke test
+        env:
+          CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
+        run: |
+          "$CHROME_PATH" \
+            --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage \
+            --enable-unsafe-swiftshader --use-angle=swiftshader \
+            --remote-debugging-port=9333 --user-data-dir=/tmp/myword-chrome \
+            --no-first-run --window-size=1280,800 \
+            "http://127.0.0.1:8843/index.html" &
+          node test/smoke.cdp.mjs

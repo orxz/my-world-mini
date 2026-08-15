@@ -198,10 +198,10 @@ npm run serve    # 启动本地静态服务器 http://localhost:8843/
 
 - **测试**:`test/unit.test.js` 覆盖 `worldgen.js`(哈希/噪声/群系/高度/存档序列化)与
   `craft.js`(配方匹配/破坏耗时)的纯函数
-- **浏览器冒烟测试(可选)**:`test/smoke.cdp.mjs` 通过 CDP 驱动 headless Chrome 做 23 项端到端断言
+- **浏览器冒烟测试(可选)**:`test/smoke.cdp.mjs` 通过 CDP 驱动 headless Chrome 做 24 项端到端断言
   (触屏物理/门持久化/树木标脏/存档往返等),用法见文件头注释
 - **Lint**:`eslint.config.mjs`(flat config);`game.js`/`worldgen.js`/`craft.js` 是经典 script(非 ES module)
-- **CI**:GitHub Actions 在 push/PR 自动跑 `npm test` + `npm run lint`
+- **CI**:GitHub Actions 在 push/PR 自动跑 `npm test` + `npm run lint` + 浏览器冒烟测试(headless Chrome,24 项)
 - 详细代码组织、数据流、扩展点见 **[docs/architecture.md](./docs/architecture.md)**
 - 世界生成函数 API 参考 **[docs/worldgen.md](./docs/worldgen.md)**
 

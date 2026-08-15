@@ -69,7 +69,7 @@
   }
 
   // 由世界坐标确定地表高度(连续函数,无断层)
-  function heightAt(wx, wz, seed, biome, preMtn) {
+  function heightAt(wx, wz, seed, preMtn) {
     const base = fbm2D(wx * 0.045, wz * 0.045, seed, 4);
     const mtn = (preMtn !== undefined) ? preMtn : fbm2D(wx * 0.008, wz * 0.008, seed + 555, 4);
     let h = 16 + (base - 0.5) * 6;

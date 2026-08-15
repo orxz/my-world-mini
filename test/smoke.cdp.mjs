@@ -115,7 +115,7 @@ async function main() {
       if (Math.abs(wx) < 40 && Math.abs(wz) < 40) continue;   // 避开出生广场(全被 modifications 覆盖)
       const ccx = Math.floor(wx / 16), ccz = Math.floor(wz / 16);
       if (!chunks.has(chunkKey(ccx, ccz))) continue;          // 只测试"已加载"区块上的跨区块写入
-      const h = heightAt(wx, wz, worldSeed, biomeAt(wx, wz, worldSeed));
+      const h = heightAt(wx, wz, worldSeed);
       if (h <= SEA_LEVEL) continue;
       const g = getBlock(wx, h, wz);
       if (!g || !['grass','dirt','sand','snow'].includes(g)) continue;

@@ -112,16 +112,16 @@ biomeAt(50, 50, 999);
 // 性能优化:biomeAt 与 heightAt 共用 mtn,先算一次传入二者
 const mtn = fbm2D(50*0.008, 50*0.008, 999+555, 4);
 biomeAt(50, 50, 999, mtn);
-heightAt(50, 50, 999, biomeAt(50,50,999,mtn), mtn);
+heightAt(50, 50, 999, mtn);
 ```
 
 ---
 
 ## 地形高度
 
-### `heightAt(wx, wz, seed, biome, preMtn?) → number` (2..44)
+### `heightAt(wx, wz, seed, preMtn?) → number` (2..44)
 
-由世界坐标 + 群系确定地表高度(方块层数)。**连续函数,无断层**(相邻列高度差有限)。
+由世界坐标确定地表高度(方块层数)。**连续函数,无断层**(相邻列高度差有限)。
 
 逻辑概要:
 - 基础高度 `16 + (baseNoise - 0.5) * 6`
@@ -133,15 +133,11 @@ heightAt(50, 50, 999, biomeAt(50,50,999,mtn), mtn);
 |---|---|---|
 | `wx`, `wz` | number | 世界坐标 |
 | `seed` | number | 世界种子 |
-| `biome` | string | `biomeAt` 的返回值(由调用方先算) |
 | `preMtn` | number? | 预计算山地噪声(与 `biomeAt` 共用,省一次 fbm) |
 
 ```js
-const h = heightAt(30, 30, 555, 'plains');  // 例如 18
+const h = heightAt(30, 30, 555);  // 例如 18
 ```
-
-> 注:`biome` 由调用方传入而非内部再算,是为了让 `game.js` 在生成一列方块时
-> 只算一次群系、复用于选表层方块与高度。
 
 ---
 

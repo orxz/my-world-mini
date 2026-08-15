@@ -354,7 +354,7 @@ function blockKey(x, y, z) { return `${x},${y},${z}`; }
 function naturalColumnInfo(wx, wz) {
   const mtn = fbm2D(wx * 0.008, wz * 0.008, worldSeed + 555, 4);  // 山地强度(算一次,biome/height 共用)
   const biome = biomeAt(wx, wz, worldSeed, mtn);
-  const height = heightAt(wx, wz, worldSeed, biome, mtn);
+  const height = heightAt(wx, wz, worldSeed, mtn);
   return { biome, height };
 }
 // 某列某层的自然方块(仅地形,不含树木/玩家改动)——generateChunkData 的单一数据源,
@@ -493,7 +493,7 @@ function growTreesInChunk(cx, cz) {
       const biome = biomeAt(wx, wz, worldSeed);
       const b = BIOMES[biome];
       if (b.treeChance <= 0) continue;
-      const height = heightAt(wx, wz, worldSeed, biome);
+      const height = heightAt(wx, wz, worldSeed);
       if (height <= SEA_LEVEL) continue;
       const r = hash2(wx, wz, worldSeed + 999);
       if (r < b.treeChance) plantTreeAt(wx, height, wz);
@@ -1364,7 +1364,7 @@ function buildSpawnPlaza() {
   for (let dx = -plazaR; dx <= plazaR; dx++) {
     for (let dz = -plazaR; dz <= plazaR; dz++) {
       if (Math.sqrt(dx * dx + dz * dz) > plazaR) continue;
-      const nh = heightAt(dx, dz, worldSeed, biomeAt(dx, dz, worldSeed));
+      const nh = heightAt(dx, dz, worldSeed);
       if (nh > platH) {
         for (let y = platH + 1; y <= nh; y++) set(dx, y, dz, null);
       }
@@ -1484,7 +1484,7 @@ function buildSpawnPlaza() {
   // 修复:原先固定从 platH+1 起堆,天然地表低于广场面时山丘悬空;现贴合各列的天然高度
   const hills = [[0, plazaR + 6], [10, plazaR + 8], [-10, plazaR + 8]];
   for (const [hx, hz] of hills) {
-    const gh = heightAt(hx, hz, worldSeed, biomeAt(hx, hz, worldSeed));
+    const gh = heightAt(hx, hz, worldSeed);
     for (let dx = -3; dx <= 3; dx++) {
       for (let dz = -3; dz <= 3; dz++) {
         const d = Math.sqrt(dx * dx + dz * dz);
@@ -3733,10 +3733,23 @@ async function loadSlot(id) {
 }
 
 // 兼容旧接口:读取最新存档
+// 反向遍历 timestamp 索引取最新 id(openKeyCursor 只取主键,不反序列化存档体),
+// 再由 loadSlot 单条读取——避免 getAll() 把所有存档的全部 modifications 拉进内存
 async function loadGame() {
-  const saves = await listSaves();
-  if (saves.length === 0) return false;
-  return loadSlot(saves[0].id);
+  try {
+    const db = await openDB();
+    if (!db) return false;
+    const tx = db.transaction(STORE, 'readonly');
+    return new Promise((resolve) => {
+      const req = tx.objectStore(STORE).index('timestamp').openKeyCursor(null, 'prev');
+      req.onsuccess = () => {
+        const cursor = req.result;
+        if (!cursor) { resolve(false); return; }
+        loadSlot(cursor.primaryKey).then(resolve);
+      };
+      req.onerror = () => resolve(false);
+    });
+  } catch (e) { return false; }
 }
 
 // 删除存档
@@ -3753,10 +3766,18 @@ async function deleteSave(id) {
   } catch (e) { return false; }
 }
 
-// 是否有存档
+// 是否有存档(count 只取条数,不反序列化存档体;启动时每次刷新都会调用)
 async function hasSave() {
-  const saves = await listSaves();
-  return saves.length > 0;
+  try {
+    const db = await openDB();
+    if (!db) return false;
+    const tx = db.transaction(STORE, 'readonly');
+    return new Promise((resolve) => {
+      const r = tx.objectStore(STORE).count();
+      r.onsuccess = () => resolve(r.result > 0);
+      r.onerror = () => resolve(false);
+    });
+  } catch (e) { return false; }
 }
 
 // 自动保存(覆盖当前存档,若无则不存避免无意义堆积)

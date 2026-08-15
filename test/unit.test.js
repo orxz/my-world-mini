@@ -73,23 +73,23 @@ test('多种群系都出现(500采样>=4种)', () => {
 console.log('\n=== 地形高度 ===');
 test('heightAt 返回 2..44', () => {
   for (let i = 0; i < 200; i++) {
-    const h = heightAt(i, i*2, 12345, biomeAt(i, i*2, 12345));
+    const h = heightAt(i, i*2, 12345);
     assert(h >= 2 && h <= 44, 'height out of range: ' + h);
   }
 });
 test('heightAt 确定性', () => {
-  assert.strictEqual(heightAt(30, 30, 555, 'plains'), heightAt(30, 30, 555, 'plains'));
+  assert.strictEqual(heightAt(30, 30, 555), heightAt(30, 30, 555));
 });
 test('heightAt 接受预计算 mtn', () => {
   const mtn = fbm2D(30*0.008, 30*0.008, 555+555, 4);
-  assert.strictEqual(heightAt(30, 30, 555, 'plains', mtn), heightAt(30, 30, 555, 'plains', mtn));
+  assert.strictEqual(heightAt(30, 30, 555, mtn), heightAt(30, 30, 555, mtn));
 });
 test('相邻列高度差有限(无断层)', () => {
   let maxDiff = 0;
   for (let i = 0; i < 200; i++) {
     const x = Math.floor(Math.random()*100-50), z = Math.floor(Math.random()*100-50);
-    const h1 = heightAt(x, z, 12345, biomeAt(x, z, 12345));
-    const h2 = heightAt(x+1, z, 12345, biomeAt(x+1, z, 12345));
+    const h1 = heightAt(x, z, 12345);
+    const h2 = heightAt(x+1, z, 12345);
     maxDiff = Math.max(maxDiff, Math.abs(h1-h2));
   }
   assert(maxDiff <= 6, 'cliff detected: ' + maxDiff);

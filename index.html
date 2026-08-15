@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>我的世界 - 体素小游戏</title>
+<link rel="icon" href="data:,">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { width: 100%; height: 100%; overflow: hidden; background: #87CEEB; font-family: -apple-system, "Microsoft YaHei", sans-serif; }
@@ -218,7 +219,7 @@
   <div class="play">▶ 点击开始游戏(新世界)</div>
   <div class="controls">
     <b>移动:</b> <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> &nbsp; <b>跳跃:</b> <kbd>空格</kbd> &nbsp; <b>下蹲:</b> <kbd>Shift</kbd><br>
-    <b>视角:</b> 鼠标移动 &nbsp; <b>破坏方块:</b> 鼠标左键(长按) &nbsp; <b>放置方块:</b> 鼠标右键<br>
+    <b>视角:</b> 鼠标移动 &nbsp; <b>破坏方块:</b> 鼠标左键(持续点击) &nbsp; <b>放置方块:</b> 鼠标右键<br>
     <b>快捷栏:</b> 数字键 <kbd>1</kbd>-<kbd>9</kbd> 或滚轮 &nbsp; <b>背包:</b> <kbd>E</kbd> &nbsp; <b>切视角:</b> <kbd>F5</kbd><br>
     <b>飞行:</b> 连按两次 <kbd>空格</kbd> &nbsp; <b>暂停:</b> <kbd>Esc</kbd> &nbsp; <b>世界无限:</b> 走动自动加载新区块
   </div>
@@ -268,7 +269,7 @@
     <button id="btn-controls" class="menu-btn">操作说明</button>
     <div id="pause-controls" class="controls hidden">
       <b>移动:</b> WASD &nbsp; <b>跳:</b> 空格 &nbsp; <b>下蹲/飞行下降:</b> Shift<br>
-      <b>视角:</b> 鼠标 &nbsp; <b>破坏:</b> 左键(长按,用对工具更快) &nbsp; <b>放置:</b> 右键<br>
+      <b>视角:</b> 鼠标 &nbsp; <b>破坏:</b> 左键(持续点击,用对工具更快) &nbsp; <b>放置:</b> 右键<br>
       <b>快捷栏:</b> 1-9 / 滚轮 &nbsp; <b>背包:</b> E &nbsp; <b>切视角:</b> F5<br>
       <b>飞行:</b> 双击空格 &nbsp; <b>暂停:</b> Esc &nbsp; <b>世界:</b> 无限(走动自动加载)
     </div>
@@ -352,9 +353,9 @@
   </div>
 </div>
 
-<script src="worldgen.js?v=20260813b"></script>
+<script src="worldgen.js?v=20260815a"></script>
 <script src="craft.js?v=20260813c"></script>
 <script src="three.min.js?v=r160"></script>
-<script src="game.js?v=20260815a"></script>
+<script src="game.js?v=20260815b"></script>
 </body>
 </html>

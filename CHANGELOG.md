@@ -5,6 +5,16 @@
 
 ## [Unreleased]
 
+### 修复与优化(深度审查收尾轮)
+- **启动/继续游戏全量反序列化所有存档(P2 性能)**:`hasSave` 改用 `count()`(只取条数),
+  `loadGame` 改用 timestamp 索引反向 `openKeyCursor` 只取最新存档 id 再单条读取;
+  原先二者都走 `getAll()` 把所有存档的全部 modifications 拉进内存,存档越多启动越慢
+- **移除 `heightAt` 死参数 `biome`(P2)**:签名从未使用该形参,文档却声称"复用群系";
+  同步清理 game.js 4 处调用、单测、冒烟测试与 `docs/worldgen.md` API 参考
+- **操作文案与实现不符(P3)**:"破坏方块 左键(长按)"改为"持续点击"(实现为逐次点击累积进度)
+- **favicon 404(P3)**:`<link rel="icon" href="data:,">` 消除控制台噪音
+- **缓存版本号**:worldgen.js → 20260815a、game.js → 20260815b(随本轮修改 bump)
+
 ### 修复(深度审查轮)
 - **种植/成熟不触发自动保存(P1)**:`tryPlantCrop` 与 `updateCrops` 成功路径原先不调
   `markDirtySave()`,纯种植会话零改动判定导致 30 秒定时保存与暂停保存都不执行,

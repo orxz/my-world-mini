@@ -14,6 +14,11 @@ const { hash2, hash3, valueNoise2D, fbm2D, BIOMES, biomeAt, heightAt } = require
 // ---- 从 craft.js 模块加载(合成/破坏计算的单一数据源) ----
 const { RECIPES, matchRecipe, breakCost } = require('../craft.js');
 
+// ---- 拆分模块(audio/save/doors)可独立加载且导出完整 ----
+const SAVELIB = require('../save.js');
+const { audio } = require('../audio.js');
+const DOORLIB = require('../doors.js');
+
 // ---- 测试用例 ----
 let passed = 0, failed = 0;
 function test(name, fn) {
@@ -261,6 +266,35 @@ test('breakCost 确定性(同输入同输出)', () => {
     breakCost({ hardness: 2.0, tool: 'pickaxe' }, { tool: 'pickaxe', speed: 4.0 }),
     breakCost({ hardness: 2.0, tool: 'pickaxe' }, { tool: 'pickaxe', speed: 4.0 })
   );
+});
+
+console.log('\n=== 拆分模块(audio/save/doors) ===');
+test('save.js 导出 SAVELIB 七个方法', () => {
+  for (const m of ['add', 'overwrite', 'list', 'get', 'remove', 'count', 'latestId']) {
+    assert.strictEqual(typeof SAVELIB[m], 'function', 'missing: ' + m);
+  }
+});
+test('audio.js 导出 audio 对象(init/play 可用,无 DOM 依赖可加载)', () => {
+  assert.strictEqual(typeof audio.init, 'function');
+  assert.strictEqual(typeof audio.play, 'function');
+  assert.strictEqual(audio.enabled, true);
+  assert.strictEqual(audio.ctx, null);   // 未 init 前不触达 AudioContext
+});
+test('doors.js 导出容器与查询(无门时查询返回空)', () => {
+  assert(DOORLIB.doors instanceof Map);
+  assert.strictEqual(typeof DOORLIB.doorKey, 'function');
+  assert.strictEqual(DOORLIB.doorKey(1, 2, 3), '1,2,3');
+  assert.strictEqual(DOORLIB.doorBlocksAt(1, 2, 3), false);
+  assert.strictEqual(DOORLIB.getDoorAt(1, 2, 3), null);
+});
+test('doors.js 查询语义:关门阻挡/开门放行,上半格回落下半格', () => {
+  DOORLIB.doors.set('10,20,10', { x: 10, y: 20, z: 10, open: false });
+  assert.strictEqual(DOORLIB.doorBlocksAt(10, 20, 10), true);   // 下半格关门
+  assert.strictEqual(DOORLIB.doorBlocksAt(10, 21, 10), true);   // 上半格(回落)
+  assert.strictEqual(!!DOORLIB.getDoorAt(10, 21, 10), true);    // 上半格取到实体
+  DOORLIB.doors.get('10,20,10').open = true;
+  assert.strictEqual(DOORLIB.doorBlocksAt(10, 20, 10), false);  // 开门不阻挡
+  DOORLIB.doors.delete('10,20,10');
 });
 
 console.log('\n=== 总结 ===');

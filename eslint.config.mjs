@@ -31,6 +31,18 @@ const CRAFTLIB_GLOBALS = {
   CRAFTLIB: 'readonly',
 };
 
+// audio.js / save.js / doors.js 以 <script> 加载后挂到全局(game.js 直接调用)
+const EXTRACTED_MODULE_GLOBALS = {
+  audio: 'readonly',           // audio.js
+  SAVELIB: 'readonly',         // save.js
+  doors: 'readonly',           // doors.js(容器与渲染层,裸名导出)
+  doorKey: 'readonly',
+  createDoorMesh: 'readonly',
+  disposeDoorGroup: 'readonly',
+  doorBlocksAt: 'readonly',
+  getDoorAt: 'readonly',
+};
+
 export default [
   // —— 全局忽略 ——
   {
@@ -54,6 +66,7 @@ export default [
         ...globals.browser,
         ...WORLDGEN_GLOBALS,
         ...CRAFTLIB_GLOBALS,
+        ...EXTRACTED_MODULE_GLOBALS,
       },
     },
     rules: {
@@ -98,6 +111,50 @@ export default [
       globals: {
         ...globals.browser,
         ...globals.node,   // UMD 用到 module/require/global
+      },
+    },
+    rules: {
+      'no-empty': ['error', { allowEmptyCatch: true }],
+      'no-unused-vars': ['warn', {
+        argsIgnorePattern: '^_',
+        varsIgnorePattern: '^_',
+        caughtErrors: 'none',
+      }],
+    },
+  },
+
+  // —— UMD 模块:audio.js / save.js(浏览器挂全局 + Node module.exports)——
+  {
+    files: ['audio.js', 'save.js'],
+    languageOptions: {
+      ecmaVersion: 2021,
+      sourceType: 'script',
+      globals: {
+        ...globals.browser,
+        ...globals.node,
+      },
+    },
+    rules: {
+      'no-empty': ['error', { allowEmptyCatch: true }],
+      'no-unused-vars': ['warn', {
+        argsIgnorePattern: '^_',
+        varsIgnorePattern: '^_',
+        caughtErrors: 'none',
+      }],
+    },
+  },
+
+  // —— UMD 模块:doors.js(THREE 运行时全局;BLOCK_TYPES 由 game.js 顶层 const 提供)——
+  {
+    files: ['doors.js'],
+    languageOptions: {
+      ecmaVersion: 2021,
+      sourceType: 'script',
+      globals: {
+        ...globals.browser,
+        ...globals.node,
+        THREE: 'readonly',
+        BLOCK_TYPES: 'readonly',
       },
     },
     rules: {

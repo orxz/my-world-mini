@@ -2443,37 +2443,8 @@ function shootArrow() {
 
 
 // 门实体系统(独立于区块,2 格高,可开关)
-const doors = new Map();
-function doorKey(x, y, z) { return x+','+y+','+z; }
-const doorMatCache = {};
-function getDoorMat(type) {
-  if (!doorMatCache[type]) { const def = BLOCK_TYPES[type] || BLOCK_TYPES['door']; doorMatCache[type] = new THREE.MeshLambertMaterial({ color: def.side }); }
-  return doorMatCache[type];
-}
-function createDoorMesh(door) {
-  const mat = getDoorMat(door.type);
-  const g = new THREE.Group();
-  // pivot Group(铰链在左 x=-0.43):门板+凹槽+把手都挂在内,统一旋转
-  const pivot = new THREE.Group();
-  pivot.position.set(-0.43, 0, 0);
-  pivot.userData.isDoorPivot = true;
-  g.add(pivot);
-  const panel = new THREE.Mesh(new THREE.BoxGeometry(0.86, 1.9, 0.1), mat);
-  panel.position.set(0.43, 0.95, 0);
-  panel.userData.isDoorPanel = true;  // 标记:共享缓存材质,disposeDoorGroup 不释放
-  pivot.add(panel);
-  const grooveMat = new THREE.MeshLambertMaterial({ color: 0x000000, transparent: true, opacity: 0.2 });
-  for (const gx of [0.23, 0.43, 0.63]) { const gr = new THREE.Mesh(new THREE.BoxGeometry(0.015, 1.6, 0.02), grooveMat); gr.position.set(gx, 0.95, 0.06); pivot.add(gr); }
-  const knob = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.07, 0.05), new THREE.MeshLambertMaterial({ color: 0xd4af37 }));
-  knob.position.set(0.7, 1.0, 0.07); knob.userData.isDoorKnob = true; pivot.add(knob);
-  const topFrame = new THREE.Mesh(new THREE.BoxGeometry(0.96, 0.06, 0.14), new THREE.MeshLambertMaterial({ color: 0x3a2412 }));
-  topFrame.position.set(0, 1.95, 0); g.add(topFrame);
-  if (door.open) pivot.rotation.y = -Math.PI / 2;
-  g.position.set(door.x + 0.5, door.y, door.z + 0.5);
-  g.rotation.y = door.facing === 1 ? Math.PI / 2 : 0;
-  g.userData.doorKey = doorKey(door.x, door.y, door.z);
-  return g;
-}
+// 渲染层已提取到 doors.js(doors 容器/doorKey/createDoorMesh/disposeDoorGroup/
+// doorBlocksAt/getDoorAt 全局可用);此处保留依赖玩家状态与音效/存档的交互逻辑
 function placeDoor(x, y, z, type, facing) {
   if (y < 1 || y + 1 >= WORLD_HEIGHT) return false;
   if (getBlock(x, y, z) || getBlock(x, y + 1, z)) return false;
@@ -2510,15 +2481,7 @@ function updateDoorAnim(dt) {
   }
 }
 
-function doorBlocksAt(x, y, z) {
-  const d1 = doors.get(doorKey(x,y,z)); if (d1 && !d1.open) return true;
-  const d2 = doors.get(doorKey(x,y-1,z)); if (d2 && !d2.open) return true;
-  return false;
-}
-function getDoorAt(x, y, z) {
-  let d = doors.get(doorKey(x,y,z)); if (d) return d;
-  return doors.get(doorKey(x,y-1,z)) || null;
-}
+// doorBlocksAt/getDoorAt 由 doors.js 提供(全局)
 function raycastDoor() {
   _rayEye.set(playerPos.x, playerPos.y, playerPos.z);
   _rayDir.set(-Math.sin(yaw)*Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw)*Math.cos(pitch));
@@ -2534,17 +2497,7 @@ function raycastDoor() {
   }
   return null;
 }
-// 释放门 mesh 的 geometry/material(避免 GPU 泄漏)
-function disposeDoorGroup(g) {
-  if (!g) return;
-  g.traverse(function(o) {
-    if (o.isMesh) {
-      if (o.geometry) o.geometry.dispose();
-      // 门板材质用共享缓存(不释放),frame/groove/knob 每次新建(释放)
-      if (o.material && !o.userData.isDoorPanel) o.material.dispose();
-    }
-  });
-}
+// disposeDoorGroup 由 doors.js 提供(全局)
 function clearDoors() {
   for (const d of doors.values()) { if (d.group) { disposeDoorGroup(d.group); scene.remove(d.group); } }
   doors.clear();
@@ -3535,90 +3488,8 @@ function clearCraftGrid() {
 
 // ============================================================
 // 第十八部分:音效系统(Web Audio 程序化合成)
+// —— 已提取到 audio.js(<script> 全局加载,game.js 直接引用 audio,调用点零改动)
 // ============================================================
-const audio = {
-  ctx: null,
-  masterGain: null,
-  enabled: true,
-  volume: 0.35,
-  noiseBuffer: null,
-  init() {
-    if (this.ctx) {
-      if (this.ctx.state === 'suspended') this.ctx.resume();
-      return;
-    }
-    try {
-      const AC = window.AudioContext || window.webkitAudioContext;
-      this.ctx = new AC();
-      this.masterGain = this.ctx.createGain();
-      this.masterGain.gain.value = this.enabled ? this.volume : 0;
-      this.masterGain.connect(this.ctx.destination);
-      // 预生成白噪声 buffer
-      const len = this.ctx.sampleRate * 0.5;
-      this.noiseBuffer = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
-      const d = this.noiseBuffer.getChannelData(0);
-      for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
-    } catch (e) {
-      this.enabled = false;
-    }
-  },
-  play(type, blockType) {
-    if (!this.enabled || !this.ctx) return;
-    const t = this.ctx.currentTime;
-    // 破坏音按方块类型调频率:石=低频,木=中频,叶=沙沙,沙/雪=高频软
-    if (type === 'break' && blockType) {
-      let freq = 600;
-      if (blockType === 'stone' || blockType === 'brick') freq = 350;
-      else if (blockType === 'wood' || blockType === 'planks') freq = 500;
-      else if (blockType === 'leaves') freq = 900;
-      else if (blockType === 'sand' || blockType === 'snow' || blockType === 'gravel') freq = 1200;
-      this._noise(0.12, freq, 0.4, t);
-      return;
-    }
-    switch (type) {
-      case 'break': this._noise(0.12, 600, 0.4, t); break;
-      case 'place': this._tone('square', 220, 0.07, 0.3, t); this._tone('square', 160, 0.06, 0.25, t + 0.03); break;
-      case 'step':  this._noise(0.05, 1200, 0.15, t); break;
-      case 'jump':  this._sweep(300, 600, 0.12, t); break;
-      case 'water': this._tone('sine', 180, 0.4, 0.25, t); this._tone('sine', 240, 0.4, 0.15, t + 0.05); break;
-      case 'hurt':  this._tone('sawtooth', 200, 0.15, 0.3, t); break;
-    }
-  },
-  _tone(wave, freq, dur, gain, t0) {
-    const osc = this.ctx.createOscillator();
-    const g = this.ctx.createGain();
-    osc.type = wave; osc.frequency.value = freq;
-    g.gain.setValueAtTime(0.0001, t0);
-    g.gain.exponentialRampToValueAtTime(gain, t0 + 0.005);
-    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-    osc.connect(g); g.connect(this.masterGain);
-    osc.start(t0); osc.stop(t0 + dur + 0.02);
-  },
-  _noise(dur, filterFreq, gain, t0) {
-    if (!this.noiseBuffer) return;
-    const src = this.ctx.createBufferSource();
-    src.buffer = this.noiseBuffer;
-    const filt = this.ctx.createBiquadFilter();
-    filt.type = 'lowpass'; filt.frequency.value = filterFreq;
-    const g = this.ctx.createGain();
-    g.gain.setValueAtTime(gain, t0);
-    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-    src.connect(filt); filt.connect(g); g.connect(this.masterGain);
-    src.start(t0); src.stop(t0 + dur + 0.02);
-  },
-  _sweep(f0, f1, dur, t0) {
-    const osc = this.ctx.createOscillator();
-    const g = this.ctx.createGain();
-    osc.type = 'triangle';
-    osc.frequency.setValueAtTime(f0, t0);
-    osc.frequency.linearRampToValueAtTime(f1, t0 + dur);
-    g.gain.setValueAtTime(0.0001, t0);
-    g.gain.exponentialRampToValueAtTime(0.25, t0 + 0.01);
-    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-    osc.connect(g); g.connect(this.masterGain);
-    osc.start(t0); osc.stop(t0 + dur + 0.02);
-  },
-};
 
 // ============================================================
 // 第十九部分:存档/读档(IndexedDB)
@@ -3665,194 +3536,88 @@ function saveSettings() {
 
 // ============================================================
 // 存档系统(多存档,IndexedDB)
+// —— DB 存储层已提取到 save.js(SAVELIB:add/overwrite/list/get/remove/count/latestId)
+// 此处保留:游戏状态 → rec 的构造(collectSaveRecord)、读取后的应用(loadSlot→applySave)、
+// 自动保存状态机(saveDirty/防抖/30s 定时)
 // ============================================================
-const DB_NAME = 'myword_save';
-const DB_VERSION = 2;            // v2:多存档(自增 id keyPath)
-const STORE = 'saves';           // 存档存储(v1 是 'world',v2 升级)
-let dbReady = null;
 let currentSaveId = null;        // 当前游玩的存档 id(null=未存档/新游戏)
 let saveDirty = false;            // 有未保存改动
 let lastAutosaveTime = 0;         // 上次自动保存时间
 let autosaveTimer = null;         // 自动保存防抖定时器
 
-function openDB() {
-  if (dbReady) return dbReady;
-  dbReady = new Promise((resolve, reject) => {
-    if (typeof indexedDB === 'undefined' || !indexedDB) { reject(new Error('IndexedDB unavailable')); return; }
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = (e) => {
-      const d = e.target.result;
-      // v2:新建自增 id 的 saves store
-      if (!d.objectStoreNames.contains(STORE)) {
-        const os = d.createObjectStore(STORE, { keyPath: 'id', autoIncrement: true });
-        os.createIndex('timestamp', 'timestamp', { unique: false });
-      }
-      // 删除旧的 v1 'world' store(如果有)
-      if (d.objectStoreNames.contains('world')) d.deleteObjectStore('world');
-    };
-    req.onblocked = () => {
-      console.warn('IndexedDB 升级被阻塞,请关闭其他标签页');
-      dbReady = null;  // 重置缓存,允许重试(和 onerror 一致)
-      reject(new Error('DB blocked'));
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => { dbReady = null; reject(req.error); };  // 失败时重置缓存,允许重试
-  });
-  return dbReady;
+// 从当前游戏状态构造存档记录(saveSlot 与 overwriteSave 的单一数据源)
+function collectSaveRecord(id) {
+  const rec = {
+    version: 2,          // 存档格式版本(预留向前兼容)
+    name: '存档 ' + new Date().toLocaleString('zh-CN'),   // overwrite 时由 SAVELIB 用旧名覆盖
+    seed: worldSeed,
+    playerPos: { x: playerPos.x, y: playerPos.y, z: playerPos.z },
+    yaw, pitch, cameraMode, isFlying,
+    playerHP, breathTimer: 0,
+    dayTime,
+    hotbar, currentSlot,
+    modifications: Array.from(modifications.entries()),
+    cropTimersData: Array.from(cropTimers.entries()),
+    doorsData: Array.from(doors.entries()).map(function(e){return [e[0], {x:e[1].x,y:e[1].y,z:e[1].z,type:e[1].type,open:e[1].open,facing:e[1].facing}];}),
+    timestamp: Date.now(),
+  };
+  // id 只在覆盖保存时写入:add 路径若带 id:undefined,keyPath 求值非法会 DataError
+  if (id !== undefined) rec.id = id;
+  return rec;
 }
 
 // 保存当前游戏到新存档槽(可命名),返回存档 id
 async function saveSlot(name) {
-  try {
-    const db = await openDB();
-    if (!db) return null;
-    const rec = {
-      version: 2,          // 存档格式版本(预留向前兼容)
-      name: name || ('存档 ' + new Date().toLocaleString('zh-CN')),
-      seed: worldSeed,
-      playerPos: { x: playerPos.x, y: playerPos.y, z: playerPos.z },
-      yaw, pitch, cameraMode, isFlying,
-      playerHP, breathTimer: 0,
-      dayTime,            // 修复:昼夜时间此前不入存档,读档总是回到早晨
-      hotbar, currentSlot,
-      modifications: Array.from(modifications.entries()),
-      cropTimersData: Array.from(cropTimers.entries()),
-      doorsData: Array.from(doors.entries()).map(function(e){return [e[0], {x:e[1].x,y:e[1].y,z:e[1].z,type:e[1].type,open:e[1].open,facing:e[1].facing}];}),
-      timestamp: Date.now(),
-    };
-    const tx = db.transaction(STORE, 'readwrite');
-    return new Promise((resolve) => {
-      const r = tx.objectStore(STORE).add(rec);
-      r.onsuccess = () => { currentSaveId = r.result; resolve(r.result); };
-      r.onerror = () => resolve(null);
-    });
-  } catch (e) { return null; }
+  const rec = collectSaveRecord();
+  if (name) rec.name = name;
+  const id = await SAVELIB.add(rec);
+  if (id !== null) currentSaveId = id;
+  return id;
 }
 
-// 覆盖保存当前存档(若 currentSaveId 存在);无当前存档则新建槽
+// 覆盖保存当前存档(保留原名称;无当前存档则不应调用,autosave 已防护)
 async function overwriteSave(id) {
-  try {
-    const db = await openDB();
-    if (!db) return false;
-    const rec = {
-      version: 2,
-      id, name: ('存档 ' + new Date().toLocaleString('zh-CN')),
-      seed: worldSeed,
-      playerPos: { x: playerPos.x, y: playerPos.y, z: playerPos.z },
-      yaw, pitch, cameraMode, isFlying,
-      playerHP, breathTimer: 0,
-      dayTime,
-      hotbar, currentSlot,
-      doorsData: Array.from(doors.entries()).map(function(e){return [e[0], {x:e[1].x,y:e[1].y,z:e[1].z,type:e[1].type,open:e[1].open,facing:e[1].facing}];}),
-      modifications: Array.from(modifications.entries()),  // C2:不能丢失!
-      cropTimersData: Array.from(cropTimers.entries()),
-      timestamp: Date.now(),
-    };
-    // 保留原名称:先读旧记录的 name
-    const tx = db.transaction(STORE, 'readwrite');
-    return new Promise((resolve) => {
-      const gr = tx.objectStore(STORE).get(id);
-      gr.onsuccess = () => {
-        if (gr.result) rec.name = gr.result.name;
-        const pr = tx.objectStore(STORE).put(rec);
-        pr.onsuccess = () => resolve(true);
-        pr.onerror = () => resolve(false);
-      };
-      gr.onerror = () => resolve(false);
-    });
-  } catch (e) { return false; }
+  return SAVELIB.overwrite(id, collectSaveRecord(id));
 }
 
-// 列出所有存档(按时间倒序)
+// 列出所有存档(按时间倒序;仅存档管理面板使用,其余路径走 count/latestId)
 async function listSaves() {
-  try {
-    const db = await openDB();
-    if (!db) return [];
-    const tx = db.transaction(STORE, 'readonly');
-    return new Promise((resolve) => {
-      const r = tx.objectStore(STORE).getAll();
-      r.onsuccess = () => {
-        const saves = r.result || [];
-        saves.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-        resolve(saves);
-      };
-      r.onerror = () => resolve([]);
-    });
-  } catch (e) { return []; }
+  return SAVELIB.list();
 }
 
-// 读取指定存档
+// 读取指定存档并应用到当前游戏
 async function loadSlot(id) {
+  const rec = await SAVELIB.get(id);
+  if (!rec) return false;
   try {
-    const db = await openDB();
-    if (!db) return false;
-    const tx = db.transaction(STORE, 'readonly');
-    return new Promise((resolve) => {
-      const r = tx.objectStore(STORE).get(id);
-      r.onsuccess = () => {
-        if (!r.result) { resolve(false); return; }
-        try {
-          currentSaveId = id;
-          applySave(r.result);
-          resolve(true);
-        } catch (e) {
-          // 修复:applySave 抛异常时 promise 永不 resolve,"继续游戏"无限挂起;现在降级为读取失败
-          console.error('loadSlot: 存档数据损坏,读取失败', e);
-          currentSaveId = null;
-          resolve(false);
-        }
-      };
-      r.onerror = () => resolve(false);
-    });
-  } catch (e) { return false; }
+    currentSaveId = id;
+    applySave(rec);
+    return true;
+  } catch (e) {
+    // 修复:applySave 抛异常时降级为读取失败("继续游戏"不无限挂起)
+    console.error('loadSlot: 存档数据损坏,读取失败', e);
+    currentSaveId = null;
+    return false;
+  }
 }
 
-// 兼容旧接口:读取最新存档
-// 反向遍历 timestamp 索引取最新 id(openKeyCursor 只取主键,不反序列化存档体),
-// 再由 loadSlot 单条读取——避免 getAll() 把所有存档的全部 modifications 拉进内存
+// 兼容旧接口:读取最新存档(latestId 只取主键,再单条读取,不反序列化全部存档)
 async function loadGame() {
-  try {
-    const db = await openDB();
-    if (!db) return false;
-    const tx = db.transaction(STORE, 'readonly');
-    return new Promise((resolve) => {
-      const req = tx.objectStore(STORE).index('timestamp').openKeyCursor(null, 'prev');
-      req.onsuccess = () => {
-        const cursor = req.result;
-        if (!cursor) { resolve(false); return; }
-        loadSlot(cursor.primaryKey).then(resolve);
-      };
-      req.onerror = () => resolve(false);
-    });
-  } catch (e) { return false; }
+  const id = await SAVELIB.latestId();
+  if (id === null) return false;
+  return loadSlot(id);
 }
 
 // 删除存档
 async function deleteSave(id) {
-  try {
-    const db = await openDB();
-    if (!db) return false;
-    const tx = db.transaction(STORE, 'readwrite');
-    return new Promise((resolve) => {
-      const r = tx.objectStore(STORE).delete(id);
-      r.onsuccess = () => { if (currentSaveId === id) currentSaveId = null; resolve(true); };
-      r.onerror = () => resolve(false);
-    });
-  } catch (e) { return false; }
+  const ok = await SAVELIB.remove(id);
+  if (ok && currentSaveId === id) currentSaveId = null;
+  return ok;
 }
 
 // 是否有存档(count 只取条数,不反序列化存档体;启动时每次刷新都会调用)
 async function hasSave() {
-  try {
-    const db = await openDB();
-    if (!db) return false;
-    const tx = db.transaction(STORE, 'readonly');
-    return new Promise((resolve) => {
-      const r = tx.objectStore(STORE).count();
-      r.onsuccess = () => resolve(r.result > 0);
-      r.onerror = () => resolve(false);
-    });
-  } catch (e) { return false; }
+  return (await SAVELIB.count()) > 0;
 }
 
 // 自动保存(覆盖当前存档,若无则不存避免无意义堆积)

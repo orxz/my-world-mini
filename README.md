@@ -52,7 +52,7 @@ npm run serve    # python3 -m http.server 8843
 # 浏览器访问 http://localhost:8843/
 ```
 
-> 游戏本身**零构建**:`index.html` 直接 `<script src>` 引入 `worldgen.js` / `craft.js` / `three.min.js` / `game.js`。
+> 游戏本身**零构建**:`index.html` 直接 `<script src>` 引入 `worldgen.js` / `craft.js` / `three.min.js` / `audio.js` / `save.js` / `doors.js` / `game.js`。
 > `npm` 只用于跑测试和 lint(见 [开发](#-开发))。
 
 ## 🎮 操作
@@ -191,7 +191,7 @@ npm run serve    # python3 -m http.server 8843
 
 ```bash
 npm install      # 安装开发依赖(ESLint 9)
-npm test         # 跑确定性函数单元测试(46 项)
+npm test         # 跑确定性函数单元测试(50 项)
 npm run lint     # ESLint 静态检查
 npm run serve    # 启动本地静态服务器 http://localhost:8843/
 ```
@@ -209,11 +209,14 @@ npm run serve    # 启动本地静态服务器 http://localhost:8843/
 ```
 myword/
 ├── index.html          页面结构 + 样式 + 面板(开始/暂停/背包/存档管理/设置)
-├── game.js             游戏主逻辑(20 个模块,渲染/物理/物品/视角/存档/UI/广场)
-├── worldgen.js         世界生成模块(噪声/生物群系/地形高度,纯函数可独立测试)
-├── craft.js            合成与破坏计算模块(RECIPES/matchRecipe/breakCost,纯函数可独立测试)
+├── game.js             游戏主逻辑(渲染/物理/物品/视角/存档状态机/UI/广场)
+├── worldgen.js         世界生成(噪声/生物群系/地形高度,纯函数)
+├── craft.js            合成与破坏计算(RECIPES/matchRecipe/breakCost,纯函数)
+├── audio.js            程序化音效(Web Audio 合成)
+├── save.js             IndexedDB 纯存储层(SAVELIB)
+├── doors.js            门实体渲染层(容器/网格/查询)
 ├── three.min.js        Three.js r160(已内置,离线可玩)
-├── test/unit.test.js   Node 单元测试(确定性函数验证,46 项)
+├── test/unit.test.js   Node 单元测试(确定性函数验证,50 项)
 ├── docs/               架构与模块文档(architecture.md / worldgen.md)
 ├── eslint.config.mjs   ESLint 9 flat config(仅开发期)
 ├── package.json        npm scripts(test / serve / lint)

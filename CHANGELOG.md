@@ -5,6 +5,19 @@
 
 ## [Unreleased]
 
+### 重构(模块拆分:game.js → audio.js / save.js / doors.js)
+- **audio.js**:Web Audio 程序化音效对象整体迁出(IIFE + 全局,game.js 调用点零改动)
+- **save.js**:IndexedDB 纯存储层(SAVELIB:add/overwrite/list/get/remove/count/latestId);
+  game.js 保留 `collectSaveRecord`(rec 构造单一数据源,消除原先 saveSlot/overwriteSave
+  两份重复字段列表)与 applySave/自动保存状态机
+- **doors.js**:门渲染层(容器/键/材质缓存/createDoorMesh/disposeDoorGroup/纯查询);
+  依赖玩家状态与音效/存档的交互逻辑(placeDoor/toggleDoor/raycastDoor 等)留在 game.js
+- 修复拆分引入的 bug(冒烟测试第一时间拦截):`collectSaveRecord` 在 add 路径写入
+  `id: undefined`,IndexedDB keyPath 求值非法抛 DataError;现 id 仅在覆盖保存时写入
+- 单测新增 4 项(三模块可独立 require 加载、导出完整、doorBlocksAt/getDoorAt 查询
+  语义:关门阻挡/开门放行/上半格回落),共 50 项
+- game.js 3794 → 约 3560 行
+
 ### 修复(代码审查轮)
 - **按住左键 + 弓自动连发(Important)**:复击节拍原先只排除材料,手持弓按住左键会以
   ~750ms/支 自动射光箭并耗尽耐久,剑则反复挥砍刷屏;现复击仅限空手/方块/镐斧铲

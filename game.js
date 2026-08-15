@@ -3117,7 +3117,7 @@ const cropTimers = new Map();
 function tryPlantCrop(nx, ny, nz) {
   if (selectedType !== 'snow') return false;
   if (getBlock(nx, ny - 1, nz) !== 'grass') return false;
-  if (setBlock(nx, ny, nz, 'snow')) { cropTimers.set(blockKey(nx, ny, nz), Date.now()); return true; }
+  if (setBlock(nx, ny, nz, 'snow')) { cropTimers.set(blockKey(nx, ny, nz), Date.now()); markDirtySave(); return true; }
   return false;
 }
 function updateCrops() {
@@ -3134,6 +3134,7 @@ function updateCrops() {
     const cur = getBlock(x, y, z);
     if (cur === 'snow') { setBlock(x, y, z, 'leaves'); showToast('小麦成熟了'); }
     cropTimers.delete(key);   // 已成熟(leaves)或被替换/破坏(空气)时清理,不再留给下一秒兜底
+    markDirtySave();          // 成熟改块/计时器清理是状态变更:纯种植会话也必须触发自动保存,否则刷新后计时器丢失
   }
 }
 

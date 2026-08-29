@@ -4248,9 +4248,9 @@ function updatePlayer(dt, prevVy) {
   }
 
   // 饥饿系统(状态机在 inventory.js:hungerTick):移动消耗更快(飞行减半);
-  // 饥饿 ≥18 缓慢回血;归零后饥饿伤害(保底 2 HP 由本层判定)
+  // 速率平衡:移动 0.7(≈5.7 秒 1 点,20 点约 2 分钟)/ 静止 0.25(16 秒 1 点)
   const hres = INVLIB.hungerTick(hungerState, dt,
-    (Math.hypot(velocity.x, velocity.z) > 0.5 ? 1.2 : 0.45) * (isFlying ? 0.4 : 1),
+    (Math.hypot(velocity.x, velocity.z) > 0.5 ? 0.7 : 0.25) * (isFlying ? 0.4 : 1),
     playerHP < PLAYER_MAX_HP);
   if (hres.hungerChanged) updateHungerBar();
   if (hres.regen) {

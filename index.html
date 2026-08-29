@@ -45,6 +45,29 @@
   /* 数量角标(方块/材料堆叠) */
   .slot .cnt { position: absolute; right: 3px; bottom: 2px; font-size: 12px; font-weight: bold; color: #fff; text-shadow: 1px 1px 2px #000, 0 0 3px #000; pointer-events: none; }
 
+  /* 移动端小屏适配:缩小热栏槽位,防溢出 */
+  @media (max-width: 640px) {
+    #hotbar { gap: 2px; padding: 3px; bottom: 10px; max-width: 98vw; }
+    .slot { width: 36px; height: 36px; }
+    .slot canvas { width: 26px; height: 26px; }
+    .slot .num { font-size: 9px; top: 0; left: 2px; }
+    .slot .name { display: none; }
+    .slot .cnt { font-size: 10px; }
+    #hp-bar { bottom: 56px; left: 8px; }
+    #hunger-bar { bottom: 56px; right: 8px; }
+    #info { font-size: 11px; padding: 4px 8px; line-height: 1.45; top: 6px; left: 6px; }
+    .inv-grid { grid-template-columns: repeat(auto-fill, 56px); }
+    .inv-cell { width: 56px; height: 56px; }
+    .chest-grid { grid-template-columns: repeat(9, 34px); }
+    .chest-grid .inv-cell { width: 34px; height: 34px; }
+    .chest-grid .inv-cell canvas { width: 24px; height: 24px; }
+  }
+  @media (max-width: 400px) {
+    .slot { width: 30px; height: 30px; }
+    .slot canvas { width: 22px; height: 22px; }
+    #hotbar { gap: 1px; }
+  }
+
   /* 信息面板 */
   #info {
     position: fixed; top: 10px; left: 10px; z-index: 10; color: #fff;

@@ -11,8 +11,10 @@
   const RECIPES = [
     // 基础:木头→木板(1 木头 = 4 木板,无序)
     { name: '木板', pattern: ['wood', null, null, null], result: { kind: 'block', id: 'planks' }, count: 4, shapeless: true },
-    // 木板→木棍(2 木板 = 4 木棍,纵向排列)
-    { name: '木棍', pattern: ['planks', null, 'planks', null], result: { kind: 'item', id: 'arrow', count: 4 }, shapeless: false },
+    // 木板→木棍(2 木板纵向 = 4 木棍,经典配方;后续工具的必需材料)
+    { name: '木棍', pattern: ['planks', null, 'planks', null], result: { kind: 'item', id: 'stick' }, count: 4, shapeless: false },
+    // 木棍→箭(2 木棍纵向 = 4 箭)
+    { name: '箭', pattern: ['stick', null, 'stick', null], result: { kind: 'item', id: 'arrow' }, count: 4, shapeless: false },
     // 4 木板→合成台(经典工作台配方,放入世界后右键打开 3×3 合成)
     { name: '合成台', pattern: ['planks', 'planks', 'planks', 'planks'], result: { kind: 'block', id: 'crafting_table' }, count: 1, shapeless: true },
     // 4 石头→石砖(用 brick 表示)
@@ -40,6 +42,16 @@
     { name: '钻石镐', pattern: ['gem_diamond', 'gem_diamond', 'gem_diamond', null, 'arrow', null, null, 'arrow', null], result: { kind: 'tool', id: 'pickaxe_diamond' }, shapeless: false },
     // 石砖墙块:8 石头围一圈(中心空)→ 4 石砖(3×3 专属,演示环形图案)
     { name: '石砖(大量)', pattern: ['stone', 'stone', 'stone', 'stone', null, 'stone', 'stone', 'stone', 'stone'], result: { kind: 'block', id: 'brick' }, count: 4, shapeless: false },
+    // 圆石→石头(经典烧制的合成演示;无熔炉版本)
+    { name: '石头', pattern: ['cobblestone', null, null, null], result: { kind: 'block', id: 'stone' }, count: 1, shapeless: true },
+    // ---- 工具配方(3×3:3 材料上排 + 2 木棍中列,经典镐形)----
+    { name: '木镐', pattern: ['planks', 'planks', 'planks', null, 'stick', null, null, 'stick', null], result: { kind: 'tool', id: 'pickaxe_wood' }, shapeless: false },
+    { name: '石镐', pattern: ['cobblestone', 'cobblestone', 'cobblestone', null, 'stick', null, null, 'stick', null], result: { kind: 'tool', id: 'pickaxe_stone' }, shapeless: false },
+    { name: '铁镐(矿石)', pattern: ['iron_ore', 'iron_ore', 'iron_ore', null, 'stick', null, null, 'stick', null], result: { kind: 'tool', id: 'pickaxe_iron' }, shapeless: false },
+    // ---- 剑配方(3×3:2 材料竖列 + 1 木棍底,经典剑形)----
+    { name: '木剑', pattern: ['planks', null, null, 'planks', null, null, 'stick', null, null], result: { kind: 'tool', id: 'sword_wood' }, shapeless: false },
+    { name: '石剑', pattern: ['cobblestone', null, null, 'cobblestone', null, null, 'stick', null, null], result: { kind: 'tool', id: 'sword_stone' }, shapeless: false },
+    { name: '钻石剑', pattern: ['gem_diamond', null, null, 'gem_diamond', null, null, 'stick', null, null], result: { kind: 'tool', id: 'sword_diamond' }, shapeless: false },
   ];
 
   // 匹配配方:grid 是长度 4 的数组(每格 null 或 {kind,id}),返回配方对象或 null

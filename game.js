@@ -31,11 +31,16 @@ const BLOCK_TYPES = {
   door_gold:   { name: '金门',     top: '#c8a030', side: '#ffd54a', bottom: '#b89020', solid: true, tool: 'pickaxe', hardness: 2.0 },
   door_diamond:{ name: '钻石门',   top: '#3aa8b8', side: '#5fe3e8', bottom: '#2a8898', solid: true, tool: 'pickaxe', hardness: 4.0 },
   crafting_table: { name: '合成台', top: '#a0763a', side: '#8a6430', bottom: '#b08243', solid: true, tool: 'axe', hardness: 1.2 },
+  // 经典采矿循环方块:圆石 + 三种矿石
+  cobblestone: { name: '圆石',   top: '#828282', side: '#7a7a7a', bottom: '#6f6f6f', solid: true, tool: 'pickaxe', hardness: 2.0 },
+  coal_ore:     { name: '煤矿',   top: '#888888', side: '#7c7c7c', bottom: '#6e6e6e', solid: true, tool: 'pickaxe', hardness: 3.0 },
+  iron_ore:     { name: '铁矿',   top: '#888888', side: '#7c7c7c', bottom: '#6e6e6e', solid: true, tool: 'pickaxe', hardness: 3.0 },
+  diamond_ore:  { name: '钻石矿', top: '#888888', side: '#7c7c7c', bottom: '#6e6e6e', solid: true, tool: 'pickaxe', hardness: 3.0 },
 };
 const HOTBAR_ORDER = ['grass', 'dirt', 'stone', 'wood', 'leaves', 'sand', 'planks', 'brick'];
 
 // 方块数字 id(用于紧凑的 Uint8Array 区块存储)
-const BLOCK_ID = { air: 0, grass: 1, dirt: 2, stone: 3, wood: 4, leaves: 5, sand: 6, planks: 7, brick: 8, water: 9, snow: 10, gravel: 11, wool_red: 12, wool_yellow: 13, wool_white: 14, wool_black: 15, door: 16, door_iron: 17, door_stone: 18, door_gold: 19, door_diamond: 20, crafting_table: 21 };
+const BLOCK_ID = { air: 0, grass: 1, dirt: 2, stone: 3, wood: 4, leaves: 5, sand: 6, planks: 7, brick: 8, water: 9, snow: 10, gravel: 11, wool_red: 12, wool_yellow: 13, wool_white: 14, wool_black: 15, door: 16, door_iron: 17, door_stone: 18, door_gold: 19, door_diamond: 20, crafting_table: 21, cobblestone: 22, coal_ore: 23, iron_ore: 24, diamond_ore: 25 };
 const ID_TO_BLOCK = Object.keys(BLOCK_ID);
 
 // ============================================================
@@ -82,8 +87,10 @@ const ITEM_TYPES = {
   arrow:       { name: '箭',     color: '#caa472', shape: 'arrow' },
   porkchop:    { name: '猪排',   color: '#e8938a', shape: 'meat' },
   apple:       { name: '苹果',   color: '#d63a2f', shape: 'apple' },
+  stick:       { name: '木棍',   color: '#9a6b3f', shape: 'stick' },
+  coal:        { name: '煤炭',   color: '#262626', shape: 'gem' },
 };
-const ITEM_ORDER = ['gem_diamond','gem_gold','gem_emerald','arrow','porkchop','apple'];
+const ITEM_ORDER = ['gem_diamond','gem_gold','gem_emerald','arrow','porkchop','apple','stick','coal'];
 // 食物 → 恢复的饥饿值(右键进食)
 const FOODS = { porkchop: 8, apple: 4 };
 
@@ -242,6 +249,35 @@ function drawBlockFace(ctx, type, face, s, seedRand) {
       ctx.fillRect(2,2,1,1); ctx.fillRect(3,3,1,1); ctx.fillRect(s-4,s-4,1,1); ctx.fillRect(s-3,s-3,1,1);
       // 钻石把手
       ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.fillRect(Math.floor(s*0.7),Math.floor(s*0.4),1,1);
+      break;
+    }
+    case 'cobblestone': {
+      // 圆石:石底 + 深色卵石裂缝网
+      noise(22);
+      ctx.strokeStyle = 'rgba(40,40,40,0.55)';
+      ctx.lineWidth = 1;
+      for (let gy = 0; gy < s; gy += Math.floor(s / 4)) {
+        ctx.beginPath();
+        ctx.moveTo(0, gy + Math.floor(seedRand() * 3));
+        for (let gx = 0; gx <= s; gx += 4) ctx.lineTo(gx, gy + Math.floor(seedRand() * 4));
+        ctx.stroke();
+      }
+      break;
+    }
+    case 'coal_ore':
+    case 'iron_ore':
+    case 'diamond_ore': {
+      // 矿石:石底 + 确定性色斑(煤=黑/铁=米棕/钻=青)
+      noise(25);
+      const speck = type === 'coal_ore' ? '#232323' : type === 'iron_ore' ? '#d8af8a' : '#5fe3e8';
+      ctx.fillStyle = speck;
+      const spots = 4 + Math.floor(seedRand() * 2);
+      for (let i = 0; i < spots; i++) {
+        const px = 1 + Math.floor(seedRand() * (s - 3));
+        const py = 1 + Math.floor(seedRand() * (s - 3));
+        ctx.fillRect(px, py, 2, 2);
+        ctx.fillRect(px + (seedRand() < 0.5 ? -1 : 2), py + (seedRand() < 0.5 ? 0 : 1), 1, 1);
+      }
       break;
     }
     case 'crafting_table': {
@@ -417,6 +453,17 @@ function generateChunkData(cx, cz) {
 
       // 植被:树由 growTreesInChunk 在区块数据就绪后跨区块种植(generateChunkData 仅生成地形)
       // 这样树叶可跨越区块边界,不会出现半棵树
+
+      // 矿石(确定性,复刻经典采矿循环):石头层内按 hash 生成矿点;
+      // 煤 1.2% / 铁 0.7%,钻石 0.3% 且仅在 y<12 深层
+      for (let y = 1; y < height - 3; y++) {
+        const idx2 = chunkIdx(lx, y, lz);
+        if (data[idx2] !== BLOCK_ID.stone) continue;
+        const r = hash3(wx, y, wz, worldSeed + 4242);
+        if (r < 0.012) data[idx2] = BLOCK_ID.coal_ore;
+        else if (r < 0.019) data[idx2] = BLOCK_ID.iron_ore;
+        else if (r < 0.022 && y < 12) data[idx2] = BLOCK_ID.diamond_ore;
+      }
     }
   }
 
@@ -1353,6 +1400,27 @@ function cycleCameraMode() {
 // ============================================================
 // 第十一部分:初始化
 // ============================================================
+// 经典 MC 标题屏:程序化泥土像素贴图平铺 + 半透明暗化(CSS 渐变叠加)
+function applyClassicMenuBackground() {
+  const overlay = document.getElementById('overlay');
+  if (!overlay) return;
+  const c = document.createElement('canvas');
+  c.width = c.height = 32;
+  const ctx = c.getContext('2d');
+  let st = 424242;   // 确定性泥土噪点
+  const rand = () => { st = (st * 1664525 + 1013904223) >>> 0; return st / 4294967296; };
+  for (let y = 0; y < 32; y++)
+    for (let x = 0; x < 32; x++) {
+      const v = 0.72 + rand() * 0.28;
+      ctx.fillStyle = 'rgb(' + ((134 * v) | 0) + ',' + ((96 * v) | 0) + ',' + ((67 * v) | 0) + ')';
+      ctx.fillRect(x, y, 1, 1);
+    }
+  const url = c.toDataURL();
+  overlay.style.backgroundImage = 'linear-gradient(rgba(0,0,0,0.6), rgba(0,0,0,0.6)), url(' + url + ')';
+  overlay.style.backgroundSize = 'auto, 128px 128px';
+  overlay.style.imageRendering = 'pixelated';
+}
+
 function init() {
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x87CEEB);
@@ -1444,6 +1512,7 @@ function init() {
   buildHotbar();
   updateHPBar();   // 初始化生命条 HUD
   updateHungerBar();   // 初始化饥饿条 HUD
+  applyClassicMenuBackground();   // 经典泥土贴图标题屏
 }
 
 // 在中心区域找安全出生点
@@ -1874,6 +1943,12 @@ function drawMaterialIcon(ctx, itemId, size) {
     ctx.closePath(); ctx.fill(); ctx.stroke();
     ctx.fillStyle = 'rgba(255,255,255,0.35)';
     ctx.fillRect(-size * 0.18, -size * 0.12, size * 0.36, size * 0.06);
+  } else if (def.shape === 'stick') {
+    // 木棍:斜放棕色小棍(无箭头)
+    ctx.strokeStyle = def.color; ctx.lineWidth = size * 0.09; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-size * 0.24, size * 0.26); ctx.lineTo(size * 0.24, -size * 0.26); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,235,200,0.35)'; ctx.lineWidth = size * 0.03;
+    ctx.beginPath(); ctx.moveTo(-size * 0.2, size * 0.22); ctx.lineTo(size * 0.2, -size * 0.22); ctx.stroke();
   } else if (def.shape === 'meat') {
     // 猪排:粉色带骨肉排
     ctx.fillStyle = def.color;
@@ -2460,9 +2535,13 @@ function breakBlock() {
   if (breakProgress < cost) return;
   spawnParticles(t.x, t.y, t.z, new THREE.Color(BLOCK_TYPES[type].top).getHex(), 8);
   setBlock(t.x, t.y, t.z, null);
-  // 生存采集:破坏必掉落;树叶 15% 掉苹果(食物来源)
-  if (type === 'leaves' && Math.random() < 0.15) spawnDroppedItem(t.x, t.y, t.z, 'apple', 1, 'item');
-  else spawnDroppedItem(t.x, t.y, t.z, type, 1);
+  // 经典掉落(生存采集):石头→圆石;煤矿→煤炭(1-2);钻石矿→钻石;树叶 15% 掉苹果
+  let dropType = type, dropKind = 'block', dropCount = 1;
+  if (type === 'stone') dropType = 'cobblestone';
+  else if (type === 'coal_ore') { dropType = 'coal'; dropKind = 'item'; dropCount = 1 + (Math.random() < 0.3 ? 1 : 0); }
+  else if (type === 'diamond_ore') { dropType = 'gem_diamond'; dropKind = 'item'; }
+  else if (type === 'leaves' && Math.random() < 0.15) { dropType = 'apple'; dropKind = 'item'; }
+  spawnDroppedItem(t.x, t.y, t.z, dropType, dropCount, dropKind);
   breakProgress = 0; breakTargetKey = null;
   hideBreakOverlay();
   showToast(`破坏:${def.name}`);
@@ -4306,7 +4385,7 @@ function buildInventoryPanel() {
   addSection(grid, '方块');
   HOTBAR_ORDER.forEach(id => addCell({ kind: 'block', id }));
   // 新增方块也可取用
-  ['water', 'snow', 'gravel', 'door', 'door_iron', 'door_stone', 'door_gold', 'door_diamond', 'crafting_table'].forEach(id => addCell({ kind: 'block', id }));
+  ['water', 'snow', 'gravel', 'door', 'door_iron', 'door_stone', 'door_gold', 'door_diamond', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore'].forEach(id => addCell({ kind: 'block', id }));
   addSection(grid, '材料 · 宝石');
   ITEM_ORDER.forEach(id => addCell({ kind: 'item', id, count: 64 }));
 }
@@ -4423,10 +4502,10 @@ function openTablePanel() {
   if (clearBtn) clearBtn.onclick = clearTableGrid;
   const closeBtn = document.getElementById('table-close');
   if (closeBtn) closeBtn.onclick = closeTablePanel;
-  // 目录循环列表:方块 + 材料物品(金锭/钻石/箭 —— 3×3 专属配方所需,按 kind 区分图标)
+  // 目录循环列表:方块 + 材料物品(矿石/圆石/木棍等,按 kind 区分图标)
   const catalog = HOTBAR_ORDER.map(id => ({ kind: 'block', id }))
-    .concat(['water', 'snow', 'gravel', 'crafting_table'].map(id => ({ kind: 'block', id })))
-    .concat(['gem_gold', 'gem_diamond', 'gem_emerald', 'arrow'].map(id => ({ kind: 'item', id })));
+    .concat(['water', 'snow', 'gravel', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore'].map(id => ({ kind: 'block', id })))
+    .concat(['gem_gold', 'gem_diamond', 'gem_emerald', 'arrow', 'stick', 'coal'].map(id => ({ kind: 'item', id })));
   document.querySelectorAll('#table-grid .inv-cell').forEach((cell, i) => {
     cell.onclick = () => {
       const cur = tableGrid[i];

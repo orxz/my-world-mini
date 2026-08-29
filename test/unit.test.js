@@ -201,6 +201,36 @@ test('3×3:数量不符不匹配(9 木板≠4 木板配方)', () => {
   assert(r === null || r.name !== '合成台', '不应匹配合成台');
 });
 
+console.log('\n=== 经典物品配方(镐/剑/木棍/烧制) ===');
+test('配方链:2 木板纵向 → 4 木棍(经典)', () => {
+  const r = matchRecipe([{ id: 'planks' }, null, { id: 'planks' }, null], RECIPES);
+  assert(r && r.name === '木棍' && r.result.id === 'stick' && r.count === 4, 'got: ' + (r && r.name));
+});
+test('配方链:2 木棍纵向 → 4 箭', () => {
+  const r = matchRecipe([{ id: 'stick' }, null, { id: 'stick' }, null], RECIPES);
+  assert(r && r.name === '箭' && r.result.id === 'arrow' && r.count === 4, 'got: ' + (r && r.name));
+});
+test('石镐:3 圆石 + 2 木棍(经典镐形 3×3)', () => {
+  const r = matchRecipeGrid(G9(['cobblestone', 'cobblestone', 'cobblestone', null, 'stick', null, null, 'stick', null]), 3, RECIPES);
+  assert(r && r.name === '石镐' && r.result.kind === 'tool', 'got: ' + (r && r.name));
+});
+test('木剑:2 木板竖列 + 木棍底(经典剑形 3×3)', () => {
+  const r = matchRecipeGrid(G9(['planks', null, null, 'planks', null, null, 'stick', null, null]), 3, RECIPES);
+  assert(r && r.name === '木剑' && r.result.id === 'sword_wood', 'got: ' + (r && r.name));
+});
+test('钻石剑:2 钻石 + 木棍(与钻石门不冲突)', () => {
+  const r = matchRecipeGrid(G9(['gem_diamond', null, null, 'gem_diamond', null, null, 'stick', null, null]), 3, RECIPES);
+  assert(r && r.name === '钻石剑' && r.result.id === 'sword_diamond', 'got: ' + (r && r.name));
+});
+test('烧制演示:1 圆石 → 1 石头(无序)', () => {
+  const r = matchRecipeGrid(G9([null, null, null, null, 'cobblestone', null, null, null, null]), 3, RECIPES);
+  assert(r && r.name === '石头' && r.result.id === 'stone', 'got: ' + (r && r.name));
+});
+test('镐形材料区分:木镐不受圆石影响', () => {
+  const r = matchRecipeGrid(G9(['cobblestone', 'cobblestone', 'cobblestone', null, 'stick', null, null, 'stick', null]), 3, RECIPES);
+  assert(r && r.name === '石镐' && r.result.id !== 'pickaxe_wood', '应为石镐而非木镐');
+});
+
 console.log('\n=== 破坏耗时(breakCost) ===');
 test('breakCost 无工具 = round(hardness×3)', () => {
   assert.strictEqual(breakCost({ hardness: 1.5, tool: 'pickaxe' }, null), 5);   // 4.5 → 5

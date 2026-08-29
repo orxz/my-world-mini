@@ -807,9 +807,9 @@ const _rayEye = new THREE.Vector3();    // 射线:起点(DDA + 门检测共用)
 const _rayDir = new THREE.Vector3();    // 射线:方向
 const _rayNormal = new THREE.Vector3(); // 射线:命中面法线
 
-// 掉落物(创造模式:仅视觉趣味,无物品栏变动)
+// 掉落物(生存采集核心:破坏方块必掉落,靠近自动拾取入快捷栏)
 const droppedItems = [];
-let dropItems = false;   // 默认关,保留创造模式无限物品栏的体验;暂停菜单可切换
+const BLOCK_STACK_MAX = 64;   // 方块最大堆叠数
 
 // 玩家生命系统(无怪物,先建立基础设施:跌落/溺水伤害 + HUD + 存档)
 let playerHP = 20;       // 10 颗心,每心 2 点
@@ -1372,7 +1372,7 @@ function init() {
 
   // 云朵(场景设置完毕后创建,高空块状半透明面片)
   createClouds();
-  // 天空系统:渐变天穹 + 星空 + 日/月光晕(依赖 sunMeshRef/moonMeshRef)
+  // 天空系统:渐变天穹 + 星星 + 日/月光晕(依赖 sunMeshRef/moonMeshRef)
   createSky();
   // 破坏裂纹覆盖层
   createCrackOverlay();
@@ -1692,8 +1692,8 @@ function resetWorld() {
 // 第十二部分:快捷栏 / 背包(沿用旧实现)
 // ============================================================
 function initInventory() {
-  hotbar = HOTBAR_ORDER.map(id => ({ kind: 'block', id }));
-  while (hotbar.length < HOTBAR_SIZE) hotbar.push(null);
+  // 生存模式开局:仅一把木镐,其余靠破坏方块掉落拾取(经典 MC 采集循环)
+  hotbar = new Array(HOTBAR_SIZE).fill(null);
   hotbar[8] = { kind: 'tool', id: 'pickaxe_wood', durability: TOOL_TYPES.pickaxe_wood.durability };
   selectSlot(0);
 }
@@ -1864,6 +1864,12 @@ function buildHotbar() {
     cv.width = cv.height = 64;
     slot.appendChild(cv);
     drawItemIcon(item, cv);
+    if (item && (item.count || 1) > 1) {
+      const cnt = document.createElement('span');
+      cnt.className = 'cnt';
+      cnt.textContent = item.count;
+      slot.appendChild(cnt);
+    }
     if (item && item.kind === 'tool') {
       const bar2 = document.createElement('div');
       bar2.className = 'dur';
@@ -1878,7 +1884,10 @@ function buildHotbar() {
 
 function itemName(item) {
   if (!item) return '(空)';
-  if (item.kind === 'block') return BLOCK_TYPES[item.id].name;
+  if (item.kind === 'block') {
+    const n = item.count || 1;
+    return BLOCK_TYPES[item.id].name + (n > 1 ? ' ×' + n : '');
+  }
   if (item.kind === 'tool') return TOOL_TYPES[item.id].name;
   if (item.kind === 'item') {
     const n = item.count || 1;
@@ -1894,6 +1903,8 @@ function selectSlot(i) {
   const item = hotbar[i];
   if (item) {
     if (item.kind === 'block') { selectedType = item.id; lastSelectedBlock = item.id; }
+  } else {
+    selectedType = null;   // 空手:无可放置方块
   }
   document.querySelectorAll('#hotbar .slot').forEach(s => {
     s.classList.toggle('active', +s.dataset.slot === i);
@@ -1932,7 +1943,21 @@ function setupInput() {
     }
     if (e.code === 'F5') { e.preventDefault(); cycleCameraMode(); }
     if (e.code === 'KeyE') toggleInventory(true);
-    if (e.code === 'KeyQ') { hotbar[currentSlot] = null; buildHotbar(); updateHoldItem(); showToast('空手'); markDirtySave(); }
+    if (e.code === 'KeyQ') {
+      // 经典丢弃:手持方块整组丢出(掉落物保留数量,可再拾回)
+      const it = hotbar[currentSlot];
+      if (it && it.kind === 'block') {
+        const fx = -Math.sin(yaw) * Math.cos(pitch), fy = Math.sin(pitch), fz = -Math.cos(yaw) * Math.cos(pitch);
+        spawnDroppedItem(playerPos.x + fx * 1.2, playerPos.y + fy * 1.2, playerPos.z + fz * 1.2, it.id, it.count || 1);
+        hotbar[currentSlot] = null;
+        selectedType = null;
+        showToast('丢弃:' + BLOCK_TYPES[it.id].name);
+      } else if (it) {
+        hotbar[currentSlot] = null;
+        showToast('空手');
+      }
+      buildHotbar(); updateHoldItem(); markDirtySave();
+    }
   });
   addEventListener('keyup', (e) => { keys[e.code] = false; });
 
@@ -2014,7 +2039,6 @@ function setupInput() {
   const setSound = document.getElementById('set-sound');
   const setVolume = document.getElementById('set-volume');
   const setRender = document.getElementById('set-render');
-  const setDrops = document.getElementById('set-drops');
   const setMobs = document.getElementById('set-mobs');
   const setHostiles = document.getElementById('set-hostiles');
   const setDN = document.getElementById('set-daynight');
@@ -2034,7 +2058,6 @@ function setupInput() {
     if (setSound) setSound.textContent = settings.soundEnabled ? '开' : '关';
     if (setVolume) setVolume.value = Math.round(settings.volume * 100);
     if (setRender) setRender.value = String(settings.renderDist);
-    if (setDrops) setDrops.textContent = settings.dropItems ? '开' : '关';
     if (setMobs) setMobs.textContent = settings.mobs ? '开' : '关';
     if (setHostiles) setHostiles.textContent = settings.hostiles ? '开' : '关';
     if (setDN) {
@@ -2069,11 +2092,6 @@ function setupInput() {
     FOG_FAR = (RENDER_DISTANCE * CHUNK_SIZE) + 8;
     saveSettings();
   });
-  if (setDrops) setDrops.addEventListener('click', () => {
-    settings.dropItems = !settings.dropItems;
-    dropItems = settings.dropItems;
-    saveSettings(); refreshSettingsUI();
-  });
   if (setMobs) setMobs.addEventListener('click', () => {
     settings.mobs = !settings.mobs;
     if (!settings.mobs) clearMobs();
@@ -2101,8 +2119,6 @@ function setupInput() {
     // 刷新暂停菜单标签(与设置面板同步)
     const bs2 = document.getElementById('btn-sound');
     if (bs2) bs2.textContent = '音效:' + (settings.soundEnabled ? '开' : '关');
-    const bd2 = document.getElementById('btn-drops');
-    if (bd2) bd2.textContent = '掉落物:' + (settings.dropItems ? '开' : '关');
     saveSettings();
   });
 
@@ -2132,15 +2148,6 @@ function setupInput() {
     settings.soundEnabled = audio.enabled;
     btnSound.textContent = '音效:' + (audio.enabled ? '开' : '关');
     saveSettings();
-  });
-  // 掉落物开关(创造模式:默认关,避免影响无限物品栏体验)
-  const btnDrops = document.getElementById('btn-drops');
-  if (btnDrops) btnDrops.addEventListener('click', () => {
-    dropItems = !dropItems;
-    btnDrops.textContent = '掉落物:' + (dropItems ? '开' : '关');
-    settings.dropItems = dropItems;
-    saveSettings();
-    showToast('掉落物已' + (dropItems ? '开启' : '关闭'));
   });
   // 动物开关(暂停菜单)
   const btnMobs = document.getElementById('btn-mobs');
@@ -2349,9 +2356,23 @@ function breakBlock() {
     showToast(`${itemName(item)} 不能破坏方块,切换到工具或方块`);
     return;
   }
+  // 左键优先命中动物(剑/斧伤害更高,空手/其他工具 1 点)
+  const mobHit = raycastMob(3.5);
+  if (mobHit) {
+    const heldDef = (item && item.kind === 'tool') ? TOOL_TYPES[item.id] : null;
+    const dmg = (heldDef && (heldDef.tool === 'sword' || heldDef.tool === 'axe')) ? (heldDef.damage || 4) : 1;
+    hurtMob(mobHit, dmg, -Math.sin(yaw), -Math.cos(yaw));
+    swingArm();
+    swingHoldItem();
+    return;
+  }
   // 门:左键=移除门(任何手持,和破坏方块一致);右键=开关门
   const lookDoor = raycastDoor();
-  if (lookDoor) { removeDoor(lookDoor.x, lookDoor.y, lookDoor.z); showToast('移除门'); audio.play('break'); markDirtySave(); return; }
+  if (lookDoor) {
+    removeDoor(lookDoor.x, lookDoor.y, lookDoor.z);
+    spawnDroppedItem(lookDoor.x, lookDoor.y, lookDoor.z, lookDoor.type, 1);   // 掉落门物品
+    showToast('移除门'); audio.play('break'); markDirtySave(); return;
+  }
   const t = raycastTarget();
   if (!t) return;
   const type = getBlock(t.x, t.y, t.z);
@@ -2361,6 +2382,7 @@ function breakBlock() {
   const def = BLOCK_TYPES[type];
 
   const cost = breakCost(type);
+  breakCostTotal = cost;   // 供裂纹覆盖层换算阶段
   const tool = currentTool();
   const key = blockKey(t.x, t.y, t.z);
   if (breakTargetKey !== key) {
@@ -2373,7 +2395,7 @@ function breakBlock() {
   if (breakProgress < cost) return;
   spawnParticles(t.x, t.y, t.z, new THREE.Color(BLOCK_TYPES[type].top).getHex(), 8);
   setBlock(t.x, t.y, t.z, null);
-  if (dropItems) spawnDroppedItem(t.x, t.y, t.z, type);   // 创造模式:仅视觉趣味,默认关
+  spawnDroppedItem(t.x, t.y, t.z, type, 1);   // 生存采集:破坏必掉落,靠近自动拾取
   breakProgress = 0; breakTargetKey = null;
   hideBreakOverlay();
   showToast(`破坏:${def.name}`);
@@ -2389,6 +2411,19 @@ function breakBlock() {
     }
   }
   markDirtySave();
+}
+
+// 放置消耗:当前手持方块格扣减数量,用尽清格(生存模式,替代无限方块)
+function consumeSelected() {
+  const item = hotbar[currentSlot];
+  if (!item || item.kind !== 'block') return;
+  item.count = (item.count || 1) - 1;
+  if (item.count <= 0) {
+    showToast('用完了:' + BLOCK_TYPES[item.id].name);
+    hotbar[currentSlot] = null;
+    selectedType = null;
+  }
+  buildHotbar();
 }
 
 function placeBlock() {
@@ -2411,16 +2446,20 @@ function placeBlock() {
   if (overlapsPlayer(nx, ny, nz)) { showToast('挡住自己了,换个方向'); return; }
   if (selectedType && selectedType.indexOf('door') === 0) {
     const facing = Math.abs(Math.sin(yaw)) > 0.5 ? 1 : 0;
-    if (placeDoor(nx, ny, nz, selectedType, facing)) { showToast('放置:'+(BLOCK_TYPES[selectedType]?BLOCK_TYPES[selectedType].name:'门')); audio.play('place'); markDirtySave(); }
+    if (placeDoor(nx, ny, nz, selectedType, facing)) {
+      showToast('放置:'+(BLOCK_TYPES[selectedType]?BLOCK_TYPES[selectedType].name:'门'));
+      audio.play('place'); markDirtySave(); consumeSelected();
+    }
     else { showToast('门需 2 格高空间'); }
     return;
   }
-  if (tryPlantCrop(nx, ny, nz)) { showToast('种下小麦(60秒成熟)'); audio.play('place'); return; }
+  if (tryPlantCrop(nx, ny, nz)) { showToast('种下小麦(60秒成熟)'); audio.play('place'); consumeSelected(); return; }
   if (setBlock(nx, ny, nz, selectedType)) {
     spawnParticles(nx, ny, nz, new THREE.Color(BLOCK_TYPES[selectedType].top).getHex(), 4);
     showToast(`放置:${BLOCK_TYPES[selectedType].name}`);
     audio.play('place');
     markDirtySave();
+    consumeSelected();
   }
 }
 
@@ -2434,8 +2473,14 @@ function useTool(item) {
   if (def.tool === 'sword') {
     swingArm();
     swingHoldItem();
-    const t = raycastTarget();
-    showToast(`挥砍:${def.name} · 伤害${def.damage}` + (t ? ' · 命中' : ''));
+    const m = raycastMob(3.5);
+    if (m) {
+      hurtMob(m, def.damage || 3, -Math.sin(yaw), -Math.cos(yaw));
+      showToast(`挥砍:${def.name} · 伤害${def.damage} · 命中动物`);
+    } else {
+      const t = raycastTarget();
+      showToast(`挥砍:${def.name} · 伤害${def.damage}` + (t ? ' · 命中' : ''));
+    }
     audio.play('break');
     consumeToolDurability(item);
   } else if (def.tool === 'bow') {
@@ -2665,17 +2710,18 @@ function createCrackOverlay() {
 }
 
 // ============================================================
-// 掉落物实体(创造模式:视觉趣味 + 未来生存模式钩子)
+// 掉落物实体(生存采集:破坏方块/Q 丢弃生成,靠近自动拾取入快捷栏)
 // ============================================================
 // 小旋转方块(0.3 大小),从被破坏方块中心生成,受重力 + 地面支撑,30 秒后淡出消失
 // pickupDelay 期间不可拾取;之后玩家走近播放拾取音(创造模式不增加物品,物品栏本就无限)
 let dropItemGeo = null;
-function spawnDroppedItem(x, y, z, blockType) {
+function spawnDroppedItem(x, y, z, blockType, count = 1) {
   if (!dropItemGeo) dropItemGeo = new THREE.BoxGeometry(0.3, 0.3, 0.3);
   const mesh = new THREE.Mesh(dropItemGeo, materials[blockType]);
   mesh.position.set(x + 0.5, y + 0.5, z + 0.5);
   mesh.userData = {
     type: blockType,
+    count: count || 1,   // 掉落物携带数量(Q 丢弃整组时保留)
     life: 30,          // 30 秒后消失
     pickupDelay: 0.5,  // 生成后 0.5 秒内不可拾取,避免刚破坏就吸回
     vy: 1.5 + Math.random() * 1.0,   // 初始上抛一点
@@ -2683,6 +2729,29 @@ function spawnDroppedItem(x, y, z, blockType) {
   };
   scene.add(mesh);
   droppedItems.push(mesh);
+  return mesh;
+}
+
+// 拾取入栏:优先叠加同 id 未满格,其次放入空格;返回吸收数量(0=快捷栏已满)
+function pickupIntoInventory(id, count) {
+  let left = count;
+  for (let i = 0; i < HOTBAR_SIZE && left > 0; i++) {
+    const it = hotbar[i];
+    if (it && it.kind === 'block' && it.id === id && (it.count || 1) < BLOCK_STACK_MAX) {
+      const take = Math.min(BLOCK_STACK_MAX - (it.count || 1), left);
+      it.count = (it.count || 1) + take;
+      left -= take;
+    }
+  }
+  for (let i = 0; i < HOTBAR_SIZE && left > 0; i++) {
+    if (!hotbar[i]) {
+      const put = Math.min(BLOCK_STACK_MAX, left);
+      hotbar[i] = { kind: 'block', id, count: put };
+      left -= put;
+    }
+  }
+  if (left < count) { buildHotbar(); markDirtySave(); }
+  return count - left;
 }
 
 function updateDroppedItems(dt) {
@@ -2710,16 +2779,19 @@ function updateDroppedItems(dt) {
     u.life -= dt;
     if (u.pickupDelay > 0) u.pickupDelay -= dt;
 
-    // 拾取:玩家走近(1.2 格内)且延迟已过 → 创造模式仅播放音效,不改物品栏
+    // 拾取:玩家走近(1.2 格内)且延迟已过 → 收入快捷栏(堆叠/空格);满了留在地上
     if (u.pickupDelay <= 0) {
       const dx = d.position.x - playerPos.x;
       const dz = d.position.z - playerPos.z;
       const dy = d.position.y - playerPos.y;
       if (dx * dx + dy * dy + dz * dz < 1.44) {
-        audio.play('place');
-        scene.remove(d);
-        droppedItems.splice(i, 1);
-        continue;
+        const want = u.count || 1;
+        const got = pickupIntoInventory(u.type, want);
+        if (got > 0) {
+          audio.play('place');   // 拾取音
+          if (got >= want) { scene.remove(d); droppedItems.splice(i, 1); continue; }
+          u.count = want - got;   // 部分吸收:剩余留在地上
+        }
       }
     }
 
@@ -3127,29 +3199,45 @@ function updateMobs(dt) {
     // 重力 / 水中浮力
     if (inW) m.vy += (2.2 - m.vy) * Math.min(1, dt * 3);
     else m.vy -= GRAVITY * dt;
-    // 前方阻挡检测(脚部+半高两处),撞墙则跳或转向
+    // 前方阻挡检测(脚部+半高),撞墙:概率跳一格,否则转向
     const footY = Math.floor(p.y - 0.35), midY = Math.floor(p.y + 0.1);
-    const aheadX = Math.floor(p.x + dirx * dt * 3 + Math.sign(dirx) * 0.35);
-    const aheadZ = Math.floor(p.z + dirz * dt * 3 + Math.sign(dirz) * 0.35);
-    const blocked = (dirx || dirz) && (isSolidAt(aheadX, footY, aheadZ) || isSolidAt(aheadX, midY, aheadZ));
-    if (blocked && m.onGround) {
-      if (Math.random() < 0.5) m.vy = 7.2;   // 跳上一格
-      else { m.yaw += Math.PI * (0.5 + Math.random()); m.turnT = 1 + Math.random() * 2; }
+    const dlen = Math.hypot(dirx, dirz);
+    if (dlen > 0.01 && m.onGround) {
+      const ax = p.x + dirx / dlen * 0.5, az = p.z + dirz / dlen * 0.5;
+      if (isSolidAt(Math.floor(ax), footY, Math.floor(az)) || isSolidAt(Math.floor(ax), midY, Math.floor(az))) {
+        if (Math.random() < 0.5) m.vy = 7.2;
+        else { m.yaw += Math.PI * (0.5 + Math.random()); m.turnT = 1 + Math.random() * 2; }
+      }
     }
-    // 位移(x/z 分轴,撞墙滑动并反弹转向)
-    let nx = p.x + dirx * dt;
-    if (dirx !== 0 && (isSolidAt(Math.floor(nx + Math.sign(dirx) * 0.3), footY, Math.floor(p.z)) || isSolidAt(Math.floor(nx + Math.sign(dirx) * 0.3), midY, Math.floor(p.z)))) { nx = p.x; m.yaw = Math.PI - m.yaw; }
-    let nz = p.z + dirz * dt;
-    if (dirz !== 0 && (isSolidAt(Math.floor(nx), footY, Math.floor(nz + Math.sign(dirz) * 0.3)) || isSolidAt(Math.floor(nx), midY, Math.floor(nz + Math.sign(dirz) * 0.3)))) { nz = p.z; m.yaw = -m.yaw; }
+    // 位移(x/z 分轴,撞墙滑动并反弹转向;叠加击退速度)
+    let nx = p.x + (dirx + m.kvx) * dt;
+    if (dirx + m.kvx !== 0) {
+      const sx = Math.sign(dirx + m.kvx);
+      if (isSolidAt(Math.floor(nx + sx * 0.3), footY, Math.floor(p.z)) || isSolidAt(Math.floor(nx + sx * 0.3), midY, Math.floor(p.z))) {
+        nx = p.x; m.kvx = 0; m.yaw = Math.PI - m.yaw;
+      }
+    }
+    let nz = p.z + (dirz + m.kvz) * dt;
+    if (dirz + m.kvz !== 0) {
+      const sz = Math.sign(dirz + m.kvz);
+      if (isSolidAt(Math.floor(nx), footY, Math.floor(nz + sz * 0.3)) || isSolidAt(Math.floor(nx), midY, Math.floor(nz + sz * 0.3))) {
+        nz = p.z; m.kvz = 0; m.yaw = -m.yaw;
+      }
+    }
     p.x = nx; p.z = nz;
+    // 击退速度衰减
+    const kd = Math.max(0, 1 - dt * 5);
+    m.kvx *= kd; m.kvz *= kd;
+    // 垂直:落地支撑 / 顶头
     let ny = p.y + m.vy * dt;
     m.onGround = false;
     if (m.vy <= 0) {
       const supportY = Math.floor(ny - 0.45);
       if (isSolidAt(Math.floor(p.x), supportY, Math.floor(p.z))) { ny = supportY + 1 + 0.45; m.vy = 0; m.onGround = true; }
+    } else if (isSolidAt(Math.floor(p.x), Math.floor(ny + 0.45), Math.floor(p.z))) {
+      m.vy = 0; ny = p.y;
     }
     p.y = ny;
-    // 防止掉出世界
     if (p.y < -5) { removeMob(i); continue; }
     // 朝向 + 行走摆腿(4 腿对角步态 / 2 腿交替);僵尸双臂前平举微摆
     m.mesh.rotation.y = m.yaw;
@@ -3321,7 +3409,7 @@ function damagePlayer(amount) {
   if (playerHP <= 0) respawnPlayer();
 }
 
-// 死亡/重生:回到出生广场中心,满血,掉落物不丢(创造模式)
+// 死亡/重生:回到出生广场中心,满血;快捷栏(生存物资)保留
 let deathOverlayTimer = 0;
 function respawnPlayer() {
   // 重生到出生广场中心(确定性,与 resetWorld 一致)
@@ -3854,7 +3942,13 @@ function applySave(rec) {
   wasOnGround = false; wasInWater = false;
   playerHP = (typeof rec.playerHP === 'number') ? Math.max(0, Math.min(PLAYER_MAX_HP, rec.playerHP)) : PLAYER_MAX_HP;
   breathTimer = 0;
-  if (rec.hotbar) { hotbar = rec.hotbar; } else initInventory();
+  if (rec.hotbar) {
+    hotbar = rec.hotbar;
+    // 旧存档归一化:无数量字段的方块格补满一组(旧版为创造模式无限方块)
+    for (const it of hotbar) {
+      if (it && it.kind === 'block' && (it.count === undefined || it.count === null)) it.count = BLOCK_STACK_MAX;
+    }
+  } else initInventory();
   currentSlot = Math.max(0, Math.min(HOTBAR_SIZE - 1, (rec.currentSlot | 0) || 0));
   // 预热玩家所在区域区块
   const pcx = Math.floor(playerPos.x / CHUNK_SIZE);
@@ -4033,7 +4127,7 @@ function buildInventoryPanel() {
       } else if (item.kind === 'item') {
         copy = { kind: 'item', id: item.id, count: 64 };
       } else {
-        copy = { kind: 'block', id: item.id };
+        copy = { kind: 'block', id: item.id, count: 64 };   // 发放整组(放置按数量消耗)
       }
       putInSlot(currentSlot, copy);
       showToast(`已放入快捷栏:${itemName(item)}`);
@@ -4237,7 +4331,7 @@ const audio = {
 // 设置持久化(localStorage)
 // ============================================================
 const SETTINGS_KEY = 'myword_settings';
-let settings = { volume: 0.35, soundEnabled: true, fov: 75, renderDist: 5, dropItems: false, dayNightEnabled: true, dayCycleSpeed: 120, mobs: true, hostiles: true };
+let settings = { volume: 0.35, soundEnabled: true, fov: 75, renderDist: 5, dayNightEnabled: true, dayCycleSpeed: 120, mobs: true, hostiles: true };
 function loadSettings() {
   try {
     const s = localStorage.getItem(SETTINGS_KEY);
@@ -4249,14 +4343,11 @@ function loadSettings() {
   if (audio.masterGain) audio.masterGain.gain.value = settings.soundEnabled ? settings.volume : 0;
   audio.enabled = settings.soundEnabled;
   audio.volume = settings.volume;
-  dropItems = settings.dropItems;
   RENDER_DISTANCE = settings.renderDist;
   FOG_FAR = (RENDER_DISTANCE * CHUNK_SIZE) + 8;
   // 刷新暂停菜单按钮标签(与持久化设置同步)
   const bs = document.getElementById('btn-sound');
   if (bs) bs.textContent = '音效:' + (settings.soundEnabled ? '开' : '关');
-  const bd = document.getElementById('btn-drops');
-  if (bd) bd.textContent = '掉落物:' + (settings.dropItems ? '开' : '关');
   const bm = document.getElementById('btn-mobs');
   if (bm) bm.textContent = '动物:' + (settings.mobs ? '开' : '关');
   const bh = document.getElementById('btn-hostiles');

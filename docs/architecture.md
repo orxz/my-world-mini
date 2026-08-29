@@ -64,7 +64,7 @@ three.min.js  ── Three.js r160(第三方渲染库,内置,离线)
 | 9 | 手持物品与工具模型 | `buildHoldGroup` / `updateHoldItem` / `buildToolMesh` |
 | 10 | 第三人称相机 | `updateThirdPersonCamera` / 相机碰撞 / 视角切换 |
 | 11 | 初始化 | `init` / 出生广场 `buildSpawnPlaza` / `findSafeSpawn` / `clearWorld` / `resetWorld` |
-| 12 | 快捷栏/背包 | `initInventory` / `buildHotbar` / 图标渲染 |
+| 12 | 快捷栏/背包 | `initInventory` / `buildHotbar` / 图标渲染;方块带 count 堆叠(生存采集) |
 | 13 | 输入 | 键盘/鼠标/触屏事件、Pointer Lock、音频初始化钩子 |
 | 14 | 射线检测 | DDA 体素步进(`raycastTarget`)+ 门实体射线(`raycastDoor`),结果池化零分配 |
 | 15 | 物理/移动 | 重力、跳跃、飞行、游泳、碰撞(`isSolidAt` 查 chunk) |

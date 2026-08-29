@@ -155,17 +155,54 @@ function drawBlockFace(ctx, type, face, s, seedRand) {
         noise(40);
       } else if (face === 'side') {
         noise(30);
+        // 草皮过渡:每列不规则高度(2-5px)锯齿 + 底边深绿描边,贴近经典 MC 侧面
         const g = parseHex(def.top);
         for (let x = 0; x < s; x++) {
-          const h = 3 + Math.floor(seedRand() * 3);
+          const h = 2 + Math.floor(seedRand() * 4);
           for (let y = 0; y < h; y++) {
             const d = (seedRand() - 0.5) * 40;
             ctx.fillStyle = rgbStr(g.r + d, g.g + d, g.b + d * 0.5);
             ctx.fillRect(x, y, 1, 1);
           }
+          // 草皮与泥土交界:深绿过渡行
+          ctx.fillStyle = rgbStr(g.r - 34, g.g - 22, g.b - 10);
+          ctx.fillRect(x, h, 1, 1);
         }
       } else noise(40);
       break;
+    case 'stone': {
+      // 石头:噪点 + 2-3 条随机裂纹折线(深灰)
+      noise(40);
+      ctx.strokeStyle = 'rgba(72,72,72,0.7)';
+      ctx.lineWidth = 1;
+      const cracks = 2 + Math.floor(seedRand() * 2);
+      for (let i = 0; i < cracks; i++) {
+        let cx = seedRand() * s, cy = seedRand() * s;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        const segs = 3 + Math.floor(seedRand() * 3);
+        for (let k = 0; k < segs; k++) {
+          cx = Math.max(0, Math.min(s - 1, cx + (seedRand() - 0.5) * 8));
+          cy = Math.max(0, Math.min(s - 1, cy + (seedRand() - 0.5) * 8));
+          ctx.lineTo(cx, cy);
+        }
+        ctx.stroke();
+      }
+      break;
+    }
+    case 'planks': {
+      // 木板:横向板缝 + 错位竖缝 + 木纹短线
+      noise(15);
+      ctx.fillStyle = 'rgba(60,40,15,0.55)';
+      for (let y = 0; y < s; y += 4) ctx.fillRect(0, y, s, 1);
+      ctx.fillRect(Math.floor(s * 0.25), 0, 1, 4);
+      ctx.fillRect(Math.floor(s * 0.7), 4, 1, 4);
+      ctx.fillRect(Math.floor(s * 0.4), 8, 1, 4);
+      ctx.fillRect(Math.floor(s * 0.8), 12, 1, 4);
+      ctx.fillStyle = 'rgba(130,92,45,0.4)';
+      for (let i = 0; i < 8; i++) ctx.fillRect((seedRand() * (s - 2)) | 0, (seedRand() * s) | 0, 2, 1);
+      break;
+    }
     case 'wood':
       if (face === 'side') {
         for (let x = 0; x < s; x++) {
@@ -176,10 +213,13 @@ function drawBlockFace(ctx, type, face, s, seedRand) {
           }
         }
       } else {
-        // 年轮
-        ctx.strokeStyle = 'rgba(80,55,25,0.6)'; ctx.lineWidth = 1;
+        // 年轮(双圈密纹,深浅交替 + 中心木芯点)
+        ctx.strokeStyle = 'rgba(70,45,20,0.75)';
+        ctx.lineWidth = 1;
         const cx = s / 2, cy = s / 2;
-        for (let r = 2; r < s / 2; r += 3) { ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke(); }
+        for (let r = 2; r < s / 2; r += 2) { ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke(); }
+        ctx.fillStyle = 'rgba(90,60,30,0.6)';
+        ctx.fillRect(cx - 0.5, cy - 0.5, 1.5, 1.5);
       }
       break;
     case 'leaves':
@@ -369,16 +409,20 @@ function drawBlockFace(ctx, type, face, s, seedRand) {
     case 'coal_ore':
     case 'iron_ore':
     case 'diamond_ore': {
-      // 矿石:石底 + 确定性色斑(煤=黑/铁=米棕/钻=青)
+      // 矿石:石底 + 分层色斑(暗色外圈 → 矿色内芯 → 高光点),立体矿粒感
       noise(25);
       const speck = type === 'coal_ore' ? '#232323' : type === 'iron_ore' ? '#d8af8a' : '#5fe3e8';
-      ctx.fillStyle = speck;
+      const speckDark = type === 'coal_ore' ? 'rgba(10,10,10,0.55)' : type === 'iron_ore' ? 'rgba(120,80,50,0.5)' : 'rgba(30,110,130,0.5)';
       const spots = 4 + Math.floor(seedRand() * 2);
       for (let i = 0; i < spots; i++) {
-        const px = 1 + Math.floor(seedRand() * (s - 3));
-        const py = 1 + Math.floor(seedRand() * (s - 3));
-        ctx.fillRect(px, py, 2, 2);
-        ctx.fillRect(px + (seedRand() < 0.5 ? -1 : 2), py + (seedRand() < 0.5 ? 0 : 1), 1, 1);
+        const px = 1 + Math.floor(seedRand() * (s - 4));
+        const py = 1 + Math.floor(seedRand() * (s - 4));
+        ctx.fillStyle = speckDark;
+        ctx.fillRect(px - 1, py - 1, 4, 4);      // 暗色外圈(嵌入感)
+        ctx.fillStyle = speck;
+        ctx.fillRect(px, py, 2, 2);               // 矿色内芯
+        ctx.fillStyle = 'rgba(255,255,255,0.45)';
+        ctx.fillRect(px, py, 1, 1);               // 高光点
       }
       break;
     }

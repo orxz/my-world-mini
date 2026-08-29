@@ -8,7 +8,7 @@
 
   const STACK_MAX = 64;   // 方块/材料最大堆叠数
   // 食物 → 恢复的饥饿值(右键进食)
-  const FOODS = { porkchop: 8, apple: 4, cooked_porkchop: 12 };
+  const FOODS = { porkchop: 8, apple: 4, cooked_porkchop: 12, beef: 6, mutton: 6, steak: 10 };
   // 饥饿参数
   const HUNGER_DRAIN_PER_POINT = 4;  // 消耗累计 4 单位 → 扣 1 点饥饿
   const HUNGER_REGEN_LEVEL = 18;     // 饥饿 ≥18 缓慢回血

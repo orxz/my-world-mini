@@ -97,8 +97,12 @@ const ITEM_TYPES = {
   coal:        { name: '煤炭',   color: '#262626', shape: 'gem' },
   iron_ingot:  { name: '铁锭',   color: '#d8d8e0', shape: 'ingot' },
   cooked_porkchop: { name: '熟猪排', color: '#b56b46', shape: 'meat' },
+  beef:        { name: '生牛肉', color: '#c04040', shape: 'meat' },
+  steak:       { name: '牛排',   color: '#8a4a2e', shape: 'meat' },
+  mutton:      { name: '羊肉',   color: '#d07868', shape: 'meat' },
+  leather:     { name: '皮革',   color: '#a8784a', shape: 'ingot' },
 };
-const ITEM_ORDER = ['gem_diamond','gem_gold','gem_emerald','arrow','porkchop','cooked_porkchop','apple','stick','coal','iron_ingot'];
+const ITEM_ORDER = ['gem_diamond','gem_gold','gem_emerald','arrow','porkchop','cooked_porkchop','beef','steak','mutton','apple','stick','coal','iron_ingot','leather'];
 // 食物表与堆叠上限来自纯函数模块 inventory.js(INVLIB)
 const FOODS = INVLIB.FOODS;
 
@@ -2808,7 +2812,7 @@ function shootArrow() {
   const dir = new THREE.Vector3(
     -Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch)
   );
-  m.userData = { vel: dir.multiplyScalar(28), life: 2.5 };
+  m.userData = { vel: dir.multiplyScalar(28), life: 2.5, fromPlayer: true };
   scene.add(m);
   arrows.push(m);
 }
@@ -3110,9 +3114,12 @@ let mobSpawnTimer = 2;
 let hostileSpawnTimer = 4;
 
 const MOB_DEFS = {
-  pig:     { hp: 10, hostile: false },
-  zombie:  { hp: 20, hostile: true },
-  creeper: { hp: 20, hostile: true },
+  pig:      { hp: 10, hostile: false },
+  cow:      { hp: 10, hostile: false },
+  sheep:    { hp: 8,  hostile: false },
+  zombie:   { hp: 20, hostile: true },
+  creeper:  { hp: 20, hostile: true },
+  skeleton: { hp: 16, hostile: true },
 };
 function countHostiles() {
   let n = 0;
@@ -3165,7 +3172,12 @@ function buildPigMesh() {
 
 function spawnMob(x, groundY, z, type) {
   const t = type || 'pig';
-  const mesh = t === 'zombie' ? buildZombieMesh() : t === 'creeper' ? buildCreeperMesh() : buildPigMesh();
+  const mesh = t === 'zombie' ? buildZombieMesh()
+    : t === 'creeper' ? buildCreeperMesh()
+    : t === 'skeleton' ? buildSkeletonMesh()
+    : t === 'cow' ? buildCowMesh()
+    : t === 'sheep' ? buildSheepMesh()
+    : buildPigMesh();
   mesh.position.set(x, groundY + 0.45, z);   // 身体中心离地 0.45
   scene.add(mesh);
   mobs.push({
@@ -3269,6 +3281,116 @@ function buildCreeperMesh() {
   return g;
 }
 
+// 骷髅模型:白骨人形(僵尸同构),深眼窝 + 弓(远程敌对)
+function buildSkeletonMesh() {
+  const g = new THREE.Group();
+  const bone = new THREE.MeshLambertMaterial({ color: 0xd8d8ce });
+  const dark = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
+  const cloth = new THREE.MeshLambertMaterial({ color: 0x8a8a8a });
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.42, 0.42), bone);
+  head.position.y = 1.33;
+  const eyeL = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.09, 0.03), dark);
+  eyeL.position.set(-0.1, 1.37, -0.22);
+  const eyeR = eyeL.clone();
+  eyeR.position.x = 0.1;
+  const nose = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.03), dark);
+  nose.position.set(0, 1.28, -0.22);
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.55, 0.2), cloth);
+  torso.position.y = 0.85;
+  // 双臂前平举(右臂挂弓)
+  const arms = [];
+  const mkArm = (side) => {
+    const a = new THREE.Group();
+    const m = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.55, 0.12), bone);
+    m.position.y = -0.27;
+    a.add(m);
+    if (side > 0) {
+      const bowM = new THREE.Mesh(new THREE.TorusGeometry(0.14, 0.02, 6, 12, Math.PI * 1.2), new THREE.MeshLambertMaterial({ color: 0x6e4f2a }));
+      bowM.rotation.z = Math.PI / 2;
+      bowM.position.set(0, -0.5, -0.08);
+      a.add(bowM);
+    }
+    a.position.set(side * 0.26, 1.06, 0);
+    a.rotation.x = -Math.PI / 2;
+    arms.push(a);
+    return a;
+  };
+  const legGroups = [];
+  const mkLeg = (side) => {
+    const lg = new THREE.Group();
+    const m = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.58, 0.14), bone);
+    m.position.y = -0.29;
+    lg.add(m);
+    lg.position.set(side * 0.1, 0.58, 0);
+    legGroups.push(lg);
+    return lg;
+  };
+  g.add(head, eyeL, eyeR, nose, torso, mkArm(-1), mkArm(1), mkLeg(-1), mkLeg(1));
+  g.userData = { legs: legGroups, arms, mats: [bone, cloth], baseColors: [0xd8d8ce, 0x8a8a8a] };
+  return g;
+}
+
+// 牛模型:棕身 + 白脸 + 双角(被动,掉生牛肉/皮革)
+function buildCowMesh() {
+  const g = new THREE.Group();
+  const bodyMat = new THREE.MeshLambertMaterial({ color: 0x6b4a2f });
+  const headMat = new THREE.MeshLambertMaterial({ color: 0x7a573a });
+  const hornMat = new THREE.MeshLambertMaterial({ color: 0xe8e0d0 });
+  const legMat = new THREE.MeshLambertMaterial({ color: 0x5a3d26 });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.55, 1.05), bodyMat);
+  body.position.y = 0.65;
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.42, 0.4), headMat);
+  head.position.set(0, 0.85, -0.68);
+  const hornL = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.07, 0.16), hornMat);
+  hornL.position.set(-0.16, 1.05, -0.7);
+  const hornR = hornL.clone();
+  hornR.position.x = 0.16;
+  const snout = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.14, 0.06), hornMat);
+  snout.position.set(0, 0.76, -0.9);
+  const legGroups = [];
+  const mkLeg = (lx, lz) => {
+    const lg = new THREE.Group();
+    const m = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.4, 0.17), legMat);
+    m.position.y = -0.2;
+    lg.add(m);
+    lg.position.set(lx, 0.4, lz);
+    legGroups.push(lg);
+    return lg;
+  };
+  mkLeg(-0.2, -0.34); mkLeg(0.2, -0.34); mkLeg(-0.2, 0.34); mkLeg(0.2, 0.34);
+  g.add(body, head, hornL, hornR, snout, legGroups[0], legGroups[1], legGroups[2], legGroups[3]);
+  g.userData = { legs: legGroups, mats: [bodyMat, headMat, legMat], baseColors: [0x6b4a2f, 0x7a573a, 0x5a3d26] };
+  return g;
+}
+
+// 羊模型:蓬松白羊毛体 + 灰白脸(被动,掉羊肉/羊毛)
+function buildSheepMesh() {
+  const g = new THREE.Group();
+  const woolMat = new THREE.MeshLambertMaterial({ color: 0xe8e8e4 });
+  const faceMat = new THREE.MeshLambertMaterial({ color: 0xd8c8b8 });
+  const legMat = new THREE.MeshLambertMaterial({ color: 0x9a8a78 });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.6, 0.95), woolMat);
+  body.position.y = 0.72;
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.34, 0.34), faceMat);
+  head.position.set(0, 0.95, -0.6);
+  const woolCap = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.14, 0.4), woolMat);
+  woolCap.position.set(0, 1.14, -0.6);
+  const legGroups = [];
+  const mkLeg = (lx, lz) => {
+    const lg = new THREE.Group();
+    const m = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.42, 0.15), legMat);
+    m.position.y = -0.21;
+    lg.add(m);
+    lg.position.set(lx, 0.42, lz);
+    legGroups.push(lg);
+    return lg;
+  };
+  mkLeg(-0.18, -0.3); mkLeg(0.18, -0.3); mkLeg(-0.18, 0.3); mkLeg(0.18, 0.3);
+  g.add(body, head, woolCap, legGroups[0], legGroups[1], legGroups[2], legGroups[3]);
+  g.userData = { legs: legGroups, mats: [woolMat, faceMat, legMat], baseColors: [0xe8e8e4, 0xd8c8b8, 0x9a8a78] };
+  return g;
+}
+
 function removeMob(i) {
   const m = mobs[i];
   m.mesh.traverse(function(o) {
@@ -3297,7 +3419,11 @@ function trySpawnMob() {
   for (let y = WORLD_HEIGHT - 2; y > SEA_LEVEL; y--) {
     const b = getBlock(fx, y, fz);
     if (!b) continue;
-    if (b === 'grass' && !getBlock(fx, y + 1, fz)) spawnMob(wx, y + 1, wz);
+    if (b === 'grass' && !getBlock(fx, y + 1, fz)) {
+      // 被动生物池:猪 40% / 牛 30% / 羊 30%
+      const pr = Math.random();
+      spawnMob(wx, y + 1, wz, pr < 0.4 ? 'pig' : pr < 0.7 ? 'cow' : 'sheep');
+    }
     break;   // 只看地表第一个非空气方块
   }
 }
@@ -3314,6 +3440,26 @@ function wanderStep(m, dt, speed, activeChance) {
 // 面向玩家的 yaw(模型前方 = -z)
 function faceYaw(m) {
   return Math.atan2(-(playerPos.x - m.mesh.position.x), -(playerPos.z - m.mesh.position.z));
+}
+
+// ---- 共用:白天阳光燃烧(僵尸/骷髅);返回 true 表示烧死移除 ----
+function burnStep(m, dt) {
+  if (sunHeight() > 0.15 && skyExposed(m.mesh.position)) {
+    m.burnT += dt;
+    m.fireT -= dt;
+    if (m.fireT <= 0) {
+      m.fireT = 0.18;
+      spawnParticles(m.mesh.position.x - 0.5, m.mesh.position.y + 0.3, m.mesh.position.z - 0.5, 0xff7733, 2);
+    }
+    if (m.burnT >= 1) {
+      m.burnT = 0;
+      hurtMob(m, 3, 0, 0, true);
+      if (mobs.indexOf(m) < 0) return true;
+    }
+  } else {
+    m.burnT = 0;
+  }
+  return false;
 }
 
 // ---- 僵尸 AI:24 格内追击 + 近战(伤害+击退);白天阳光直射燃烧 ----
@@ -3336,23 +3482,44 @@ function zombieAI(m, dt, distP) {
     velocity.z += (playerPos.z - m.mesh.position.z) * inv * 6;
     velocity.y = 4;   // 击退小跳
   }
-  // 白天阳光直射 → 燃烧:火焰粒子 + 每秒 3 伤害
-  if (sunHeight() > 0.15 && skyExposed(m.mesh.position)) {
-    m.burnT += dt;
-    m.fireT -= dt;
-    if (m.fireT <= 0) {
-      m.fireT = 0.18;
-      spawnParticles(m.mesh.position.x - 0.5, m.mesh.position.y + 0.3, m.mesh.position.z - 0.5, 0xff7733, 2);
-    }
-    if (m.burnT >= 1) {
-      m.burnT = 0;
-      hurtMob(m, 3, 0, 0, true);
-      if (mobs.indexOf(m) < 0) return true;   // 烧死了
-    }
+  return burnStep(m, dt);
+}
+
+// ---- 骷髅 AI:保持 7~11 格射程带(远则靠近/近则后退),2 秒一箭;白天燃烧 ----
+function skeletonAI(m, dt, distP) {
+  if (distP < 20) {
+    m.yaw = faceYaw(m);
+    m.speed = distP > 11 ? 2.0 : (distP < 7 ? -2.0 : 0);   // 负速=面向玩家后退
+    m.groanT -= dt;
+    if (m.groanT <= 0) { m.groanT = 3 + Math.random() * 3; audio.play('zombie'); }
   } else {
-    m.burnT = 0;
+    wanderStep(m, dt, 1.0, 0.5);
   }
-  return false;
+  m.attackCd -= dt;
+  if (distP < 14 && m.attackCd <= 0) {
+    m.attackCd = 2.0;
+    shootMobArrow(m);
+  }
+  return burnStep(m, dt);
+}
+
+// 骷髅射箭:从其手部朝玩家(带简易重力补偿抛物线);怪物之箭可命中玩家
+function shootMobArrow(m) {
+  if (!arrowGeo) { arrowGeo = new THREE.BoxGeometry(0.08, 0.08, 0.4); arrowMat = new THREE.MeshLambertMaterial({ color: 0xcaa472 }); }
+  const a = new THREE.Mesh(arrowGeo, arrowMat);
+  const from = m.mesh.position;
+  a.position.set(from.x, from.y + 0.6, from.z);
+  const dx = playerPos.x - from.x, dy = (playerPos.y + 0.2) - (from.y + 0.6), dz = playerPos.z - from.z;
+  const d = Math.max(0.5, Math.sqrt(dx * dx + dy * dy + dz * dz));
+  const speed = 18;
+  a.userData = {
+    vel: new THREE.Vector3(dx / d * speed, dy / d * speed + d * 0.4, dz / d * speed),
+    life: 3,
+    fromPlayer: false,
+  };
+  scene.add(a);
+  arrows.push(a);
+  audio.play('place');
 }
 
 // ---- 苦力怕 AI:16 格内潜行追击;2.8 格内点燃引信(膨胀+白闪),远离则熄灭;1.5 秒爆炸 ----
@@ -3435,7 +3602,9 @@ function trySpawnHostile() {
     const b = getBlock(fx, y, fz);
     if (!b) continue;
     if (b !== 'water' && BLOCK_TYPES[b] && BLOCK_TYPES[b].solid && !getBlock(fx, y + 1, fz) && !getBlock(fx, y + 2, fz)) {
-      spawnMob(wx, y + 1, fz, Math.random() < 0.65 ? 'zombie' : 'creeper');
+      // 敌对生物池:僵尸 50% / 苦力怕 30% / 骷髅 20%
+      const hr = Math.random();
+      spawnMob(wx, y + 1, fz, hr < 0.5 ? 'zombie' : hr < 0.8 ? 'creeper' : 'skeleton');
     }
     break;   // 只看地表第一个非空气方块
   }
@@ -3468,8 +3637,12 @@ function updateMobs(dt) {
     // ---- 按类型 AI(决定 yaw/speed 与特殊行为);返回 true 表示该生物已移除 ----
     if (m.type === 'pig') {
       wanderStep(m, dt, 1.3, 0.65);
+    } else if (m.type === 'cow' || m.type === 'sheep') {
+      wanderStep(m, dt, 1.1, 0.6);
     } else if (m.type === 'zombie') {
       if (zombieAI(m, dt, distP)) continue;
+    } else if (m.type === 'skeleton') {
+      if (skeletonAI(m, dt, distP)) continue;
     } else if (creeperAI(m, dt, distP)) {
       continue;
     }
@@ -3558,11 +3731,15 @@ function hurtMob(m, dmg, kx, kz, silent) {
   if (!silent) audio.play(m.type === 'zombie' ? 'zombie' : m.type === 'creeper' ? 'hurt' : 'pig');
   if (m.hp <= 0) {
     const p = m.mesh.position;
-    spawnParticles(p.x - 0.5, p.y - 0.5, p.z - 0.5, m.type === 'pig' ? 0xeba3a9 : 0x7a9a7a, 12);
-    // 猪掉落猪排(食物):1-2 块
-    if (m.type === 'pig') spawnDroppedItem(p.x - 0.5, p.y - 0.2, p.z - 0.5, 'porkchop', 1 + (Math.random() < 0.5 ? 1 : 0), 'item');
+    spawnParticles(p.x - 0.5, p.y - 0.5, p.z - 0.5, m.type === 'pig' ? 0xeba3a9 : m.type === 'cow' ? 0x6b4a2f : m.type === 'sheep' ? 0xe8e8e4 : 0x7a9a7a, 12);
+    // 经典掉落(按生物类型)
+    const dropAt = (id, kind, count) => spawnDroppedItem(p.x - 0.5, p.y - 0.2, p.z - 0.5, id, count, kind);
+    if (m.type === 'pig') dropAt('porkchop', 'item', 1 + (Math.random() < 0.5 ? 1 : 0));
+    else if (m.type === 'cow') { dropAt('beef', 'item', 1 + (Math.random() < 0.5 ? 1 : 0)); dropAt('leather', 'item', 1); }
+    else if (m.type === 'sheep') { dropAt('mutton', 'item', 1 + (Math.random() < 0.5 ? 1 : 0)); dropAt('wool_white', 'block', 1); }
+    else if (m.type === 'skeleton') dropAt('arrow', 'item', Math.random() < 0.7 ? 2 : 1);
     killMob(m);
-    showToast(m.type === 'zombie' ? '🧟 击倒了僵尸' : m.type === 'creeper' ? '💥 击倒了苦力怕' : '🐷 击倒了猪');
+    showToast(m.type === 'zombie' ? '🧟 击倒了僵尸' : m.type === 'creeper' ? '💥 击倒了苦力怕' : m.type === 'skeleton' ? '💀 击倒了骷髅' : m.type === 'cow' ? '🐮 击倒了牛' : m.type === 'sheep' ? '🐑 击倒了羊' : '🐷 击倒了猪');
   }
 }
 
@@ -3695,6 +3872,7 @@ const SMELT = {
   sand: { kind: 'block', id: 'glass' },
   cobblestone: { kind: 'block', id: 'stone' },
   porkchop: { kind: 'item', id: 'cooked_porkchop' },
+  beef: { kind: 'item', id: 'steak' },
 };
 // 燃料:可冶炼的产物个数(1 个产物 = COOK_TIME 秒)
 const FUELS = { coal: 8, wood: 1.5, planks: 1.5, stick: 0.5 };
@@ -3763,7 +3941,7 @@ function openFurnacePanel(x, y, z) {
   const closeBtn = document.getElementById('furnace-close');
   if (closeBtn) closeBtn.onclick = closeFurnacePanel;
   // 放入循环目录(可冶炼物 + 燃料)
-  const inList = ['iron_ore', 'sand', 'cobblestone', 'porkchop'].map(id => ({ kind: SMELT[id].kind, id }));
+  const inList = ['iron_ore', 'sand', 'cobblestone', 'porkchop', 'beef'].map(id => ({ kind: SMELT[id].kind, id }));
   const fuelList = ['coal', 'wood', 'planks', 'stick'].map(id => ({ kind: 'item', id }));
   const bindCycle = (el, slot, list) => {
     el.onclick = () => {
@@ -4047,13 +4225,24 @@ function updateArrows(dt) {
     a.userData.life -= dt;
     const bx = Math.floor(a.position.x), by = Math.floor(a.position.y), bz = Math.floor(a.position.z);
     // 命中生物:箭矢中心进入生物身体包围盒 → 伤害 + 顺飞行方向击退 + 箭消失
+    // (玩家之箭打生物;怪物之箭只打玩家,避免生成瞬间命中射手自己)
     let hitMob = null;
-    for (const m of mobs) {
-      const p = m.mesh.position;
-      if (Math.abs(a.position.x - p.x) < 0.55 && Math.abs(a.position.y - p.y) < 0.75 && Math.abs(a.position.z - p.z) < 0.55) {
-        hitMob = m;
-        break;
+    if (a.userData.fromPlayer) {
+      for (const m of mobs) {
+        const p = m.mesh.position;
+        if (Math.abs(a.position.x - p.x) < 0.55 && Math.abs(a.position.y - p.y) < 0.75 && Math.abs(a.position.z - p.z) < 0.55) {
+          hitMob = m;
+          break;
+        }
       }
+    }
+    // 命中玩家(骷髅之箭):身体包围盒 → 伤害 + 移除(玩家自己的箭豁免)
+    if (!a.userData.fromPlayer
+        && Math.abs(a.position.x - playerPos.x) < 0.5 && Math.abs(a.position.y - playerPos.y) < 0.9 && Math.abs(a.position.z - playerPos.z) < 0.5) {
+      damagePlayer(3);
+      scene.remove(a);
+      arrows.splice(i, 1);
+      continue;
     }
     if (hitMob) {
       const vl = Math.max(0.001, Math.hypot(a.userData.vel.x, a.userData.vel.z));

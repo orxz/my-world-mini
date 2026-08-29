@@ -236,13 +236,13 @@ npm run serve    # python3 -m http.server 8843
 
 ```bash
 npm install      # 安装开发依赖(ESLint 9)
-npm test         # 跑确定性函数单元测试(53 项)
+npm test         # 跑确定性函数单元测试(67 项)
 npm run lint     # ESLint 静态检查
 npm run serve    # 启动本地静态服务器 http://localhost:8843/
 ```
 
-- **测试**:`test/unit.test.js` 覆盖 `worldgen.js`(哈希/噪声/群系/高度/存档序列化)与
-  `craft.js`(配方匹配/破坏耗时)的纯函数
+- **测试**:`test/unit.test.js` 覆盖 `worldgen.js`(哈希/噪声/群系/高度/存档序列化)、
+  `craft.js`(配方匹配/破坏耗时)与 `inventory.js`(拾取堆叠/饥饿状态机)的纯函数
 - **Lint**:`eslint.config.mjs`(flat config);`game.js`/`worldgen.js`/`craft.js` 是经典 script(非 ES module)
 - **CI**:GitHub Actions 在 push/PR 自动跑 `npm test` + `npm run lint`
 - 详细代码组织、数据流、扩展点见 **[docs/architecture.md](./docs/architecture.md)**
@@ -255,6 +255,7 @@ myword/
 ├── game.js             游戏主逻辑(20 个模块,渲染/物理/物品/视角/存档/UI/广场)
 ├── worldgen.js         世界生成模块(噪声/生物群系/地形高度,纯函数可独立测试)
 ├── craft.js            合成与破坏计算模块(RECIPES/matchRecipe/breakCost,纯函数可独立测试)
+├── inventory.js        库存/掉落/饥饿纯函数模块(pickupIntoInventory/hungerTick)
 ├── three.min.js        Three.js r160(已内置,离线可玩)
 ├── test/unit.test.js   Node 单元测试(确定性函数验证,32 项)
 ├── docs/               架构与模块文档(architecture.md / worldgen.md)

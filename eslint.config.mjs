@@ -30,6 +30,7 @@ const WORLDGEN_GLOBALS = {
 const CRAFTLIB_GLOBALS = {
   CRAFTLIB: 'readonly',
   matchRecipeGrid: 'readonly',
+  INVLIB: 'readonly',
 };
 
 export default [
@@ -90,9 +91,9 @@ export default [
     },
   },
 
-  // —— UMD 模块:craft.js(浏览器挂全局 + Node module.exports)——
+  // —— UMD 模块:craft.js / inventory.js(浏览器挂全局 + Node module.exports)——
   {
-    files: ['craft.js'],
+    files: ['craft.js', 'inventory.js'],
     languageOptions: {
       ecmaVersion: 2021,
       sourceType: 'script',

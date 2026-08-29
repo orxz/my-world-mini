@@ -28,15 +28,15 @@
 └───────────────┬─────────────────────────────────────────┘
                 │ 函数调用(hash2/fbm2D/biomeAt/heightAt + CRAFTLIB)
 ┌───────────────▼─────────────────────────────────────────┐
-│  worldgen.js + craft.js ── 纯函数层(无 DOM/Three 依赖) │  纯函数层
+│  worldgen + craft + inventory ── 纯函数层(无 DOM/Three) │  纯函数层
 │   worldgen: 哈希 / 值噪声 / fbm / 群系 / 高度           │
 │   craft:    RECIPES / matchRecipe / breakCost           │
 │   ← 均可单测                                            │
 └─────────────────────────────────────────────────────────┘
                 ▲
 ┌───────────────┴─────────────────────────────────────────┐
-│  test/unit.test.js  ── Node 单元测试(53 项)           │  测试
-│    require('../worldgen.js') + require('../craft.js')   │
+│  test/unit.test.js  ── Node 单元测试(67 项)           │  测试
+│    require('../worldgen.js') + require('../craft.js') + require('../inventory.js')   │
 └─────────────────────────────────────────────────────────┘
 
 three.min.js  ── Three.js r160(第三方渲染库,内置,离线)

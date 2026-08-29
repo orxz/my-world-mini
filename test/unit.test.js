@@ -14,6 +14,9 @@ const { hash2, hash3, valueNoise2D, fbm2D, BIOMES, biomeAt, heightAt } = require
 // ---- 从 craft.js 模块加载(合成/破坏计算的单一数据源) ----
 const { RECIPES, matchRecipe, matchRecipeGrid, breakCost } = require('../craft.js');
 
+// ---- 从 inventory.js 模块加载(库存/掉落/饥饿纯函数) ----
+const { STACK_MAX, FOODS, pickupIntoInventory, normalizeHotbar, hungerTick } = require('../inventory.js');
+
 // ---- 测试用例 ----
 let passed = 0, failed = 0;
 function test(name, fn) {
@@ -249,6 +252,116 @@ test('床:3 羊毛 + 3 木板(经典配方)', () => {
 test('梯子:7 木棍 H 形(经典配方,×3)', () => {
   const r = matchRecipeGrid(G9(['stick', null, 'stick', 'stick', 'stick', 'stick', 'stick', null, 'stick']), 3, RECIPES);
   assert(r && r.name === '梯子' && r.result.id === 'ladder' && r.count === 3, 'got: ' + (r && r.name));
+});
+
+console.log('\n=== 库存拾取(pickupIntoInventory / inventory.js) ===');
+const HB = (n) => new Array(n).fill(null);
+test('拾取:空栏放入(堆叠优先同 id 叠加)', () => {
+  const hb = HB(9);
+  assert.strictEqual(pickupIntoInventory(hb, 'block', 'dirt', 5), 5);
+  assert.deepStrictEqual(hb[0], { kind: 'block', id: 'dirt', count: 5 });
+  // 再拾同 id → 叠加到同格
+  assert.strictEqual(pickupIntoInventory(hb, 'block', 'dirt', 3), 3);
+  assert.strictEqual(hb[0].count, 8);
+  assert.strictEqual(hb.filter(x => x).length, 1);
+});
+test('拾取:封顶 64 分格(130 泥土 → 64+64+2)', () => {
+  const hb = HB(9);
+  assert.strictEqual(pickupIntoInventory(hb, 'block', 'dirt', 130), 130);
+  const counts = hb.filter(x => x).map(x => x.count);
+  assert.deepStrictEqual(counts.sort((a, b) => b - a), [64, 64, 2]);
+});
+test('拾取:63+2 → 叠满 64 + 新格 1', () => {
+  const hb = HB(9);
+  hb[0] = { kind: 'block', id: 'stone', count: 63 };
+  assert.strictEqual(pickupIntoInventory(hb, 'block', 'stone', 2), 2);
+  assert.strictEqual(hb[0].count, 64);
+  assert.strictEqual(hb[1].count, 1);
+});
+test('拾取:满栏返回 0(物品留在地上)', () => {
+  const hb = HB(2);
+  hb[0] = { kind: 'block', id: 'dirt', count: 64 };
+  hb[1] = { kind: 'block', id: 'stone', count: 64 };
+  assert.strictEqual(pickupIntoInventory(hb, 'block', 'gravel', 5), 0);
+});
+test('拾取:部分吸收(1 空格拾 3 → 吸 1 剩 2)', () => {
+  const hb = HB(1);
+  hb[0] = { kind: 'item', id: 'coal', count: 63 };
+  assert.strictEqual(pickupIntoInventory(hb, 'item', 'coal', 3), 1);
+  assert.strictEqual(hb[0].count, 64);
+});
+test('拾取:工具不堆叠,带耐久进空格', () => {
+  const hb = HB(3);
+  hb[0] = { kind: 'tool', id: 'pickaxe_iron', durability: 251 };
+  assert.strictEqual(pickupIntoInventory(hb, 'tool', 'pickaxe_iron', 1, { durability: 200 }), 1);
+  assert.strictEqual(hb[1].durability, 200);       // 耐久保留
+  assert.strictEqual(hb[0].durability, 251);       // 不覆盖已有工具
+});
+test('拾取:工具无耐久时用默认耐久表', () => {
+  const hb = HB(9);
+  pickupIntoInventory(hb, 'tool', 'pickaxe_diamond', 1, { defaultDurability: 1562 });
+  assert.strictEqual(hb[0].durability, 1562);
+});
+test('旧档归一化:无 count 方块补满,有值/null/工具不动', () => {
+  const hb = [
+    { kind: 'block', id: 'grass' },                        // 旧档无 count → 64
+    { kind: 'block', id: 'dirt', count: 7 },               // 有值保留
+    null,                                                  // 空保留
+    { kind: 'tool', id: 'bow', durability: 384 },          // 工具不补
+    { kind: 'item', id: 'arrow' },                         // 材料旧档 → 64
+  ];
+  const fixed = normalizeHotbar(hb);
+  assert.strictEqual(fixed, 2);
+  assert.strictEqual(hb[0].count, STACK_MAX);
+  assert.strictEqual(hb[1].count, 7);
+  assert.strictEqual(hb[3].count, undefined);
+  assert.strictEqual(hb[4].count, STACK_MAX);
+});
+
+console.log('\n=== 饥饿状态机(hungerTick / inventory.js) ===');
+const HS = (h) => ({ hunger: h, drain: 0, regenT: 0, starveT: 0 });
+test('饥饿:消耗累计 4 单位扣 1 点(移动 1.2 → ~3.3 秒 1 点)', () => {
+  const s = HS(20);
+  hungerTick(s, 1, 1.2, false);
+  assert.strictEqual(s.hunger, 20);        // 1.2 < 4 不扣
+  hungerTick(s, 3, 1.2, false);            // 累计 4.8 → 扣 1,余 0.8
+  assert.strictEqual(s.hunger, 19);
+  assert.ok(Math.abs(s.drain - 0.8) < 1e-9);
+});
+test('饥饿:归零后不再扣(hungerChanged 停)', () => {
+  const s = HS(1);
+  s.drain = 3.9;
+  hungerTick(s, 1, 1.2, false);            // → 0
+  assert.strictEqual(s.hunger, 0);
+  const r = hungerTick(s, 10, 1.2, false);
+  assert.strictEqual(s.hunger, 0);         // 不为负
+  assert.strictEqual(r.hungerChanged, false);
+});
+test('饥饿:≥18 且缺血 → 每 4 秒回血 1 次;17 不回', () => {
+  const s18 = HS(18);
+  let regen = 0;
+  for (let i = 0; i < 40; i++) { const r = hungerTick(s18, 0.1, 0, true); if (r.regen) regen++; }
+  assert.ok(regen >= 1, '18 应回血');
+  const s17 = HS(17);
+  let regen17 = 0;
+  for (let i = 0; i < 40; i++) { const r = hungerTick(s17, 0.1, 0, true); if (r.regen) regen17++; }
+  assert.strictEqual(regen17, 0, '17 不应回血');
+});
+test('饥饿:满血时不累计回血计时(中断清零)', () => {
+  const s = HS(20);
+  for (let i = 0; i < 80; i++) hungerTick(s, 0.1, 0, false);   // canRegen=false
+  assert.strictEqual(s.regenT, 0);
+});
+test('饥饿:归零 → 每 4 秒 1 次饥饿伤害信号', () => {
+  const s = HS(0);
+  let starve = 0;
+  for (let i = 0; i < 41; i++) { const r = hungerTick(s, 0.1, 0.45, true); if (r.starve) starve++; }
+  assert.ok(starve >= 1, '应触发饥饿伤害');
+});
+test('饥饿:进食恢复由调用方处理(FOODS 表)', () => {
+  assert.strictEqual(FOODS.cooked_porkchop, 12);
+  assert.strictEqual(FOODS.porkchop, 8);
+  assert.strictEqual(FOODS.apple, 4);
 });
 test('镐形材料区分:木镐不受圆石影响', () => {
   const r = matchRecipeGrid(G9(['cobblestone', 'cobblestone', 'cobblestone', null, 'stick', null, null, 'stick', null]), 3, RECIPES);

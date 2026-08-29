@@ -99,8 +99,8 @@ const ITEM_TYPES = {
   cooked_porkchop: { name: '熟猪排', color: '#b56b46', shape: 'meat' },
 };
 const ITEM_ORDER = ['gem_diamond','gem_gold','gem_emerald','arrow','porkchop','cooked_porkchop','apple','stick','coal','iron_ingot'];
-// 食物 → 恢复的饥饿值(右键进食)
-const FOODS = { porkchop: 8, apple: 4, cooked_porkchop: 12 };
+// 食物表与堆叠上限来自纯函数模块 inventory.js(INVLIB)
+const FOODS = INVLIB.FOODS;
 
 // ============================================================
 // 第三部分:像素纹理与图集(用于区块合并网格)
@@ -979,13 +979,13 @@ const _rayNormal = new THREE.Vector3(); // 射线:命中面法线
 
 // 掉落物(生存采集核心:破坏方块必掉落,靠近自动拾取入快捷栏)
 const droppedItems = [];
-const BLOCK_STACK_MAX = 64;   // 方块最大堆叠数
+const BLOCK_STACK_MAX = INVLIB.STACK_MAX;   // 方块最大堆叠数(来自 inventory.js)
 
 // 玩家生命系统(无怪物,先建立基础设施:跌落/溺水伤害 + HUD + 存档)
 let playerHP = 20;       // 10 颗心,每心 2 点
 let breathTimer = 0;     // 持续在水下憋气计时(秒);浮出水面归零
-let playerHunger = 20;   // 饥饿值(10 鸡腿,每腿 2 点;归零开始饥饿伤害)
-let hungerDrain = 0, regenTimer = 0, starveTimer = 0;
+// 饥饿状态(状态机逻辑在 inventory.js:hungerTick;{hunger, drain, regenT, starveT})
+const hungerState = { hunger: 20, drain: 0, regenT: 0, starveT: 0 };
 const lastSafePos = new THREE.Vector3(0, 30, 0);  // 最后安全位置(虚空救援用)
 let lastSpaceTime = 0;
 let worldSeed = (Math.random() * 4294967296) >>> 0;
@@ -1833,7 +1833,7 @@ function resetWorld() {
   initInventory();              // 重置快捷栏
   buildHotbar();
   playerHP = PLAYER_MAX_HP; breathTimer = 0; updateHPBar();   // 重置生命
-  playerHunger = 20; hungerDrain = 0; regenTimer = 0; starveTimer = 0; updateHungerBar();   // 重置饥饿
+  hungerState.hunger = 20; hungerState.drain = 0; hungerState.regenT = 0; hungerState.starveT = 0; updateHungerBar();   // 重置饥饿
   for (let dx = -2; dx <= 2; dx++)
     for (let dz = -2; dz <= 2; dz++)
       ensureChunk(dx, dz);
@@ -2690,8 +2690,8 @@ function placeBlock() {
   if (item && item.kind === 'tool') { useTool(item); return; }
   if (item && item.kind === 'item' && FOODS[item.id]) {
     // 食物:右键进食恢复饥饿值
-    if (playerHunger >= 20) { showToast('已经很饱了'); return; }
-    playerHunger = Math.min(20, playerHunger + FOODS[item.id]);
+    if (hungerState.hunger >= 20) { showToast('已经很饱了'); return; }
+    hungerState.hunger = Math.min(20, hungerState.hunger + FOODS[item.id]);
     item.count = (item.count || 1) - 1;
     if (item.count <= 0) hotbar[currentSlot] = null;
     buildHotbar(); updateHungerBar(); markDirtySave();
@@ -3025,37 +3025,14 @@ function spawnDroppedItem(x, y, z, itemId, count = 1, kind = 'block', durability
   return mesh;
 }
 
-// 拾取入栏:优先叠加同 id 未满格,其次放入空格;返回吸收数量(0=快捷栏已满)
-// 工具(kind==='tool')不堆叠:进空格并保留耐久
+// 拾取入栏(委托纯函数模块 inventory.js;渲染/存档副作用在此)
 function pickupIntoInventory(kind, id, count, durability) {
-  let left = count;
-  if (kind === 'tool') {
-    for (let i = 0; i < HOTBAR_SIZE && left > 0; i++) {
-      if (!hotbar[i]) {
-        hotbar[i] = { kind, id, durability: (durability === undefined ? TOOL_TYPES[id].durability : durability) };
-        left -= 1;
-      }
-    }
-    if (left < count) { buildHotbar(); markDirtySave(); }
-    return count - left;
-  }
-  for (let i = 0; i < HOTBAR_SIZE && left > 0; i++) {
-    const it = hotbar[i];
-    if (it && it.kind === kind && it.id === id && (it.count || 1) < BLOCK_STACK_MAX) {
-      const take = Math.min(BLOCK_STACK_MAX - (it.count || 1), left);
-      it.count = (it.count || 1) + take;
-      left -= take;
-    }
-  }
-  for (let i = 0; i < HOTBAR_SIZE && left > 0; i++) {
-    if (!hotbar[i]) {
-      const put = Math.min(BLOCK_STACK_MAX, left);
-      hotbar[i] = { kind, id, count: put };
-      left -= put;
-    }
-  }
-  if (left < count) { buildHotbar(); markDirtySave(); }
-  return count - left;
+  const absorbed = INVLIB.pickupIntoInventory(hotbar, kind, id, count, {
+    durability,
+    defaultDurability: TOOL_TYPES[id] ? TOOL_TYPES[id].durability : undefined,
+  });
+  if (absorbed > 0) { buildHotbar(); markDirtySave(); }
+  return absorbed;
 }
 
 function updateDroppedItems(dt) {
@@ -3867,7 +3844,7 @@ function trySleep(x, y, z) {
   spawnPoint = { x: x + 0.5, y: y + 1.1, z: z + 0.5 };
   dayTime = 0.3;   // 直接跳到早晨
   playerHP = PLAYER_MAX_HP; updateHPBar();
-  playerHunger = Math.min(20, playerHunger + 2); updateHungerBar();
+  hungerState.hunger = Math.min(20, hungerState.hunger + 2); updateHungerBar();
   showToast('😴 睡了个好觉,重生点已设在此床');
   audio.play('place');
   markDirtySave();
@@ -3995,7 +3972,7 @@ function updateHungerBar() {
       bar.appendChild(h);
     }
   }
-  const hu = Math.max(0, Math.min(20, playerHunger));
+  const hu = Math.max(0, Math.min(20, hungerState.hunger));
   for (let i = 0; i < HEART_COUNT; i++) {
     const seg = hu - i * 2;
     bar.children[i].className = 'drumstick' + (seg >= 2 ? ' full' : seg >= 1 ? ' half' : ' empty');
@@ -4270,27 +4247,17 @@ function updatePlayer(dt, prevVy) {
     breathTimer = 0;
   }
 
-  // 饥饿系统:移动消耗更快(飞行减半);饥饿 ≥18 缓慢回血;归零后饥饿伤害(保底 2 HP)
-  hungerDrain += dt * ((Math.hypot(velocity.x, velocity.z) > 0.5 ? 1.2 : 0.45) * (isFlying ? 0.4 : 1));
-  if (hungerDrain >= 4) {
-    hungerDrain = 0;
-    if (playerHunger > 0) { playerHunger--; updateHungerBar(); }
+  // 饥饿系统(状态机在 inventory.js:hungerTick):移动消耗更快(飞行减半);
+  // 饥饿 ≥18 缓慢回血;归零后饥饿伤害(保底 2 HP 由本层判定)
+  const hres = INVLIB.hungerTick(hungerState, dt,
+    (Math.hypot(velocity.x, velocity.z) > 0.5 ? 1.2 : 0.45) * (isFlying ? 0.4 : 1),
+    playerHP < PLAYER_MAX_HP);
+  if (hres.hungerChanged) updateHungerBar();
+  if (hres.regen) {
+    playerHP = Math.min(PLAYER_MAX_HP, playerHP + 1);
+    updateHPBar();
   }
-  if (playerHunger >= 18 && playerHP < PLAYER_MAX_HP) {
-    regenTimer += dt;
-    if (regenTimer >= 4) {
-      regenTimer = 0;
-      playerHP = Math.min(PLAYER_MAX_HP, playerHP + 1);
-      updateHPBar();
-    }
-  } else regenTimer = 0;
-  if (playerHunger <= 0) {
-    starveTimer += dt;
-    if (starveTimer >= 4) {
-      starveTimer = 0;
-      if (playerHP > 2) damagePlayer(1);
-    }
-  } else starveTimer = 0;
+  if (hres.starve && playerHP > 2) damagePlayer(1);
 
   // 防掉落到地图下面:y < 0(世界底部以下)立即救援,不等 -20
   if (playerPos.y < 0) {
@@ -4613,15 +4580,14 @@ function applySave(rec) {
   velocity.set(0, 0, 0);
   wasOnGround = false; wasInWater = false;
   playerHP = (typeof rec.playerHP === 'number') ? Math.max(0, Math.min(PLAYER_MAX_HP, rec.playerHP)) : PLAYER_MAX_HP;
-  playerHunger = (typeof rec.playerHunger === 'number') ? Math.max(0, Math.min(20, rec.playerHunger)) : 20;
+  hungerState.hunger = (typeof rec.playerHunger === 'number') ? Math.max(0, Math.min(20, rec.playerHunger)) : 20;
+  hungerState.drain = 0; hungerState.regenT = 0; hungerState.starveT = 0;
   updateHungerBar();
   breathTimer = 0;
   if (rec.hotbar) {
     hotbar = rec.hotbar;
-    // 旧存档归一化:无数量字段的方块格补满一组(旧版为创造模式无限方块)
-    for (const it of hotbar) {
-      if (it && it.kind === 'block' && (it.count === undefined || it.count === null)) it.count = BLOCK_STACK_MAX;
-    }
+    // 旧存档归一化:无数量字段的方块格补满一组(逻辑在 inventory.js)
+    INVLIB.normalizeHotbar(hotbar);
   } else initInventory();
   currentSlot = Math.max(0, Math.min(HOTBAR_SIZE - 1, (rec.currentSlot | 0) || 0));
   // 预热玩家所在区域区块
@@ -5217,7 +5183,7 @@ async function saveSlot(name) {
       seed: worldSeed,
       playerPos: { x: playerPos.x, y: playerPos.y, z: playerPos.z },
       yaw, pitch, cameraMode, isFlying,
-      playerHP, breathTimer: 0, playerHunger,
+      playerHP, breathTimer: 0, playerHunger: hungerState.hunger,
       hotbar, currentSlot,
       modifications: Array.from(modifications.entries()),
       cropTimersData: Array.from(cropTimers.entries()),
@@ -5246,7 +5212,7 @@ async function overwriteSave(id) {
       seed: worldSeed,
       playerPos: { x: playerPos.x, y: playerPos.y, z: playerPos.z },
       yaw, pitch, cameraMode, isFlying,
-      playerHP, breathTimer: 0, playerHunger,
+      playerHP, breathTimer: 0, playerHunger: hungerState.hunger,
       hotbar, currentSlot,
       doorsData: Array.from(doors.entries()).map(function(e){return [e[0], {x:e[1].x,y:e[1].y,z:e[1].z,type:e[1].type,open:e[1].open,facing:e[1].facing}];}),
       modifications: Array.from(modifications.entries()),  // C2:不能丢失!

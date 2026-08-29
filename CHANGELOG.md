@@ -35,6 +35,18 @@
 ### 性能
 - `updatePlayer` 向量池化:触屏摇杆输入改用 `addScaledVector`(不再 `clone()` 分配);
   `raycastTarget` 命中结果/法线改池化对象与向量 —— 每帧主循环热路径零 GC 分配
+- **区块生成 ~7× 提速**(基准:64 个新区块的生成+建网格 283ms → 39ms):
+  - 树生成一次性化:`ensureChunk` 不再对周围 25 个区块重复跑种树扫描,每个区块只在创建时
+    种自己的树;树冠伸入未生成区块的部分写入 `pendingBlocks` 队列,由该区块创建时应用
+  - `growTreesInChunk` 哈希预过滤(treeChance ≤ 0.12,~88% 的列跳过多层噪声计算)
+  - 玩家改动 diff 按区块分桶(`modsByChunk`):`generateChunkData` 只应用本区块桶内条目,
+    不再对全量 16×48×16 个位置做字符串 key 探测
+- **区块网格构建**:邻接面剔除改按 id 查表(`SOLID_BY_ID`)+ 区块内直读 `data`,
+  消除每个面一次 `getBlock` 的字符串 key + Map 查找 + `BLOCK_TYPES` 哈希查找;UV 复用缓冲
+- `updateChunks` 脏区块改用持久 `Set`(`dirtyChunks`),不再每帧分配数组并全量排序;
+  mesh 构建按距离挑最近的 budget 个
+- 昼夜时间 HUD 仅在显示的分钟变化时写 DOM(原先每帧写 `textContent`)
+- 粒子材质按颜色缓存(原每次破坏新建并销毁 8 个材质);箭矢朝向更新复用临时向量
 
 ## [2.0.0] - 2026-08-07
 

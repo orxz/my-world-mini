@@ -336,9 +336,27 @@ const SEA_LEVEL = 14;           // 海平面
 const chunks = new Map();
 // 玩家改动 diff: key "x,y,z" -> type|null(覆盖生成结果)
 const modifications = new Map();
+// 玩家改动按区块分桶: chunkKey -> Map<chunkIdx, type|null>
+// 性能:generateChunkData 应用 diff 时只遍历本区块桶,不再扫全量 16×48×16 个字符串 key
+const modsByChunk = new Map();
+// 跨区块种树的待写队列: chunkKey -> Map<chunkIdx, id>
+// 树叶可伸入尚未生成的区块;区块创建时应用队列(树只在自己区块创建时种一次,不再重复扫描)
+const pendingBlocks = new Map();
+// 待重建 mesh 的区块集合(替代每帧扫描 chunks + 分配数组 + 排序)
+const dirtyChunks = new Set();
 
 function chunkKey(cx, cz) { return `${cx},${cz}`; }
 function blockKey(x, y, z) { return `${x},${y},${z}`; }
+
+// 记录一条玩家改动(全局 diff 表 + 所在区块桶,两处同步)
+function addModification(x, y, z, type) {
+  modifications.set(blockKey(x, y, z), type);
+  const bcx = Math.floor(x / CHUNK_SIZE), bcz = Math.floor(z / CHUNK_SIZE);
+  const ck = chunkKey(bcx, bcz);
+  let bucket = modsByChunk.get(ck);
+  if (!bucket) { bucket = new Map(); modsByChunk.set(ck, bucket); }
+  bucket.set(chunkIdx(x - bcx * CHUNK_SIZE, y, z - bcz * CHUNK_SIZE), type);
+}
 
 // 噪声/生物群系/地形函数已提取到 worldgen.js(由 <script> 全局加载,此处不再定义)
 
@@ -355,8 +373,9 @@ function generateChunkData(cx, cz) {
       const biome = biomeAt(wx, wz, worldSeed, mtn);
       const height = heightAt(wx, wz, worldSeed, biome, mtn);
       const b = BIOMES[biome];
+      const yTop = Math.max(height, SEA_LEVEL);
 
-      for (let y = 0; y <= Math.max(height, SEA_LEVEL); y++) {
+      for (let y = 0; y <= yTop; y++) {
         let type = null;
         if (y > height) {
           // 海平面以下填水
@@ -378,18 +397,10 @@ function generateChunkData(cx, cz) {
     }
   }
 
-  // 应用玩家改动 diff
-  for (let lx = 0; lx < CHUNK_SIZE; lx++) {
-    for (let lz = 0; lz < CHUNK_SIZE; lz++) {
-      const wx = ox + lx, wz = oz + lz;
-      for (let y = 0; y < WORLD_HEIGHT; y++) {
-        const mk = blockKey(wx, y, wz);
-        if (modifications.has(mk)) {
-          const t = modifications.get(mk);
-          data[chunkIdx(lx, y, lz)] = t ? BLOCK_ID[t] : 0;
-        }
-      }
-    }
+  // 应用玩家改动 diff(只遍历本区块桶,避免全量 16×48×16 字符串 key 探测)
+  const bucket = modsByChunk.get(chunkKey(cx, cz));
+  if (bucket) {
+    for (const [idx, t] of bucket) data[idx] = t ? BLOCK_ID[t] : 0;
   }
 
   return data;
@@ -401,22 +412,30 @@ function chunkIdx(lx, y, lz) {
 
 // 在世界坐标系种一棵树:树干/树叶可跨越区块边界,写入对应区块的数据数组
 // 玩家改动 diff 优先级最高 —— 如果玩家在该位置改过方块,保留玩家的改动
+// 目标区块未生成时,写入 pendingBlocks 队列,由该区块创建时应用(保证树冠完整)
 function plantTreeAt(wx, baseY, wz, biome) {
   const trunk = 3 + Math.floor(hash3(wx, baseY, wz, worldSeed + 11) * 3);
   const leafType = BLOCK_ID.leaves;
   const trunkType = BLOCK_ID.wood;
-  // 写入世界坐标处的方块(跨区块),返回是否实际写入
+  // 写入世界坐标处的方块(跨区块);未加载区块进队列,返回是否实际写入
   const putWorld = (x, y, z, id) => {
     if (y < 0 || y >= WORLD_HEIGHT) return;
     // 玩家改动优先:已被玩家改动的位置不被生成覆盖
     if (modifications.has(blockKey(x, y, z))) return;
     const ccx = Math.floor(x / CHUNK_SIZE), ccz = Math.floor(z / CHUNK_SIZE);
     const ch = chunks.get(chunkKey(ccx, ccz));
-    if (!ch) return; // 该区块尚未生成,跳过(会在自己生成时由 plantQueue 处理)
     const lx = x - ccx * CHUNK_SIZE, lz = z - ccz * CHUNK_SIZE;
     const idx = chunkIdx(lx, y, lz);
-    // 仅在空气或树叶位置写入(不覆盖树干/地形)
-    if (ch.data[idx] === 0 || ch.data[idx] === leafType) ch.data[idx] = id;
+    if (ch) {
+      // 仅在空气或树叶位置写入(不覆盖树干/地形)
+      if (ch.data[idx] === 0 || ch.data[idx] === leafType) ch.data[idx] = id;
+    } else {
+      // 队列:区块创建时按写入顺序应用同样的覆盖规则(先到先得,树干可覆盖树叶)
+      const pk = chunkKey(ccx, ccz);
+      let pending = pendingBlocks.get(pk);
+      if (!pending) { pending = new Map(); pendingBlocks.set(pk, pending); }
+      if (!pending.has(idx)) pending.set(idx, id);
+    }
   };
   for (let i = 1; i <= trunk; i++) putWorld(wx, baseY + i, wz, trunkType);
   const top = baseY + trunk;
@@ -429,6 +448,20 @@ function plantTreeAt(wx, baseY, wz, biome) {
       }
 }
 
+// 应用区块创建前积累的待写树方块(来自邻近已生成区块的树冠)
+function applyPendingBlocks(ch) {
+  const pending = pendingBlocks.get(ch.key);
+  if (!pending) return;
+  pendingBlocks.delete(ch.key);
+  for (const [idx, id] of pending) {
+    const lx = idx % CHUNK_SIZE, lz = ((idx / CHUNK_SIZE) | 0) % CHUNK_SIZE, y = (idx / (CHUNK_SIZE * CHUNK_SIZE)) | 0;
+    // 玩家改动优先(与 plantTreeAt 写入时一致)
+    if (modifications.has(blockKey(ch.cx * CHUNK_SIZE + lx, y, ch.cz * CHUNK_SIZE + lz))) continue;
+    // 仅在空气或树叶位置写入(不覆盖树干/地形)
+    if (ch.data[idx] === 0 || ch.data[idx] === BLOCK_ID.leaves) ch.data[idx] = id;
+  }
+}
+
 // 获取/创建 chunk 对象(仅数据,不含 mesh)
 function ensureChunk(cx, cz) {
   const key = chunkKey(cx, cz);
@@ -436,13 +469,11 @@ function ensureChunk(cx, cz) {
   if (!ch) {
     ch = { cx, cz, key, data: generateChunkData(cx, cz), mesh: null, meshDirty: true, hasMesh: false };
     chunks.set(key, ch);
-    // 本区块生成时积累的待种树:现在本区块数据已就绪,种下
-    // 同时检查相邻区块(半径2,树冠最远延伸)中可能伸入本区块的树
-    for (let dx = -2; dx <= 2; dx++) {
-      for (let dz = -2; dz <= 2; dz++) {
-        growTreesInChunk(cx + dx, cz + dz);
-      }
-    }
+    // 1) 应用邻近区块种树时留给本区块的树冠(pendingBlocks)
+    applyPendingBlocks(ch);
+    // 2) 种本区块的树(每个区块只在创建时种一次;伸入未加载区块的部分进 pendingBlocks)
+    growTreesInChunk(cx, cz);
+    dirtyChunks.add(ch);
     // 新区块出现时,已存在(已构建 mesh)的相邻区块边界面可能需要重算
     markChunkDirty(cx - 1, cz);
     markChunkDirty(cx + 1, cz);
@@ -454,6 +485,7 @@ function ensureChunk(cx, cz) {
 
 // 为指定区块内每一列重新计算是否种树并种下(跨区块写树叶)
 // 确定性:同 seed 同坐标永远种同样的树,所以多次调用幂等(树叶只在空气/树叶位写入)
+// 性能:先用一次 hash2 预过滤(treeChance 最大 0.12,~88% 列直接跳过多层噪声计算)
 function growTreesInChunk(cx, cz) {
   const ch = chunks.get(chunkKey(cx, cz));
   if (!ch) return;
@@ -461,12 +493,13 @@ function growTreesInChunk(cx, cz) {
   for (let lx = 0; lx < CHUNK_SIZE; lx++) {
     for (let lz = 0; lz < CHUNK_SIZE; lz++) {
       const wx = ox + lx, wz = oz + lz;
+      const r = hash2(wx, wz, worldSeed + 999);
+      if (r >= 0.12) continue;   // 预过滤:所有群系 treeChance ≤ 0.12,r 偏大必不种树
       const biome = biomeAt(wx, wz, worldSeed);
       const b = BIOMES[biome];
       if (b.treeChance <= 0) continue;
       const height = heightAt(wx, wz, worldSeed, biome);
       if (height <= SEA_LEVEL) continue;
-      const r = hash2(wx, wz, worldSeed + 999);
       if (r < b.treeChance) plantTreeAt(wx, height, wz, biome);
     }
   }
@@ -501,8 +534,9 @@ function setBlock(x, y, z, type) {
   if (ch.data[idx] === newId) return false;
   ch.data[idx] = newId;
   ch.meshDirty = true;
-  // 记录改动 diff(用于存档)
-  modifications.set(blockKey(x, y, z), type);
+  dirtyChunks.add(ch);
+  // 记录改动 diff(用于存档;全局表 + 区块桶同步)
+  addModification(x, y, z, type);
   // 相邻 chunk 在边界时也需重建(面剔除跨边界)
   if (lx === 0) markChunkDirty(cx - 1, cz);
   if (lx === CHUNK_SIZE - 1) markChunkDirty(cx + 1, cz);
@@ -512,7 +546,7 @@ function setBlock(x, y, z, type) {
 }
 function markChunkDirty(cx, cz) {
   const ch = chunks.get(chunkKey(cx, cz));
-  if (ch) ch.meshDirty = true;
+  if (ch) { ch.meshDirty = true; dirtyChunks.add(ch); }
 }
 
 // ============================================================
@@ -530,44 +564,72 @@ const FACES = [
 ];
 
 // 实心方块网格(不透明 + 树叶 alphaTest)
+
+// 面剔除按 id 查表(热路径避免字符串名称 + BLOCK_TYPES 哈希查找)
+const WATER_ID = BLOCK_ID.water;
+const SOLID_BY_ID = new Uint8Array(64);
+for (const name in BLOCK_TYPES) SOLID_BY_ID[BLOCK_ID[name]] = BLOCK_TYPES[name].solid ? 1 : 0;
+
+// 按 id 直接读方块(区块未加载/越界返回 0;供网格构建热路径使用)
+function getBlockId(x, y, z) {
+  if (y < 0 || y >= WORLD_HEIGHT) return 0;
+  const cx = Math.floor(x / CHUNK_SIZE), cz = Math.floor(z / CHUNK_SIZE);
+  const ch = chunks.get(chunkKey(cx, cz));
+  if (!ch) return 0;
+  return ch.data[chunkIdx(x - cx * CHUNK_SIZE, y, z - cz * CHUNK_SIZE)];
+}
+
+// 面方向烘焙亮度(+x,-x,+y,-y,+z,-z),模块级常量
+const FACE_SHADE = [0.86, 0.86, 1.0, 0.55, 0.72, 0.72];
+// 每面 UV 复用缓冲,避免每面分配 [ [u,v]×4 ] 小数组
+const faceUV = new Float64Array(8);
+
 function buildChunkMesh(ch) {
-  // 按面法线烘焙顶点色(Minecraft 风格:顶亮/侧中/底暗),不依赖光照方向就有立体感
-  const FACE_SHADE = [0.86, 0.86, 1.0, 0.55, 0.72, 0.72];  // +x,-x,+y(top),-y(bottom),+z,-z
   const ox = ch.cx * CHUNK_SIZE, oz = ch.cz * CHUNK_SIZE;
+  const data = ch.data;
   const positions = [], normals = [], uvs = [], indices = [], colors = [];
   const wPositions = [], wNormals = [], wUvs = [], wIndices = []; // 水面/透明
 
   for (let y = 0; y < WORLD_HEIGHT; y++) {
     for (let lz = 0; lz < CHUNK_SIZE; lz++) {
       for (let lx = 0; lx < CHUNK_SIZE; lx++) {
-        const id = ch.data[chunkIdx(lx, y, lz)];
+        const id = data[chunkIdx(lx, y, lz)];
         if (id === 0) continue;
         const type = ID_TO_BLOCK[id];
         const wx = ox + lx, wz = oz + lz;
-        const isWater = type === 'water';
+        const isWater = id === WATER_ID;
+        const uvRow = atlasUV[type];
 
         for (let f = 0; f < 6; f++) {
           const F = FACES[f];
-          const nbx = wx + F.n[0], nby = y + F.n[1], nbz = wz + F.n[2];
-          const neighbor = getBlock(nbx, nby, nbz);
+          const nlx = lx + F.n[0], nly = y + F.n[1], nlz = lz + F.n[2];
+          // 邻接查询:区块内直读 data(绝大多数),跨边界才走 getBlockId
+          let nid;
+          if (nlx >= 0 && nlx < CHUNK_SIZE && nlz >= 0 && nlz < CHUNK_SIZE && nly >= 0 && nly < WORLD_HEIGHT) {
+            nid = data[chunkIdx(nlx, nly, nlz)];
+          } else {
+            nid = getBlockId(wx + F.n[0], nly, wz + F.n[2]);
+          }
           // 面剔除规则:
           //  - 当前是水:相邻"水"或"固体"都不显示(水内部界面)
           //  - 当前是固体:相邻"固体"不显示;但相邻"水"仍要显示(透过半透明水能看到海底/水边)
-          if (neighbor) {
-            const ndef = BLOCK_TYPES[neighbor];
+          if (nid !== 0) {
             if (isWater) {
-              if (ndef.solid || neighbor === 'water') continue;
+              if (SOLID_BY_ID[nid] || nid === WATER_ID) continue;
             } else {
-              if (ndef.solid) continue;
+              if (SOLID_BY_ID[nid]) continue;
             }
           }
 
           // UV
-          const uvBox = atlasUV[type][F.face];
-          const [u0, v0, u1, v1] = uvBox;
+          const uvBox = uvRow[F.face];
+          const u0 = uvBox[0], v0 = uvBox[1], u1 = uvBox[2], v1 = uvBox[3];
           const base = F.v;
           // 顶点顺序对应 UV: (u0,v0),(u1,v0),(u1,v1),(u0,v1)
-          const faceUV = [[u0, v1], [u1, v1], [u1, v0], [u0, v0]];
+          faceUV[0] = u0; faceUV[1] = v1;
+          faceUV[2] = u1; faceUV[3] = v1;
+          faceUV[4] = u1; faceUV[5] = v0;
+          faceUV[6] = u0; faceUV[7] = v0;
 
           const tgtP = isWater ? wPositions : positions;
           const tgtN = isWater ? wNormals : normals;
@@ -579,7 +641,7 @@ function buildChunkMesh(ch) {
           for (let k = 0; k < 4; k++) {
             tgtP.push(wx + base[k][0], y + base[k][1], wz + base[k][2]);
             tgtN.push(F.n[0], F.n[1], F.n[2]);
-            tgtU.push(faceUV[k][0], faceUV[k][1]);
+            tgtU.push(faceUV[k * 2], faceUV[k * 2 + 1]);
             if (!isWater) colors.push(shade, shade, shade);
           }
           tgtI.push(start, start + 1, start + 2, start, start + 2, start + 3);
@@ -595,6 +657,7 @@ function buildChunkMesh(ch) {
   }
   ch.mesh = {};
   ch.meshDirty = false;
+  dirtyChunks.delete(ch);
   ch.hasMesh = false;
 
   const buildGeo = (P, N, U, I, C) => {
@@ -645,6 +708,7 @@ function updateChunks(playerWX, playerWZ) {
         if (ch.mesh.solid) { scene.remove(ch.mesh.solid); ch.mesh.solid.geometry.dispose(); }
         if (ch.mesh.water) { scene.remove(ch.mesh.water); ch.mesh.water.geometry.dispose(); }
       }
+      dirtyChunks.delete(ch);   // 已卸载的区块不再参与 mesh 重建
       chunks.delete(key);
     }
   }
@@ -683,21 +747,16 @@ function updateChunks(playerWX, playerWZ) {
     }
   }
 
-  // 分帧构建 mesh(优先 dirty 且近的)
+  // 分帧构建 mesh:从 dirtyChunks 挑最近的 budget 个(不分配数组、不排序)
   let buildLeft = chunkMeshBuildBudget;
-  const dirtyList = [];
-  for (const ch of chunks.values()) {
-    if (ch.meshDirty) dirtyList.push(ch);
-  }
-  if (dirtyList.length === 0) return;
-  dirtyList.sort((a, b) => {
-    const da = (a.cx - pcx) ** 2 + (a.cz - pcz) ** 2;
-    const db = (b.cx - pcx) ** 2 + (b.cz - pcz) ** 2;
-    return da - db;
-  });
-  for (const ch of dirtyList) {
-    buildChunkMesh(ch);
-    if (--buildLeft <= 0) break;
+  while (buildLeft > 0 && dirtyChunks.size > 0) {
+    let best = null, bestD = Infinity;
+    for (const ch of dirtyChunks) {
+      const d = (ch.cx - pcx) * (ch.cx - pcx) + (ch.cz - pcz) * (ch.cz - pcz);
+      if (d < bestD) { bestD = d; best = ch; }
+    }
+    buildChunkMesh(best);   // 内部重置 meshDirty 并从 dirtyChunks 移除
+    buildLeft--;
   }
 }
 
@@ -1220,11 +1279,17 @@ function init() {
 
   // 建造出生广场(广场+Owen字样+灯塔+树篱+路径,确定性生成)
   buildSpawnPlaza();
-  // 广场覆盖的区块(半径22 → ±2 区块)重新生成数据(应用 modifications)+ 重建 mesh
+  // 广场覆盖的区块(半径22 → ±2 区块)重新生成数据(应用 modifications)
+  // 先全部重建数据,再统一补种树(树冠跨区块写入的才是最终数据)
   for (let dx = -2; dx <= 2; dx++)
     for (let dz = -2; dz <= 2; dz++) {
       const ch = chunks.get(chunkKey(dx, dz));
-      if (ch) { ch.data = generateChunkData(dx, dz); ch.meshDirty = true; }
+      if (ch) { ch.data = generateChunkData(dx, dz); markChunkDirty(dx, dz); }
+    }
+  for (let dx = -2; dx <= 2; dx++)
+    for (let dz = -2; dz <= 2; dz++) {
+      const ch = chunks.get(chunkKey(dx, dz));
+      if (ch) { applyPendingBlocks(ch); growTreesInChunk(dx, dz); }
     }
 
   // 构建全部已生成区块的 mesh
@@ -1263,7 +1328,7 @@ const PIXEL_ART = {
 function buildSpawnPlaza() {
   const plazaR = 28;
   const platH = SEA_LEVEL + 6;
-  const set = (x, y, z, t) => { if (y >= 0 && y < WORLD_HEIGHT) modifications.set(blockKey(x, y, z), t); };
+  const set = (x, y, z, t) => { if (y >= 0 && y < WORLD_HEIGHT) addModification(x, y, z, t); };
   const setArt = (ox, oz, font, colorMap) => {
     for (let row = 0; row < font.length; row++)
       for (let col = 0; col < font[row].length; col++) {
@@ -1453,6 +1518,9 @@ function clearWorld() {
   }
   chunks.clear();
   modifications.clear();
+  modsByChunk.clear();
+  pendingBlocks.clear();
+  dirtyChunks.clear();
   for (const a of arrows) scene.remove(a);
   arrows.length = 0;
   clearDroppedItems();   // 清掉落物,避免旧世界残留
@@ -1489,11 +1557,16 @@ function resetWorld() {
       ensureChunk(dx, dz);
   // 固定生成出生广场(确保重置后仍有广场场景)
   buildSpawnPlaza();
-  // 广场覆盖区块重新生成数据(应用 modifications)+ 重建 mesh
+  // 广场覆盖区块重新生成数据(应用 modifications);先重建数据再统一补种树
   for (let dx = -2; dx <= 2; dx++)
     for (let dz = -2; dz <= 2; dz++) {
       const ch = chunks.get(chunkKey(dx, dz));
-      if (ch) { ch.data = generateChunkData(dx, dz); ch.meshDirty = true; }
+      if (ch) { ch.data = generateChunkData(dx, dz); markChunkDirty(dx, dz); }
+    }
+  for (let dx = -2; dx <= 2; dx++)
+    for (let dz = -2; dz <= 2; dz++) {
+      const ch = chunks.get(chunkKey(dx, dz));
+      if (ch) { applyPendingBlocks(ch); growTreesInChunk(dx, dz); }
     }
   for (const ch of chunks.values()) buildChunkMesh(ch);
   // 出生点固定在广场中心(原点)
@@ -2372,10 +2445,21 @@ function clearDoors() {
 // 破坏/放置粒子效果
 const particles = [];
 let particleGeo = null;
+// 粒子材质按颜色缓存(方块颜色有限,避免每次破坏新建/销毁 8 个材质)
+const particleMatCache = new Map();
+function getParticleMat(colorHex) {
+  let m = particleMatCache.get(colorHex);
+  if (!m) {
+    m = new THREE.MeshLambertMaterial({ color: colorHex });
+    particleMatCache.set(colorHex, m);
+  }
+  return m;
+}
 function spawnParticles(x, y, z, colorHex, count) {
   if (!particleGeo) particleGeo = new THREE.BoxGeometry(0.12, 0.12, 0.12);
+  const mat = getParticleMat(colorHex);
   for (let i = 0; i < count; i++) {
-    const m = new THREE.Mesh(particleGeo, new THREE.MeshLambertMaterial({ color: colorHex }));
+    const m = new THREE.Mesh(particleGeo, mat);
     m.position.set(x + 0.5 + (Math.random() - 0.5) * 0.6, y + 0.5 + (Math.random() - 0.5) * 0.6, z + 0.5 + (Math.random() - 0.5) * 0.6);
     m.userData = { vel: new THREE.Vector3((Math.random() - 0.5) * 4, Math.random() * 4 + 1, (Math.random() - 0.5) * 4), life: 0.6 + Math.random() * 0.3 };
     scene.add(m);
@@ -2389,7 +2473,8 @@ function updateParticles(dt) {
     p.position.addScaledVector(p.userData.vel, dt);
     p.userData.life -= dt;
     p.scale.setScalar(Math.max(0.1, p.userData.life * 1.5));
-    if (p.userData.life <= 0) { scene.remove(p); p.material.dispose(); particles.splice(i, 1); }
+    // 材质来自缓存,不 dispose(仅从场景移除)
+    if (p.userData.life <= 0) { scene.remove(p); particles.splice(i, 1); }
   }
 }
 
@@ -2558,12 +2643,15 @@ function updateDeathOverlay(dt) {
   else if (deathOverlayTimer < 0.6) { el.style.opacity = String(deathOverlayTimer / 0.6); }
 }
 
+// 箭矢朝向更新用的临时向量(避免每箭每帧 clone 分配)
+const _arrowLook = new THREE.Vector3();
 function updateArrows(dt) {
   for (let i = arrows.length - 1; i >= 0; i--) {
     const a = arrows[i];
     a.userData.vel.y -= 9.8 * dt;
     a.position.addScaledVector(a.userData.vel, dt);
-    a.lookAt(a.position.clone().add(a.userData.vel));
+    _arrowLook.copy(a.position).add(a.userData.vel);
+    a.lookAt(_arrowLook);
     a.userData.life -= dt;
     const bx = Math.floor(a.position.x), by = Math.floor(a.position.y), bz = Math.floor(a.position.z);
     if (isSolidAt(bx, by, bz) || a.userData.life <= 0 || a.position.y < -10) {
@@ -2843,14 +2931,17 @@ function updateDayNight(dt) {
     scene.fog.near = FOG_NEAR; scene.fog.far = FOG_FAR;
   }
 
-  // 信息面板昼夜进度显示
-  const el = document.getElementById('daytime');
-  if (el) {
+  // 信息面板昼夜进度显示(缓存元素 + 仅在显示的分钟变化时写 DOM,避免每帧触发布局)
+  if (_daytimeEl === null) _daytimeEl = document.getElementById('daytime');
+  if (_daytimeEl) {
     const hh = Math.floor(dayTime * 24);
     const mm = Math.floor((dayTime * 24 - hh) * 60);
-    el.textContent = (hh < 10 ? '0' + hh : hh) + ':' + (mm < 10 ? '0' + mm : mm);
+    const str = (hh < 10 ? '0' + hh : hh) + ':' + (mm < 10 ? '0' + mm : mm);
+    if (str !== _lastDaytimeStr) { _daytimeEl.textContent = str; _lastDaytimeStr = str; }
   }
 }
+let _daytimeEl = null;      // 昼夜时间 DOM 元素缓存
+let _lastDaytimeStr = '';
 
 function animate() {
   requestAnimationFrame(animate);
@@ -3003,7 +3094,13 @@ function applySave(rec) {
   clearWorld();
   worldSeed = (typeof rec.seed === 'number') ? rec.seed : worldSeed;
   modifications.clear();
-  if (rec.modifications) for (const [k, v] of rec.modifications) modifications.set(k, v);
+  // 重建全局 diff 表 + 区块桶(读档一次性解析 key,游戏期间按桶直接应用)
+  if (rec.modifications) {
+    for (const [k, v] of rec.modifications) {
+      const c1 = k.indexOf(','), c2 = k.indexOf(',', c1 + 1);
+      addModification(+k.slice(0, c1), +k.slice(c1 + 1, c2), +k.slice(c2 + 1), v);
+    }
+  }
   if (rec.playerPos && rec.playerPos.y > 1 && rec.playerPos.y < WORLD_HEIGHT
       && Number.isFinite(rec.playerPos.x) && Number.isFinite(rec.playerPos.z)) {
     playerPos.set(rec.playerPos.x, rec.playerPos.y, rec.playerPos.z);

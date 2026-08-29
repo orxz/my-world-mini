@@ -56,7 +56,7 @@ three.min.js  ── Three.js r160(第三方渲染库,内置,离线)
 | 1 | 方块定义 | `BLOCK_TYPES` / `BLOCK_ID` / `ID_TO_BLOCK`(数字 id↔名称) |
 | 2 | 工具与物品 | `TOOL_TYPES`(镐/斧/铲/剑/盾/弓 ×5 档)、`ITEM_TYPES`(材料) |
 | 3 | 像素纹理与图集 | `makePixelTexture` / `buildAtlas` / `makeBlockMaterials` |
-| 4 | 区块系统 | `chunks` Map、`modifications` Map、`generateChunkData`、`getBlock`/`setBlock`/`isSolidAt` |
+| 4 | 区块系统 | `chunks` Map、`modifications` 全局 diff + `modsByChunk` 分桶、`pendingBlocks` 树冠队列、`dirtyChunks` 脏集合、`generateChunkData`、`getBlock`/`setBlock`/`isSolidAt` |
 | 5 | 区块网格构建 | `buildChunkMesh`:面剔除 + atlas UV + 合并为单 BufferGeometry |
 | 6 | 区块加载/卸载 | `updateChunks`(分帧)、远端门清理 |
 | 7 | 全局状态 | 玩家 pos/velocity/keys/hotbar、相机、云朵、池化向量(热路径零 GC) |
@@ -82,19 +82,25 @@ three.min.js  ── Three.js r160(第三方渲染库,内置,离线)
 玩家移动 → updateChunks(playerX, playerZ) 每帧调用
          ├─ 卸载半径外 chunk: scene.remove + geometry.dispose(数据保留在 modifications)
          └─ 加载半径内未生成 chunk(分帧,避免卡顿):
-              generateChunkData(cx,cz) ──► 确定性生成地形 + 应用 modifications diff
-              buildChunkMesh(ch)      ──► 面剔除 + 合并 → 加入 scene
+              generateChunkData(cx,cz) ──► 确定性生成地形 + 按区块桶应用 modifications diff
+              applyPendingBlocks       ──► 应用邻近区块种树时留下的树冠(pendingBlocks)
+              growTreesInChunk(自身)   ──► 每个区块只在创建时种一次树(先 hash 预过滤);
+                                          树冠伸入未生成区块 → 写入 pendingBlocks 队列
+              buildChunkMesh(ch)       ──► 面剔除 + 合并 → 加入 scene(从 dirtyChunks 按近距挑选)
 ```
 
 - `chunks`:`Map<chunkKey, {cx,cz,data:Uint8Array,mesh,...}>`
-- `modifications`:`Map<"x,y,z", type|null>` —— **玩家改动**,全局唯一真相,卸载不丢
+- `modifications`:`Map<"x,y,z", type|null>` —— **玩家改动**,全局唯一真相(存档用);
+  `modsByChunk`:`Map<chunkKey, Map<chunkIdx, type|null>>` 按区块分桶(生成时快速应用)
+- `pendingBlocks`:`Map<chunkKey, Map<chunkIdx, id>>` —— 跨区块树冠的待写队列
 - 渲染半径默认 `RENDER_DISTANCE=5`(11×11=121 chunk),世界高 48,海平面 14
 
 ### 4.2 渲染管线(性能关键)
 
 每个 chunk 的网格构建(`buildChunkMesh`):
 1. 遍历 chunk 内每个方块的 6 个面
-2. **面剔除**:只生成暴露在空气/水外的面(相邻是固体则跳过该面)
+2. **面剔除**:只生成暴露在空气/水外的面;邻接查询区块内直读 `data` 数组、
+   跨边界才走 `getBlockId`,按 id 查 `SOLID_BY_ID` 表剔除(无字符串/Map 开销)
 3. 从**纹理图集**取对应方块/面的 UV
 4. **顶点色烘焙**:顶面亮/侧面中/底面暗(固定立体感,不依赖光照方向)
 5. 合并为**单个 BufferGeometry** → 1 chunk = 1 draw call

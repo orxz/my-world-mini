@@ -13,8 +13,8 @@
     { name: '木板', pattern: ['wood', null, null, null], result: { kind: 'block', id: 'planks' }, count: 4, shapeless: true },
     // 木板→木棍(2 木板 = 4 木棍,纵向排列)
     { name: '木棍', pattern: ['planks', null, 'planks', null], result: { kind: 'item', id: 'arrow', count: 4 }, shapeless: false },
-    // 4 木板→工作台(用 planks 表示,演示)
-    { name: '压缩木板', pattern: ['planks', 'planks', 'planks', 'planks'], result: { kind: 'block', id: 'planks' }, count: 1, shapeless: true },
+    // 4 木板→合成台(经典工作台配方,放入世界后右键打开 3×3 合成)
+    { name: '合成台', pattern: ['planks', 'planks', 'planks', 'planks'], result: { kind: 'block', id: 'crafting_table' }, count: 1, shapeless: true },
     // 4 石头→石砖(用 brick 表示)
     { name: '石砖', pattern: ['stone', 'stone', 'stone', 'stone'], result: { kind: 'block', id: 'brick' }, count: 2, shapeless: true },
     // 4 砖块→砖块(压缩,演示)
@@ -33,31 +33,75 @@
     { name: '金门', pattern: ['gem_gold', 'gem_gold', null, null], result: { kind: 'block', id: 'door_gold' }, count: 1, shapeless: false },
     // 钻石门:4 钻石(2×2)→1 钻石门
     { name: '钻石门', pattern: ['gem_diamond', 'gem_diamond', 'gem_diamond', 'gem_diamond'], result: { kind: 'block', id: 'door_diamond' }, count: 1, shapeless: true },
+    // ---- 以下为 3×3 专属配方(合成台内可用) ----
+    // 铁镐:3 金锭(代铁)上排 + 2 箭(代木棍)中列
+    { name: '铁镐', pattern: ['gem_gold', 'gem_gold', 'gem_gold', null, 'arrow', null, null, 'arrow', null], result: { kind: 'tool', id: 'pickaxe_iron' }, shapeless: false },
+    // 钻石镐:3 钻石上排 + 2 箭(代木棍)中列
+    { name: '钻石镐', pattern: ['gem_diamond', 'gem_diamond', 'gem_diamond', null, 'arrow', null, null, 'arrow', null], result: { kind: 'tool', id: 'pickaxe_diamond' }, shapeless: false },
+    // 石砖墙块:8 石头围一圈(中心空)→ 4 石砖(3×3 专属,演示环形图案)
+    { name: '石砖(大量)', pattern: ['stone', 'stone', 'stone', 'stone', null, 'stone', 'stone', 'stone', 'stone'], result: { kind: 'block', id: 'brick' }, count: 4, shapeless: false },
   ];
 
   // 匹配配方:grid 是长度 4 的数组(每格 null 或 {kind,id}),返回配方对象或 null
+  // (保持原签名;内部走通用网格匹配,2×2 语义与旧版一致)
   function matchRecipe(grid, recipes) {
-    // 网格归一化(非空项的 id 列表)
-    const gridItems = grid.filter(x => x !== null).map(x => x.id);
-    if (gridItems.length === 0) return null;
-    const gridSorted = [...gridItems].sort().join(',');
+    return matchRecipeGrid(grid, 2, recipes);
+  }
+
+  // 通用网格匹配:grid 长度为 w*w(2=背包 2×2,3=合成台 3×3)
+  // - 无序配方:非空 id 多重集合相等(数量不限格位)
+  // - 有序配方:取网格非空格的最小包围盒,与配方的包围盒逐格比较 ——
+  //   经典 MC 行为:图案在网格内平移仍然匹配(尺寸必须一致)
+  function matchRecipeGrid(grid, w, recipes) {
+    // 收集非空格
+    const cells = [];
+    for (let i = 0; i < w * w; i++) {
+      if (grid[i]) cells.push({ i, id: grid[i].id });
+    }
+    if (cells.length === 0) return null;
+    const gridSorted = cells.map(c => c.id).sort().join(',');
     for (const r of recipes) {
       const recipeItems = r.pattern.filter(x => x !== null);
       if (r.shapeless) {
-        // 无序:排序后比较
-        const recipeSorted = [...recipeItems].sort().join(',');
-        if (recipeSorted === gridSorted) return r;
-      } else {
-        // 有序:精确位置匹配
-        let ok = true;
-        for (let i = 0; i < 4; i++) {
-          const want = r.pattern[i] || null;
-          const got = grid[i];
+        if (cells.length !== recipeItems.length) continue;
+        if ([...recipeItems].sort().join(',') === gridSorted) return r;
+        continue;
+      }
+      if (cells.length !== recipeItems.length) continue;
+      // 配方包围盒(按配方自身边长索引:2×2 配方宽 2,3×3 配方宽 3)
+      const rw = Math.sqrt(r.pattern.length);
+      let minR = 9, maxR = -1, minC = 9, maxC = -1;
+      for (let i = 0; i < r.pattern.length; i++) {
+        if (r.pattern[i] === null) continue;
+        const rr = Math.floor(i / rw), cc = i % rw;
+        if (rr < minR) minR = rr;
+        if (rr > maxR) maxR = rr;
+        if (cc < minC) minC = cc;
+        if (cc > maxC) maxC = cc;
+      }
+      const ph = maxR - minR + 1, pw = maxC - minC + 1;
+      // 网格包围盒
+      let gMinR = 9, gMaxR = -1, gMinC = 9, gMaxC = -1;
+      for (const c of cells) {
+        const rr = Math.floor(c.i / w), cc = c.i % w;
+        if (rr < gMinR) gMinR = rr;
+        if (rr > gMaxR) gMaxR = rr;
+        if (cc < gMinC) gMinC = cc;
+        if (cc > gMaxC) gMaxC = cc;
+      }
+      const gh = gMaxR - gMinR + 1, gw = gMaxC - gMinC + 1;
+      if (ph !== gh || pw !== gw) continue;
+      // 逐格比较
+      let ok = true;
+      for (let rr = 0; rr < ph && ok; rr++) {
+        for (let cc = 0; cc < pw; cc++) {
+          const want = r.pattern[(minR + rr) * rw + (minC + cc)] || null;
+          const got = grid[(gMinR + rr) * w + (gMinC + cc)] || null;
           if ((want === null) !== (got === null)) { ok = false; break; }
           if (want && (!got || got.id !== want)) { ok = false; break; }
         }
-        if (ok) return r;
       }
+      if (ok) return r;
     }
     return null;
   }
@@ -74,9 +118,10 @@
 
   // 导出(Node 环境)
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { RECIPES, matchRecipe, breakCost };
+    module.exports = { RECIPES, matchRecipe, matchRecipeGrid, breakCost };
   }
-  // 浏览器:挂到全局
-  global.CRAFTLIB = { RECIPES, matchRecipe, breakCost };
+  // 浏览器:挂到全局(CRAFTLIB 命名空间 + 裸函数,game.js 直接调用)
+  global.CRAFTLIB = { RECIPES, matchRecipe, matchRecipeGrid, breakCost };
+  global.matchRecipeGrid = matchRecipeGrid;
 
 })(typeof window !== 'undefined' ? window : globalThis);

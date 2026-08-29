@@ -23,3 +23,4 @@ _t
 
 # 本地安全扫描工具状态
 .mimosa/
+.playwright-mcp/

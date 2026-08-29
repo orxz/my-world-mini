@@ -12,7 +12,7 @@ const assert = require('assert');
 const { hash2, hash3, valueNoise2D, fbm2D, BIOMES, biomeAt, heightAt } = require('../worldgen.js');
 
 // ---- 从 craft.js 模块加载(合成/破坏计算的单一数据源) ----
-const { RECIPES, matchRecipe, breakCost } = require('../craft.js');
+const { RECIPES, matchRecipe, matchRecipeGrid, breakCost } = require('../craft.js');
 
 // ---- 测试用例 ----
 let passed = 0, failed = 0;
@@ -126,12 +126,12 @@ test('seed=0 正确处理(不用||回退)', () => {
 });
 
 console.log('\n=== 合成配方(matchRecipe / RECIPES) ===');
-test('RECIPES 结构完整(pattern 长度 4)', () => {
+test('RECIPES 结构完整(pattern 长度 4 或 9)', () => {
   assert(RECIPES.length >= 10, 'recipes missing');
   for (const r of RECIPES) {
-    assert.strictEqual(r.pattern.length, 4, r.name + ' pattern length');
+    assert([4, 9].includes(r.pattern.length), r.name + ' pattern length');
     assert(r.result && r.result.id, r.name + ' result');
-    assert((r.count >= 1) || (r.result.count >= 1), r.name + ' count');
+    assert((r.count >= 1) || (r.result.count >= 1) || r.result.kind === 'tool', r.name + ' count');
   }
 });
 test('matchRecipe 空网格返回 null', () => {
@@ -141,10 +141,10 @@ test('matchRecipe 无匹配返回 null', () => {
   const grid = [{ id: 'grass' }, { id: 'dirt' }, null, null];
   assert.strictEqual(matchRecipe(grid, RECIPES), null);
 });
-test('matchRecipe 无序配方(4 木板→压缩木板)', () => {
+test('matchRecipe 无序配方(4 木板→合成台)', () => {
   const grid = [{ id: 'planks' }, { id: 'planks' }, { id: 'planks' }, { id: 'planks' }];
   const r = matchRecipe(grid, RECIPES);
-  assert(r && r.name === '压缩木板', 'got: ' + (r && r.name));
+  assert(r && r.name === '合成台', 'got: ' + (r && r.name));
 });
 test('matchRecipe 无序与位置无关(4 石头→石砖)', () => {
   const r = matchRecipe([{ id: 'stone' }, { id: 'stone' }, { id: 'stone' }, { id: 'stone' }], RECIPES);
@@ -165,6 +165,40 @@ test('matchRecipe 有序拒绝错位(横向 2 石头≠石门)', () => {
 test('matchRecipe 只按 id 匹配(忽略 kind/数量字段)', () => {
   const r = matchRecipe([{ kind: 'block', id: 'wood' }, null, null, null], RECIPES);
   assert(r && r.name === '木板' && r.count === 4, 'got: ' + (r && r.name));
+});
+
+console.log('\n=== 3×3 网格匹配(matchRecipeGrid / 合成台) ===');
+const G9 = (ids) => Array.from({ length: 9 }, (_, i) => (ids[i] ? { id: ids[i] } : null));
+test('3×3:2×2 配方在合成台可用(4 木板→合成台)', () => {
+  const r = matchRecipeGrid(G9([null, null, null, null, 'planks', 'planks', null, 'planks', 'planks']), 3, RECIPES);
+  assert(r && r.name === '合成台', 'got: ' + (r && r.name));
+});
+test('3×3:有序配方允许网格内平移(木门 放右下角)', () => {
+  const r = matchRecipeGrid(G9([null, null, null, null, null, null, 'planks', 'planks', null]), 3, RECIPES);
+  assert(r && r.name === '木门', 'got: ' + (r && r.name));
+});
+test('3×3:铁镐(3 金锭 + 2 箭)精确图案', () => {
+  const r = matchRecipeGrid(G9(['gem_gold', 'gem_gold', 'gem_gold', null, 'arrow', null, null, 'arrow', null]), 3, RECIPES);
+  assert(r && r.name === '铁镐' && r.result.kind === 'tool', 'got: ' + (r && r.name));
+});
+test('3×3:有序配方允许网格内平移(石门竖排居中列)', () => {
+  const r = matchRecipeGrid(G9([null, 'stone', null, null, 'stone', null, null, null, null]), 3, RECIPES);
+  assert(r && r.name === '石门', 'got: ' + (r && r.name));
+});
+test('3×3:缺一格不匹配铁镐', () => {
+  const r = matchRecipeGrid(G9(['gem_gold', 'gem_gold', null, null, 'arrow', null, null, 'arrow', null]), 3, RECIPES);
+  assert(r === null || r.name !== '铁镐', '不应匹配铁镐');
+});
+test('3×3:环形 8 石头→石砖(大量)', () => {
+  const r = matchRecipeGrid(G9(['stone', 'stone', 'stone', 'stone', null, 'stone', 'stone', 'stone', 'stone']), 3, RECIPES);
+  assert(r && r.name === '石砖(大量)' && r.count === 4, 'got: ' + (r && r.name));
+});
+test('3×3:空网格返回 null', () => {
+  assert.strictEqual(matchRecipeGrid(G9([]), 3, RECIPES), null);
+});
+test('3×3:数量不符不匹配(9 木板≠4 木板配方)', () => {
+  const r = matchRecipeGrid(G9(Array(9).fill('planks')), 3, RECIPES);
+  assert(r === null || r.name !== '合成台', '不应匹配合成台');
 });
 
 console.log('\n=== 破坏耗时(breakCost) ===');

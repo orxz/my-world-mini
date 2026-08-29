@@ -29,6 +29,7 @@ const WORLDGEN_GLOBALS = {
 // craft.js 在浏览器以 <script> 加载后挂到全局的命名空间(game.js 直接调用)
 const CRAFTLIB_GLOBALS = {
   CRAFTLIB: 'readonly',
+  matchRecipeGrid: 'readonly',
 };
 
 export default [

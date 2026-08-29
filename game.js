@@ -30,11 +30,12 @@ const BLOCK_TYPES = {
   door_stone:  { name: '石门',     top: '#777777', side: '#888888', bottom: '#666666', solid: true, tool: 'pickaxe', hardness: 2.5 },
   door_gold:   { name: '金门',     top: '#c8a030', side: '#ffd54a', bottom: '#b89020', solid: true, tool: 'pickaxe', hardness: 2.0 },
   door_diamond:{ name: '钻石门',   top: '#3aa8b8', side: '#5fe3e8', bottom: '#2a8898', solid: true, tool: 'pickaxe', hardness: 4.0 },
+  crafting_table: { name: '合成台', top: '#a0763a', side: '#8a6430', bottom: '#b08243', solid: true, tool: 'axe', hardness: 1.2 },
 };
 const HOTBAR_ORDER = ['grass', 'dirt', 'stone', 'wood', 'leaves', 'sand', 'planks', 'brick'];
 
 // 方块数字 id(用于紧凑的 Uint8Array 区块存储)
-const BLOCK_ID = { air: 0, grass: 1, dirt: 2, stone: 3, wood: 4, leaves: 5, sand: 6, planks: 7, brick: 8, water: 9, snow: 10, gravel: 11, wool_red: 12, wool_yellow: 13, wool_white: 14, wool_black: 15, door: 16, door_iron: 17, door_stone: 18, door_gold: 19, door_diamond: 20 };
+const BLOCK_ID = { air: 0, grass: 1, dirt: 2, stone: 3, wood: 4, leaves: 5, sand: 6, planks: 7, brick: 8, water: 9, snow: 10, gravel: 11, wool_red: 12, wool_yellow: 13, wool_white: 14, wool_black: 15, door: 16, door_iron: 17, door_stone: 18, door_gold: 19, door_diamond: 20, crafting_table: 21 };
 const ID_TO_BLOCK = Object.keys(BLOCK_ID);
 
 // ============================================================
@@ -79,8 +80,12 @@ const ITEM_TYPES = {
   gem_gold:    { name: '金锭',   color: '#ffd54a', shape: 'ingot' },
   gem_emerald: { name: '绿宝石', color: '#3fd17a', shape: 'gem' },
   arrow:       { name: '箭',     color: '#caa472', shape: 'arrow' },
+  porkchop:    { name: '猪排',   color: '#e8938a', shape: 'meat' },
+  apple:       { name: '苹果',   color: '#d63a2f', shape: 'apple' },
 };
-const ITEM_ORDER = ['gem_diamond','gem_gold','gem_emerald','arrow'];
+const ITEM_ORDER = ['gem_diamond','gem_gold','gem_emerald','arrow','porkchop','apple'];
+// 食物 → 恢复的饥饿值(右键进食)
+const FOODS = { porkchop: 8, apple: 4 };
 
 // ============================================================
 // 第三部分:像素纹理与图集(用于区块合并网格)
@@ -237,6 +242,24 @@ function drawBlockFace(ctx, type, face, s, seedRand) {
       ctx.fillRect(2,2,1,1); ctx.fillRect(3,3,1,1); ctx.fillRect(s-4,s-4,1,1); ctx.fillRect(s-3,s-3,1,1);
       // 钻石把手
       ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.fillRect(Math.floor(s*0.7),Math.floor(s*0.4),1,1);
+      break;
+    }
+    case 'crafting_table': {
+      // 合成台:木板底 + 顶面 3×3 网格纹 + 侧面工具图案
+      ctx.fillStyle = col; ctx.fillRect(0, 0, s, s);
+      if (face === 'top') {
+        ctx.fillStyle = 'rgba(60,40,20,0.55)';
+        const g = Math.floor(s / 3);
+        for (let i = 1; i < 3; i++) { ctx.fillRect(g * i, 0, 1, s); ctx.fillRect(0, g * i, s, 1); }
+        ctx.strokeStyle = 'rgba(60,40,20,0.8)'; ctx.lineWidth = 1;
+        ctx.strokeRect(0.5, 0.5, s - 1, s - 1);
+      } else {
+        ctx.fillStyle = 'rgba(60,40,20,0.75)';
+        ctx.fillRect(Math.floor(s * 0.15), Math.floor(s * 0.2), Math.floor(s * 0.28), Math.floor(s * 0.28));
+        ctx.fillRect(Math.floor(s * 0.57), Math.floor(s * 0.2), Math.floor(s * 0.28), Math.floor(s * 0.1));
+        ctx.fillStyle = 'rgba(220,210,190,0.5)';
+        ctx.fillRect(Math.floor(s * 0.2), Math.floor(s * 0.55), Math.floor(s * 0.6), Math.floor(s * 0.08));
+      }
       break;
     }
     case 'wool_black':
@@ -814,6 +837,8 @@ const BLOCK_STACK_MAX = 64;   // 方块最大堆叠数
 // 玩家生命系统(无怪物,先建立基础设施:跌落/溺水伤害 + HUD + 存档)
 let playerHP = 20;       // 10 颗心,每心 2 点
 let breathTimer = 0;     // 持续在水下憋气计时(秒);浮出水面归零
+let playerHunger = 20;   // 饥饿值(10 鸡腿,每腿 2 点;归零开始饥饿伤害)
+let hungerDrain = 0, regenTimer = 0, starveTimer = 0;
 const lastSafePos = new THREE.Vector3(0, 30, 0);  // 最后安全位置(虚空救援用)
 let lastSpaceTime = 0;
 let worldSeed = (Math.random() * 4294967296) >>> 0;
@@ -1413,6 +1438,7 @@ function init() {
   buildHoldGroup();
   buildHotbar();
   updateHPBar();   // 初始化生命条 HUD
+  updateHungerBar();   // 初始化饥饿条 HUD
 }
 
 // 在中心区域找安全出生点
@@ -1635,6 +1661,10 @@ function clearWorld() {
   clearDroppedItems();   // 清掉落物,避免旧世界残留
   clearMobs();           // 清生物,避免旧世界残留
   clearFallingBlocks();  // 清下落中的沙砾
+  tableOpen = false;
+  for (let i = 0; i < 9; i++) tableGrid[i] = null;
+  const tPanel = document.getElementById('craft-table-panel');
+  if (tPanel) tPanel.classList.add('hidden');
   breakTargetKey = null; breakProgress = 0;
   hideBreakOverlay();
   // 清理粒子/农作物计时器(避免跨世界残留)
@@ -1838,6 +1868,34 @@ function drawMaterialIcon(ctx, itemId, size) {
     ctx.closePath(); ctx.fill(); ctx.stroke();
     ctx.fillStyle = 'rgba(255,255,255,0.35)';
     ctx.fillRect(-size * 0.18, -size * 0.12, size * 0.36, size * 0.06);
+  } else if (def.shape === 'meat') {
+    // 猪排:粉色带骨肉排
+    ctx.fillStyle = def.color;
+    ctx.beginPath();
+    ctx.ellipse(0, size * 0.05, size * 0.26, size * 0.16, -0.35, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#f6d3cd';
+    ctx.beginPath();
+    ctx.ellipse(-size * 0.08, size * 0.02, size * 0.1, size * 0.06, -0.35, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#f2e6d8'; ctx.lineWidth = size * 0.07;
+    ctx.beginPath(); ctx.moveTo(size * 0.22, -size * 0.12); ctx.lineTo(size * 0.3, -size * 0.2); ctx.stroke();
+  } else if (def.shape === 'apple') {
+    // 苹果:红果 + 叶柄
+    ctx.fillStyle = def.color;
+    ctx.beginPath();
+    ctx.arc(0, size * 0.06, size * 0.22, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = '#6b4f2a'; ctx.lineWidth = size * 0.05;
+    ctx.beginPath(); ctx.moveTo(0, -size * 0.14); ctx.lineTo(size * 0.04, -size * 0.26); ctx.stroke();
+    ctx.fillStyle = '#4f9e3f';
+    ctx.beginPath();
+    ctx.ellipse(size * 0.12, -size * 0.22, size * 0.09, size * 0.045, 0.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.45)';
+    ctx.beginPath();
+    ctx.ellipse(-size * 0.08, -size * 0.02, size * 0.05, size * 0.08, 0.4, 0, Math.PI * 2);
+    ctx.fill();
   } else {
     ctx.strokeStyle = def.color; ctx.lineWidth = size * 0.06;
     ctx.beginPath(); ctx.moveTo(-size * 0.28, size * 0.2); ctx.lineTo(size * 0.22, -size * 0.22); ctx.stroke();
@@ -1928,6 +1986,10 @@ function setupInput() {
     if (e.repeat) return;
     if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')) return;
     keys[e.code] = true;
+    if (tableOpen) {
+      if (e.code === 'KeyE' || e.code === 'Escape') closeTablePanel();
+      return;
+    }
     if (inventoryOpen) {
       if (e.code === 'KeyE' || e.code === 'Escape') toggleInventory(false);
       return;
@@ -2003,7 +2065,7 @@ function setupInput() {
     if (locked) {
       overlay.classList.add('hidden');
       pauseMenu.classList.add('hidden');
-    } else if (gameStarted && !inventoryOpen) {
+    } else if (gameStarted && !inventoryOpen && !tableOpen) {
       pauseMenu.classList.remove('hidden');
       autosave(true);
     }
@@ -2395,7 +2457,9 @@ function breakBlock() {
   if (breakProgress < cost) return;
   spawnParticles(t.x, t.y, t.z, new THREE.Color(BLOCK_TYPES[type].top).getHex(), 8);
   setBlock(t.x, t.y, t.z, null);
-  spawnDroppedItem(t.x, t.y, t.z, type, 1);   // 生存采集:破坏必掉落,靠近自动拾取
+  // 生存采集:破坏必掉落;树叶 15% 掉苹果(食物来源)
+  if (type === 'leaves' && Math.random() < 0.15) spawnDroppedItem(t.x, t.y, t.z, 'apple', 1, 'item');
+  else spawnDroppedItem(t.x, t.y, t.z, type, 1);
   breakProgress = 0; breakTargetKey = null;
   hideBreakOverlay();
   showToast(`破坏:${def.name}`);
@@ -2432,11 +2496,28 @@ function placeBlock() {
   if (lookDoor && !holdingDoor) { toggleDoor(lookDoor.x, lookDoor.y, lookDoor.z); return; }
   const item = hotbar[currentSlot];
   if (item && item.kind === 'tool') { useTool(item); return; }
+  if (item && item.kind === 'item' && FOODS[item.id]) {
+    // 食物:右键进食恢复饥饿值
+    if (playerHunger >= 20) { showToast('已经很饱了'); return; }
+    playerHunger = Math.min(20, playerHunger + FOODS[item.id]);
+    item.count = (item.count || 1) - 1;
+    if (item.count <= 0) hotbar[currentSlot] = null;
+    buildHotbar(); updateHungerBar(); markDirtySave();
+    audio.play('eat');
+    swingHoldItem();
+    showToast('吃掉:' + ITEM_TYPES[item.id].name + '(饥饿 +' + FOODS[item.id] + ')');
+    return;
+  }
+  // 合成台:右键打开 3×3 合成面板(空手/手持方块/非食物物品均可)
+  const tTable = raycastTarget();
+  if (tTable && getBlock(tTable.x, tTable.y, tTable.z) === 'crafting_table') {
+    openTablePanel();
+    return;
+  }
   if (item && item.kind === 'item') {
     showToast(`${itemName(item)} 不能放置,选中方块再放`);
     return;
   }
-  if (!item) { showToast('快捷栏该格为空,从背包(E)取方块'); return; }
   const t = raycastTarget();
   if (!t) { showToast('未对准任何方块'); return; }
   const nx = t.x + Math.round(t.normal.x);
@@ -2713,14 +2794,23 @@ function createCrackOverlay() {
 // 掉落物实体(生存采集:破坏方块/Q 丢弃生成,靠近自动拾取入快捷栏)
 // ============================================================
 // 小旋转方块(0.3 大小),从被破坏方块中心生成,受重力 + 地面支撑,30 秒后淡出消失
-// pickupDelay 期间不可拾取;之后玩家走近播放拾取音(创造模式不增加物品,物品栏本就无限)
+// pickupDelay 期间不可拾取;之后玩家走近自动收入快捷栏(堆叠×64,满了留在地上)
 let dropItemGeo = null;
-function spawnDroppedItem(x, y, z, blockType, count = 1) {
+const itemDropMatCache = {};
+function getItemDropMat(id) {
+  if (!itemDropMatCache[id]) {
+    itemDropMatCache[id] = new THREE.MeshLambertMaterial({ color: (ITEM_TYPES[id] || {}).color || 0xcccccc });
+  }
+  return itemDropMatCache[id];
+}
+function spawnDroppedItem(x, y, z, itemId, count = 1, kind = 'block') {
   if (!dropItemGeo) dropItemGeo = new THREE.BoxGeometry(0.3, 0.3, 0.3);
-  const mesh = new THREE.Mesh(dropItemGeo, materials[blockType]);
+  const mat = materials[itemId] || getItemDropMat(itemId);
+  const mesh = new THREE.Mesh(dropItemGeo, mat);
   mesh.position.set(x + 0.5, y + 0.5, z + 0.5);
   mesh.userData = {
-    type: blockType,
+    kind,
+    type: itemId,
     count: count || 1,   // 掉落物携带数量(Q 丢弃整组时保留)
     life: 30,          // 30 秒后消失
     pickupDelay: 0.5,  // 生成后 0.5 秒内不可拾取,避免刚破坏就吸回
@@ -2733,11 +2823,11 @@ function spawnDroppedItem(x, y, z, blockType, count = 1) {
 }
 
 // 拾取入栏:优先叠加同 id 未满格,其次放入空格;返回吸收数量(0=快捷栏已满)
-function pickupIntoInventory(id, count) {
+function pickupIntoInventory(kind, id, count) {
   let left = count;
   for (let i = 0; i < HOTBAR_SIZE && left > 0; i++) {
     const it = hotbar[i];
-    if (it && it.kind === 'block' && it.id === id && (it.count || 1) < BLOCK_STACK_MAX) {
+    if (it && it.kind === kind && it.id === id && (it.count || 1) < BLOCK_STACK_MAX) {
       const take = Math.min(BLOCK_STACK_MAX - (it.count || 1), left);
       it.count = (it.count || 1) + take;
       left -= take;
@@ -2746,7 +2836,7 @@ function pickupIntoInventory(id, count) {
   for (let i = 0; i < HOTBAR_SIZE && left > 0; i++) {
     if (!hotbar[i]) {
       const put = Math.min(BLOCK_STACK_MAX, left);
-      hotbar[i] = { kind: 'block', id, count: put };
+      hotbar[i] = { kind, id, count: put };
       left -= put;
     }
   }
@@ -2786,7 +2876,7 @@ function updateDroppedItems(dt) {
       const dy = d.position.y - playerPos.y;
       if (dx * dx + dy * dy + dz * dz < 1.44) {
         const want = u.count || 1;
-        const got = pickupIntoInventory(u.type, want);
+        const got = pickupIntoInventory(u.kind || 'block', u.type, want);
         if (got > 0) {
           audio.play('place');   // 拾取音
           if (got >= want) { scene.remove(d); droppedItems.splice(i, 1); continue; }
@@ -3278,6 +3368,8 @@ function hurtMob(m, dmg, kx, kz, silent) {
   if (m.hp <= 0) {
     const p = m.mesh.position;
     spawnParticles(p.x - 0.5, p.y - 0.5, p.z - 0.5, m.type === 'pig' ? 0xeba3a9 : 0x7a9a7a, 12);
+    // 猪掉落猪排(食物):1-2 块
+    if (m.type === 'pig') spawnDroppedItem(p.x - 0.5, p.y - 0.2, p.z - 0.5, 'porkchop', 1 + (Math.random() < 0.5 ? 1 : 0), 'item');
     killMob(m);
     showToast(m.type === 'zombie' ? '🧟 击倒了僵尸' : m.type === 'creeper' ? '💥 击倒了苦力怕' : '🐷 击倒了猪');
   }
@@ -3378,6 +3470,26 @@ function updateHPBar() {
     if (seg >= 2) el.className = 'heart full';
     else if (seg === 1) el.className = 'heart half';
     else el.className = 'heart empty';
+  }
+}
+
+// 渲染饥饿条(右侧 10 鸡腿;满 = 彩色,空 = 灰暗)
+function updateHungerBar() {
+  const bar = document.getElementById('hunger-bar');
+  if (!bar) return;
+  if (bar.children.length !== HEART_COUNT) {
+    bar.innerHTML = '';
+    for (let i = 0; i < HEART_COUNT; i++) {
+      const h = document.createElement('div');
+      h.className = 'drumstick';
+      h.textContent = '🍗';
+      bar.appendChild(h);
+    }
+  }
+  const hu = Math.max(0, Math.min(20, playerHunger));
+  for (let i = 0; i < HEART_COUNT; i++) {
+    const seg = hu - i * 2;
+    bar.children[i].className = 'drumstick' + (seg >= 2 ? ' full' : seg >= 1 ? ' half' : ' empty');
   }
 }
 
@@ -3620,6 +3732,28 @@ function updatePlayer(dt, prevVy) {
   } else {
     breathTimer = 0;
   }
+
+  // 饥饿系统:移动消耗更快(飞行减半);饥饿 ≥18 缓慢回血;归零后饥饿伤害(保底 2 HP)
+  hungerDrain += dt * ((Math.hypot(velocity.x, velocity.z) > 0.5 ? 1.2 : 0.45) * (isFlying ? 0.4 : 1));
+  if (hungerDrain >= 4) {
+    hungerDrain = 0;
+    if (playerHunger > 0) { playerHunger--; updateHungerBar(); }
+  }
+  if (playerHunger >= 18 && playerHP < PLAYER_MAX_HP) {
+    regenTimer += dt;
+    if (regenTimer >= 4) {
+      regenTimer = 0;
+      playerHP = Math.min(PLAYER_MAX_HP, playerHP + 1);
+      updateHPBar();
+    }
+  } else regenTimer = 0;
+  if (playerHunger <= 0) {
+    starveTimer += dt;
+    if (starveTimer >= 4) {
+      starveTimer = 0;
+      if (playerHP > 2) damagePlayer(1);
+    }
+  } else starveTimer = 0;
 
   // 防掉落到地图下面:y < 0(世界底部以下)立即救援,不等 -20
   if (playerPos.y < 0) {
@@ -3941,6 +4075,8 @@ function applySave(rec) {
   velocity.set(0, 0, 0);
   wasOnGround = false; wasInWater = false;
   playerHP = (typeof rec.playerHP === 'number') ? Math.max(0, Math.min(PLAYER_MAX_HP, rec.playerHP)) : PLAYER_MAX_HP;
+  playerHunger = (typeof rec.playerHunger === 'number') ? Math.max(0, Math.min(20, rec.playerHunger)) : 20;
+  updateHungerBar();
   breathTimer = 0;
   if (rec.hotbar) {
     hotbar = rec.hotbar;
@@ -4154,7 +4290,7 @@ function buildInventoryPanel() {
   addSection(grid, '方块');
   HOTBAR_ORDER.forEach(id => addCell({ kind: 'block', id }));
   // 新增方块也可取用
-  ['water', 'snow', 'gravel', 'door', 'door_iron', 'door_stone', 'door_gold', 'door_diamond'].forEach(id => addCell({ kind: 'block', id }));
+  ['water', 'snow', 'gravel', 'door', 'door_iron', 'door_stone', 'door_gold', 'door_diamond', 'crafting_table'].forEach(id => addCell({ kind: 'block', id }));
   addSection(grid, '材料 · 宝石');
   ITEM_ORDER.forEach(id => addCell({ kind: 'item', id, count: 64 }));
 }
@@ -4213,15 +4349,24 @@ function refreshCraftResult() {
 function performCraft() {
   const r = matchRecipe();
   if (!r) return;
-  // 产出物品(含数量)
-  const res = { ...r.result };
-  if (!res.count) res.count = r.count || 1;
-  // 放入当前快捷栏格
-  putInSlot(currentSlot, res);
-  // 清空合成格(创造模式不消耗材料,但仍清空格表示完成)
-  for (let i = 0; i < 4; i++) craftGrid[i] = null;
+  craftGiveResult(r);
+  // 生存模式:消耗合成格内物品(每格 1 个)
+  for (let i = 0; i < 4; i++) {
+    if (craftGrid[i]) {
+      craftGrid[i].count = (craftGrid[i].count || 1) - 1;
+      if (craftGrid[i].count <= 0) craftGrid[i] = null;
+    }
+  }
   renderCraftGrid();
   refreshCraftResult();
+}
+
+// 发放合成产物到当前快捷栏格(工具补耐久)
+function craftGiveResult(r) {
+  const res = { ...r.result };
+  if (res.kind === 'tool' && !res.durability) res.durability = TOOL_TYPES[res.id].durability;
+  if (!res.count) res.count = r.count || 1;
+  putInSlot(currentSlot, res);
   showToast('合成:' + r.name + ' ×' + res.count);
   audio.play('place');
 }
@@ -4230,6 +4375,112 @@ function clearCraftGrid() {
   for (let i = 0; i < 4; i++) craftGrid[i] = null;
   renderCraftGrid();
   refreshCraftResult();
+}
+
+// ============================================================
+// 合成台 3×3(对放置的合成台方块右键打开;支持全部 2×2 配方 + 3×3 专属配方)
+// ============================================================
+const tableGrid = [null, null, null, null, null, null, null, null, null];
+let tableOpen = false;
+
+function openTablePanel() {
+  tableOpen = true;
+  const panel = document.getElementById('craft-table-panel');
+  if (!panel) return;
+  panel.classList.remove('hidden');
+  if (document.pointerLockElement) document.exitPointerLock();
+  const craftBtn = document.getElementById('table-craft');
+  if (craftBtn) craftBtn.onclick = performTableCraft;
+  const clearBtn = document.getElementById('table-clear');
+  if (clearBtn) clearBtn.onclick = clearTableGrid;
+  const closeBtn = document.getElementById('table-close');
+  if (closeBtn) closeBtn.onclick = closeTablePanel;
+  const blockList = HOTBAR_ORDER.slice().concat(['water', 'snow', 'gravel', 'crafting_table', 'planks', 'wood', 'stone']);
+  document.querySelectorAll('#table-grid .inv-cell').forEach((cell, i) => {
+    cell.onclick = () => {
+      const cur = tableGrid[i];
+      let idx = cur ? blockList.indexOf(cur.id) : -1;
+      idx = (idx + 1) % blockList.length;
+      tableGrid[i] = { kind: 'block', id: blockList[idx] };
+      renderTableGrid(); refreshTableResult();
+    };
+    cell.oncontextmenu = (e) => { e.preventDefault(); tableGrid[i] = null; renderTableGrid(); refreshTableResult(); };
+  });
+  renderTableGrid();
+  refreshTableResult();
+}
+
+function closeTablePanel() {
+  tableOpen = false;
+  const panel = document.getElementById('craft-table-panel');
+  if (panel) panel.classList.add('hidden');
+  // 归还格内物品到快捷栏(放不下的掉在地上)
+  for (let i = 0; i < 9; i++) {
+    const it = tableGrid[i];
+    if (!it) continue;
+    const want = it.count || 1;
+    const got = pickupIntoInventory(it.kind || 'block', it.id, want);
+    if (got < want) spawnDroppedItem(playerPos.x, playerPos.y, playerPos.z, it.id, want - got, it.kind || 'block');
+    tableGrid[i] = null;
+  }
+  renderTableGrid();
+  refreshTableResult();
+}
+
+function clearTableGrid() {
+  for (let i = 0; i < 9; i++) tableGrid[i] = null;
+  renderTableGrid();
+  refreshTableResult();
+}
+
+function renderTableGrid() {
+  document.querySelectorAll('#table-grid .inv-cell').forEach((cell, i) => {
+    const old = cell.querySelector('canvas'); if (old) old.remove();
+    const badge = cell.querySelector('.cnt'); if (badge) badge.remove();
+    const item = tableGrid[i];
+    if (item) {
+      const cv = document.createElement('canvas');
+      cv.width = cv.height = 48;
+      drawItemIcon(item, cv);
+      cell.appendChild(cv);
+      if ((item.count || 1) > 1) {
+        const c = document.createElement('span');
+        c.className = 'cnt';
+        c.textContent = item.count;
+        cell.appendChild(c);
+      }
+    }
+  });
+}
+
+function refreshTableResult() {
+  const resBox = document.getElementById('table-result');
+  const btn = document.getElementById('table-craft');
+  const r = matchRecipeGrid(tableGrid, 3, CRAFTLIB.RECIPES);
+  resBox.innerHTML = '';
+  if (r) {
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 48;
+    drawItemIcon(r.result, cv);
+    resBox.appendChild(cv);
+    if (btn) btn.disabled = false;
+  } else if (btn) btn.disabled = true;
+}
+
+function performTableCraft() {
+  const r = matchRecipeGrid(tableGrid, 3, CRAFTLIB.RECIPES);
+  if (!r) return;
+  craftGiveResult(r);
+  // 消耗合成格内物品(每格 1 个)
+  for (let i = 0; i < 9; i++) {
+    if (tableGrid[i]) {
+      tableGrid[i].count = (tableGrid[i].count || 1) - 1;
+      if (tableGrid[i].count <= 0) tableGrid[i] = null;
+    }
+  }
+  renderTableGrid();
+  refreshTableResult();
+  markDirtySave();
 }
 
 // ============================================================
@@ -4406,7 +4657,7 @@ async function saveSlot(name) {
       seed: worldSeed,
       playerPos: { x: playerPos.x, y: playerPos.y, z: playerPos.z },
       yaw, pitch, cameraMode, isFlying,
-      playerHP, breathTimer: 0,
+      playerHP, breathTimer: 0, playerHunger,
       hotbar, currentSlot,
       modifications: Array.from(modifications.entries()),
       cropTimersData: Array.from(cropTimers.entries()),
@@ -4436,7 +4687,7 @@ async function overwriteSave(id) {
       seed: worldSeed,
       playerPos: { x: playerPos.x, y: playerPos.y, z: playerPos.z },
       yaw, pitch, cameraMode, isFlying,
-      playerHP, breathTimer: 0,
+      playerHP, breathTimer: 0, playerHunger,
       hotbar, currentSlot,
       doorsData: Array.from(doors.entries()).map(function(e){return [e[0], {x:e[1].x,y:e[1].y,z:e[1].z,type:e[1].type,open:e[1].open,facing:e[1].facing}];}),
       modifications: Array.from(modifications.entries()),  // C2:不能丢失!

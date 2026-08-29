@@ -20,3 +20,6 @@ npm-debug.log*
 
 # 临时日志
 _t
+
+# 本地安全扫描工具状态
+.mimosa/

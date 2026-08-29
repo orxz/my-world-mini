@@ -2845,12 +2845,12 @@ function useTool(item) {
     if (m) {
       hurtMob(m, def.damage || 3, -Math.sin(yaw), -Math.cos(yaw));
       showToast(`挥砍:${def.name} · 伤害${def.damage} · 命中动物`);
+      audio.play('break');
+      consumeToolDurability(item);   // 经典:命中才损耗耐久,空挥不扣
     } else {
       const t = raycastTarget();
       showToast(`挥砍:${def.name} · 伤害${def.damage}` + (t ? ' · 命中' : ''));
     }
-    audio.play('break');
-    consumeToolDurability(item);
   } else if (def.tool === 'bow') {
     const arrowSlot = hotbar.findIndex(s => s && s.kind === 'item' && s.id === 'arrow' && s.count > 0);
     if (arrowSlot < 0) { showToast('没有箭,无法射击(背包取箭)'); return; }
@@ -3562,10 +3562,10 @@ function zombieAI(m, dt, distP) {
   } else {
     wanderStep(m, dt, 1.0, 0.5);
   }
-  // 近战:1.5 格内,冷却 1.2 秒
+  // 近战:1.5 格内,冷却 1.5 秒(经典 MC 攻击间隔)
   m.attackCd -= dt;
   if (distP < 1.5 && m.attackCd <= 0) {
-    m.attackCd = 1.2;
+    m.attackCd = 1.5;
     damagePlayer(3);
     const inv = 1 / Math.max(0.001, distP);
     velocity.x += (playerPos.x - m.mesh.position.x) * inv * 6;
@@ -3628,7 +3628,7 @@ function creeperAI(m, dt, distP) {
     const flash = ((m.fuse * 8) | 0) % 2 === 0;         // 白色闪烁
     for (let k = 0; k < mats.length; k++) mats[k].color.setHex(flash ? 0xffffff : base[k]);
     if (m.fuse >= 1.5) {
-      explodeAt(m.mesh.position.x, m.mesh.position.y + 0.3, m.mesh.position.z, 2.6, 16);
+      explodeAt(m.mesh.position.x, m.mesh.position.y + 0.3, m.mesh.position.z, 2.6, 14);
       killMob(m);
       return true;
     }
@@ -3667,8 +3667,9 @@ function explodeAt(cx, cy, cz, radius, maxDamage) {
   spawnParticles(cx - 0.5, cy - 0.5, cz - 0.5, 0xff9944, 10);
   const dx = playerPos.x - cx, dy = playerPos.y - cy, dz = playerPos.z - cz;
   const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
-  if (d < radius * 2.2) {
-    damagePlayer(Math.max(1, Math.round((1 - d / (radius * 2.2)) * maxDamage)));
+  if (d < radius * 2.6) {
+    // 伤害随距离衰减:贴脸高伤、2.6 倍半径外无伤(曲线较陡,远距更安全)
+    damagePlayer(Math.max(1, Math.round((1 - d / (radius * 2.6)) * maxDamage)));
     const inv = 1 / Math.max(0.5, d);
     velocity.x += dx * inv * 8; velocity.z += dz * inv * 8; velocity.y = 6;   // 爆炸击退
   }
@@ -4329,7 +4330,7 @@ function updateArrows(dt) {
     // 命中玩家(骷髅之箭):身体包围盒 → 伤害 + 移除(玩家自己的箭豁免)
     if (!a.userData.fromPlayer
         && Math.abs(a.position.x - playerPos.x) < 0.5 && Math.abs(a.position.y - playerPos.y) < 0.9 && Math.abs(a.position.z - playerPos.z) < 0.5) {
-      damagePlayer(3);
+      damagePlayer(2);   // 骷髅之箭(经典普通难度均值偏低;玩家无护甲)
       scene.remove(a);
       arrows.splice(i, 1);
       continue;

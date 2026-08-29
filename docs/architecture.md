@@ -75,7 +75,10 @@ three.min.js  ── Three.js r160(第三方渲染库,内置,离线)
 | 20 | 启动 | 入口:DOM 就绪 → `init` → 主循环 |
 
 > 另有:**天空系统**(`createSky`/`updateSky`,渐变天穹+星空+日月光晕,挂第七部分)、
-> **动物系统**(`spawnMob`/`updateMobs`/`hurtMob`/`raycastMob`,被动生物粉红猪,挂掉落物系统后)、
+> **生物系统**(`spawnMob`/`updateMobs`/`hurtMob`/`raycastMob`:猪=被动游荡;
+> 僵尸=夜间生成、追击近战、白天燃烧;苦力怕=引信爆炸 `explodeAt`,挂掉落物系统后)、
+> **沙砾重力**(`updateFallingBlocks`/`startFallingBlock`,setBlock 写入支撑检查队列,
+> 失去支撑化为下落实体,落地还原为方块)、
 > **破坏裂纹覆盖层**(`createCrackOverlay`,4 阶段程序化裂纹纹理,随破坏进度切换)。
 
 ## 4. 核心数据流

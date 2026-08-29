@@ -542,6 +542,9 @@ function setBlock(x, y, z, type) {
   if (lx === CHUNK_SIZE - 1) markChunkDirty(cx + 1, cz);
   if (lz === 0) markChunkDirty(cx, cz - 1);
   if (lz === CHUNK_SIZE - 1) markChunkDirty(cx, cz + 1);
+  // 沙砾重力:检查本格(新放/爆炸暴露)与上格(失去支撑)
+  scheduleFallCheck(x, y, z);
+  scheduleFallCheck(x, y + 1, z);
   return true;
 }
 function markChunkDirty(cx, cz) {
@@ -1630,7 +1633,8 @@ function clearWorld() {
   for (const a of arrows) scene.remove(a);
   arrows.length = 0;
   clearDroppedItems();   // 清掉落物,避免旧世界残留
-  clearMobs();           // 清动物,避免旧世界残留
+  clearMobs();           // 清生物,避免旧世界残留
+  clearFallingBlocks();  // 清下落中的沙砾
   breakTargetKey = null; breakProgress = 0;
   hideBreakOverlay();
   // 清理粒子/农作物计时器(避免跨世界残留)
@@ -2012,6 +2016,7 @@ function setupInput() {
   const setRender = document.getElementById('set-render');
   const setDrops = document.getElementById('set-drops');
   const setMobs = document.getElementById('set-mobs');
+  const setHostiles = document.getElementById('set-hostiles');
   const setDN = document.getElementById('set-daynight');
   const setDNSpeed = document.getElementById('set-dayspeed');
   const setDNTime = document.getElementById('set-daytime');
@@ -2031,6 +2036,7 @@ function setupInput() {
     if (setRender) setRender.value = String(settings.renderDist);
     if (setDrops) setDrops.textContent = settings.dropItems ? '开' : '关';
     if (setMobs) setMobs.textContent = settings.mobs ? '开' : '关';
+    if (setHostiles) setHostiles.textContent = settings.hostiles ? '开' : '关';
     if (setDN) {
       setDN.textContent = settings.dayNightEnabled ? '开' : '关';
       if (daynightControls) {
@@ -2071,6 +2077,11 @@ function setupInput() {
   if (setMobs) setMobs.addEventListener('click', () => {
     settings.mobs = !settings.mobs;
     if (!settings.mobs) clearMobs();
+    saveSettings(); refreshSettingsUI();
+  });
+  if (setHostiles) setHostiles.addEventListener('click', () => {
+    settings.hostiles = !settings.hostiles;
+    if (!settings.hostiles) clearHostiles();
     saveSettings(); refreshSettingsUI();
   });
   if (setDN) setDN.addEventListener('click', () => {
@@ -2139,6 +2150,15 @@ function setupInput() {
     if (!settings.mobs) clearMobs();
     saveSettings();
     showToast('动物已' + (settings.mobs ? '开启' : '关闭'));
+  });
+  // 怪物开关(暂停菜单;关闭=和平模式,清除敌对生物)
+  const btnHostiles = document.getElementById('btn-hostiles');
+  if (btnHostiles) btnHostiles.addEventListener('click', () => {
+    settings.hostiles = !settings.hostiles;
+    btnHostiles.textContent = '怪物:' + (settings.hostiles ? '开' : '关');
+    if (!settings.hostiles) clearHostiles();
+    saveSettings();
+    showToast('怪物已' + (settings.hostiles ? '开启' : '关闭'));
   });
 
   document.addEventListener('mousemove', (e) => {
@@ -2727,12 +2747,33 @@ function clearDroppedItems() {
 }
 
 // ============================================================
-// 动物系统(被动生物:粉红猪;游荡 AI + 重力/碰撞 + 可击退)
-// 环境氛围生物,不入存档;暂停时冻结;可在暂停菜单/设置中开关
+// 生物系统(猪=被动氛围生物;僵尸/苦力怕=夜间敌对生物,复刻经典 MC)
+// 统一物理(重力/浮力/碰撞) + 按类型 AI;不入存档;暂停时冻结;可在设置中开关
 // ============================================================
 const mobs = [];
-const MOB_CAP = 10;
+const MOB_CAP = 10;        // 被动生物上限(猪)
+const HOSTILE_CAP = 8;     // 敌对生物上限(僵尸 + 苦力怕)
 let mobSpawnTimer = 2;
+let hostileSpawnTimer = 4;
+
+const MOB_DEFS = {
+  pig:     { hp: 10, hostile: false },
+  zombie:  { hp: 20, hostile: true },
+  creeper: { hp: 20, hostile: true },
+};
+function countHostiles() {
+  let n = 0;
+  for (const m of mobs) if (MOB_DEFS[m.type].hostile) n++;
+  return n;
+}
+// 太阳高度(-1 夜 ~ +1 昼;敌对生物仅夜间生成,僵尸白天燃烧)
+function sunHeight() { return Math.sin(dayTime * Math.PI * 2 - Math.PI / 2); }
+// 头顶是否直通天空(僵尸燃烧判定)
+function skyExposed(p) {
+  const x = Math.floor(p.x), z = Math.floor(p.z);
+  for (let y = Math.floor(p.y) + 2; y < WORLD_HEIGHT; y++) if (isSolidAt(x, y, z)) return false;
+  return true;
+}
 
 // 粉红猪模型:-z 为前(与玩家模型一致);userData 携带腿/材质引用(动画与受击闪红依赖)
 function buildPigMesh() {
@@ -2769,22 +2810,121 @@ function buildPigMesh() {
   return g;
 }
 
-function spawnMob(x, groundY, z) {
-  const mesh = buildPigMesh();
+function spawnMob(x, groundY, z, type) {
+  const t = type || 'pig';
+  const mesh = t === 'zombie' ? buildZombieMesh() : t === 'creeper' ? buildCreeperMesh() : buildPigMesh();
   mesh.position.set(x, groundY + 0.45, z);   // 身体中心离地 0.45
   scene.add(mesh);
   mobs.push({
-    mesh, vy: 0, kvx: 0, kvz: 0,
+    mesh, type: t, vy: 0, kvx: 0, kvz: 0,
     yaw: Math.random() * Math.PI * 2,
     turnT: 1 + Math.random() * 2, speed: 0,
-    hp: 10, hurtT: 0, walkPhase: Math.random() * 6, onGround: false,
+    hp: MOB_DEFS[t].hp, hurtT: 0, walkPhase: Math.random() * 6, onGround: false,
+    attackCd: 0, fuse: 0, burnT: 0, fireT: 0, groanT: 2 + Math.random() * 3,
   });
+}
+
+// 僵尸模型:绿皮人形,-z 为前,双臂经典前平举;userData 携带腿/臂引用
+function buildZombieMesh() {
+  const g = new THREE.Group();
+  const skin = new THREE.MeshLambertMaterial({ color: 0x4a8a4a });
+  const shirt = new THREE.MeshLambertMaterial({ color: 0x2a8a8a });
+  const pants = new THREE.MeshLambertMaterial({ color: 0x35459a });
+  const dark = new THREE.MeshLambertMaterial({ color: 0x142014 });
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.42, 0.42), skin);
+  head.position.y = 1.33;
+  const eyeL = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.07, 0.03), dark);
+  eyeL.position.set(-0.1, 1.38, -0.22);
+  const eyeR = eyeL.clone();
+  eyeR.position.x = 0.1;
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.55, 0.24), shirt);
+  torso.position.y = 0.85;
+  // 双臂前平举(肩部为旋转中心,rotation.x = -90°)
+  const arms = [];
+  const mkArm = (side) => {
+    const a = new THREE.Group();
+    const m = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.55, 0.15), skin);
+    m.position.y = -0.27;
+    a.add(m);
+    a.position.set(side * 0.3, 1.06, 0);
+    a.rotation.x = -Math.PI / 2;
+    arms.push(a);
+    return a;
+  };
+  const legGroups = [];
+  const mkLeg = (side) => {
+    const lg = new THREE.Group();
+    const m = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.58, 0.18), pants);
+    m.position.y = -0.29;
+    lg.add(m);
+    lg.position.set(side * 0.12, 0.58, 0);
+    legGroups.push(lg);
+    return lg;
+  };
+  g.add(head, eyeL, eyeR, torso, mkArm(-1), mkArm(1), mkLeg(-1), mkLeg(1));
+  g.userData = { legs: legGroups, arms, mats: [skin, shirt, pants], baseColors: [0x4a8a4a, 0x2a8a8a, 0x35459a] };
+  return g;
+}
+
+// 苦力怕模型:绿色无声潜行体,4 短腿,正面经典哭脸(像素纹理)
+function makeCreeperFaceTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 8;
+  const ctx = c.getContext('2d');
+  // 绿底 + 深绿斑驳(确定性)
+  let st = 424242;
+  const rand = () => { st = (st * 1664525 + 1013904223) >>> 0; return st / 4294967296; };
+  for (let y = 0; y < 8; y++)
+    for (let x = 0; x < 8; x++) {
+      ctx.fillStyle = rand() < 0.3 ? '#3d8a3d' : '#4faa4f';
+      ctx.fillRect(x, y, 1, 1);
+    }
+  // 黑色眼+嘴(经典图案)
+  ctx.fillStyle = '#0a0f0a';
+  ctx.fillRect(1, 2, 2, 2); ctx.fillRect(5, 2, 2, 2);   // 眼
+  ctx.fillRect(3, 4, 2, 3);                              // 鼻/嘴中条
+  ctx.fillRect(2, 5, 1, 2); ctx.fillRect(5, 5, 1, 2);    // 嘴角下垂
+  const tex = new THREE.CanvasTexture(c);
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestFilter;
+  return tex;
+}
+function buildCreeperMesh() {
+  const g = new THREE.Group();
+  const bodyMat = new THREE.MeshLambertMaterial({ color: 0x4faa4f });
+  const faceMat = new THREE.MeshLambertMaterial({ map: makeCreeperFaceTexture() });
+  const legMat = new THREE.MeshLambertMaterial({ color: 0x439243 });
+  // 躯干(高瘦)+ 头(正面贴脸,模型朝 -z → 脸在 -z 面,材质数组第 6 位)
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.85, 0.32), bodyMat);
+  body.position.y = 0.83;
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.52, 0.52), [bodyMat, bodyMat, bodyMat, bodyMat, bodyMat, faceMat]);
+  head.position.y = 1.5;
+  // 4 短腿(前二后二)
+  const legGroups = [];
+  const mkLeg = (lx, lz) => {
+    const lg = new THREE.Group();
+    const m = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.4, 0.24), legMat);
+    m.position.y = -0.2;
+    lg.add(m);
+    lg.position.set(lx, 0.4, lz);
+    legGroups.push(lg);
+    return lg;
+  };
+  mkLeg(-0.14, -0.2); mkLeg(0.14, -0.2); mkLeg(-0.14, 0.2); mkLeg(0.14, 0.2);
+  g.add(body, head, legGroups[0], legGroups[1], legGroups[2], legGroups[3]);
+  g.userData = { legs: legGroups, mats: [bodyMat, faceMat, legMat], baseColors: [0x4faa4f, 0xffffff, 0x439243] };
+  return g;
 }
 
 function removeMob(i) {
   const m = mobs[i];
   m.mesh.traverse(function(o) {
-    if (o.isMesh) { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }
+    if (o.isMesh) {
+      if (o.geometry) o.geometry.dispose();
+      // 材质可能是单材质或多材质数组(苦力怕头 6 面)
+      if (Array.isArray(o.material)) { for (let k = 0; k < o.material.length; k++) o.material[k].dispose(); }
+      else if (o.material) o.material.dispose();
+    }
   });
   scene.remove(m.mesh);
   mobs.splice(i, 1);
@@ -2809,27 +2949,179 @@ function trySpawnMob() {
   }
 }
 
-// 动物更新:游荡 AI + 重力/浮力 + 简单碰撞(撞墙跳一格或转向)+ 走路摆腿 + 受击闪红
+// ---- 共用:随机游荡(定时换向/闲置) ----
+function wanderStep(m, dt, speed, activeChance) {
+  m.turnT -= dt;
+  if (m.turnT <= 0) {
+    m.turnT = 1.5 + Math.random() * 3;
+    m.speed = Math.random() < activeChance ? speed : 0;
+    m.yaw = Math.random() * Math.PI * 2;
+  }
+}
+// 面向玩家的 yaw(模型前方 = -z)
+function faceYaw(m) {
+  return Math.atan2(-(playerPos.x - m.mesh.position.x), -(playerPos.z - m.mesh.position.z));
+}
+
+// ---- 僵尸 AI:24 格内追击 + 近战(伤害+击退);白天阳光直射燃烧 ----
+function zombieAI(m, dt, distP) {
+  if (distP < 24) {
+    m.yaw = faceYaw(m);
+    m.speed = 2.3;
+    m.groanT -= dt;
+    if (m.groanT <= 0) { m.groanT = 2.5 + Math.random() * 3; audio.play('zombie'); }
+  } else {
+    wanderStep(m, dt, 1.0, 0.5);
+  }
+  // 近战:1.5 格内,冷却 1.2 秒
+  m.attackCd -= dt;
+  if (distP < 1.5 && m.attackCd <= 0) {
+    m.attackCd = 1.2;
+    damagePlayer(3);
+    const inv = 1 / Math.max(0.001, distP);
+    velocity.x += (playerPos.x - m.mesh.position.x) * inv * 6;
+    velocity.z += (playerPos.z - m.mesh.position.z) * inv * 6;
+    velocity.y = 4;   // 击退小跳
+  }
+  // 白天阳光直射 → 燃烧:火焰粒子 + 每秒 3 伤害
+  if (sunHeight() > 0.15 && skyExposed(m.mesh.position)) {
+    m.burnT += dt;
+    m.fireT -= dt;
+    if (m.fireT <= 0) {
+      m.fireT = 0.18;
+      spawnParticles(m.mesh.position.x - 0.5, m.mesh.position.y + 0.3, m.mesh.position.z - 0.5, 0xff7733, 2);
+    }
+    if (m.burnT >= 1) {
+      m.burnT = 0;
+      hurtMob(m, 3, 0, 0, true);
+      if (mobs.indexOf(m) < 0) return true;   // 烧死了
+    }
+  } else {
+    m.burnT = 0;
+  }
+  return false;
+}
+
+// ---- 苦力怕 AI:16 格内潜行追击;2.8 格内点燃引信(膨胀+白闪),远离则熄灭;1.5 秒爆炸 ----
+function creeperAI(m, dt, distP) {
+  if (distP < 16) {
+    m.yaw = faceYaw(m);
+    m.speed = distP > 2.2 ? 2.6 : 0;
+  } else {
+    wanderStep(m, dt, 1.0, 0.5);
+  }
+  const mats = m.mesh.userData.mats, base = m.mesh.userData.baseColors;
+  if (distP < 2.8 && m.onGround) {
+    if (m.fuse === 0) audio.play('fuse');
+    m.fuse += dt;
+    m.mesh.scale.setScalar(1 + m.fuse * 0.14);          // 膨胀
+    const flash = ((m.fuse * 8) | 0) % 2 === 0;         // 白色闪烁
+    for (let k = 0; k < mats.length; k++) mats[k].color.setHex(flash ? 0xffffff : base[k]);
+    if (m.fuse >= 1.5) {
+      explodeAt(m.mesh.position.x, m.mesh.position.y + 0.3, m.mesh.position.z, 2.6, 16);
+      killMob(m);
+      return true;
+    }
+  } else if (m.fuse > 0) {
+    // 玩家跑远,引信熄灭复原
+    m.fuse = Math.max(0, m.fuse - dt * 2);
+    if (m.fuse === 0) m.mesh.scale.setScalar(1);
+    else m.mesh.scale.setScalar(1 + m.fuse * 0.14);
+    for (let k = 0; k < mats.length; k++) mats[k].color.setHex(base[k]);
+  }
+  return false;
+}
+
+function killMob(m) {
+  const idx = mobs.indexOf(m);
+  if (idx >= 0) removeMob(idx);
+}
+
+// 爆炸:球形破坏方块(基岩除外,边缘随机保留成粗糙弹坑)+ 玩家伤害/击退 + 弹坑立即重建
+function explodeAt(cx, cy, cz, radius, maxDamage) {
+  const r = Math.ceil(radius);
+  const bx0 = Math.floor(cx), by0 = Math.floor(cy), bz0 = Math.floor(cz);
+  for (let dx = -r; dx <= r; dx++)
+    for (let dy = -r; dy <= r; dy++)
+      for (let dz = -r; dz <= r; dz++) {
+        const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (d > radius) continue;
+        const bx = bx0 + dx, by = by0 + dy, bz = bz0 + dz;
+        if (by <= 0) continue;                    // 基岩层保护
+        const b = getBlock(bx, by, bz);
+        if (!b || b === 'water') continue;
+        if (d > radius - 1 && hash3(bx, by, bz, 777) < 0.45) continue;   // 边缘随机保留
+        setBlock(bx, by, bz, null);
+      }
+  spawnParticles(cx - 0.5, cy - 0.5, cz - 0.5, 0x666666, 20);
+  spawnParticles(cx - 0.5, cy - 0.5, cz - 0.5, 0xff9944, 10);
+  const dx = playerPos.x - cx, dy = playerPos.y - cy, dz = playerPos.z - cz;
+  const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+  if (d < radius * 2.2) {
+    damagePlayer(Math.max(1, Math.round((1 - d / (radius * 2.2)) * maxDamage)));
+    const inv = 1 / Math.max(0.5, d);
+    velocity.x += dx * inv * 8; velocity.z += dz * inv * 8; velocity.y = 6;   // 爆炸击退
+  }
+  audio.play('explode');
+  for (const ch of dirtyChunks) buildChunkMesh(ch);   // 弹坑不等分帧预算,立即重建
+}
+
+// 夜间在距玩家 ≥12 格处生成敌对生物(僵尸 65% / 苦力怕 35%);关闭怪物或昼夜循环 = 和平模式
+function trySpawnHostile() {
+  if (!settings.hostiles || !settings.dayNightEnabled) return;
+  if (sunHeight() > -0.05) return;   // 仅夜间
+  if (countHostiles() >= HOSTILE_CAP || chunks.size === 0) return;
+  const arr = Array.from(chunks.values());
+  const ch = arr[(Math.random() * arr.length) | 0];
+  const wx = ch.cx * CHUNK_SIZE + ((Math.random() * CHUNK_SIZE) | 0) + 0.5;
+  const wz = ch.cz * CHUNK_SIZE + ((Math.random() * CHUNK_SIZE) | 0) + 0.5;
+  const dx = wx - playerPos.x, dz = wz - playerPos.z;
+  if (dx * dx + dz * dz < 144) return;
+  const fx = Math.floor(wx), fz = Math.floor(wz);
+  for (let y = WORLD_HEIGHT - 2; y > SEA_LEVEL; y--) {
+    const b = getBlock(fx, y, fz);
+    if (!b) continue;
+    if (b !== 'water' && BLOCK_TYPES[b] && BLOCK_TYPES[b].solid && !getBlock(fx, y + 1, fz) && !getBlock(fx, y + 2, fz)) {
+      spawnMob(wx, y + 1, fz, Math.random() < 0.65 ? 'zombie' : 'creeper');
+    }
+    break;   // 只看地表第一个非空气方块
+  }
+}
+
+function clearHostiles() {
+  for (let i = mobs.length - 1; i >= 0; i--) {
+    if (MOB_DEFS[mobs[i].type].hostile) removeMob(i);
+  }
+}
+
+// 生物更新:按类型 AI(猪游荡 / 僵尸追击近战白天燃烧 / 苦力怕引信爆炸)+ 共享物理
 function updateMobs(dt) {
   mobSpawnTimer -= dt;
   if (mobSpawnTimer <= 0) { mobSpawnTimer = 1.5; trySpawnMob(); }
+  hostileSpawnTimer -= dt;
+  if (hostileSpawnTimer <= 0) { hostileSpawnTimer = 3; trySpawnHostile(); }
   const maxDist = (RENDER_DISTANCE + 2) * CHUNK_SIZE;
   for (let i = mobs.length - 1; i >= 0; i--) {
     const m = mobs[i];
     const p = m.mesh.position;
     const dxp = p.x - playerPos.x, dzp = p.z - playerPos.z;
+    const distP = Math.sqrt(dxp * dxp + dzp * dzp);
     // 距离过远或所在区块已卸载 → 移除
-    if (dxp * dxp + dzp * dzp > maxDist * maxDist
+    if (distP > maxDist
         || !chunks.has(chunkKey(Math.floor(p.x / CHUNK_SIZE), Math.floor(p.z / CHUNK_SIZE)))) {
       removeMob(i); continue;
     }
-    // 换向计时
-    m.turnT -= dt;
-    if (m.turnT <= 0) {
-      m.turnT = 1.5 + Math.random() * 3;
-      m.speed = Math.random() < 0.65 ? 1.3 : 0;
-      m.yaw = Math.random() * Math.PI * 2;
+
+    // ---- 按类型 AI(决定 yaw/speed 与特殊行为);返回 true 表示该生物已移除 ----
+    if (m.type === 'pig') {
+      wanderStep(m, dt, 1.3, 0.65);
+    } else if (m.type === 'zombie') {
+      if (zombieAI(m, dt, distP)) continue;
+    } else if (creeperAI(m, dt, distP)) {
+      continue;
     }
+
+    // ---- 共享物理:重力/浮力 + 碰撞(撞墙跳一格或转向)+ 落地 ----
     const inW = getBlock(Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)) === 'water';
     const dirx = -Math.sin(m.yaw) * m.speed, dirz = -Math.cos(m.yaw) * m.speed;
     // 重力 / 水中浮力
@@ -2859,14 +3151,23 @@ function updateMobs(dt) {
     p.y = ny;
     // 防止掉出世界
     if (p.y < -5) { removeMob(i); continue; }
-    // 朝向 + 走路摆腿(对角步态)
+    // 朝向 + 行走摆腿(4 腿对角步态 / 2 腿交替);僵尸双臂前平举微摆
     m.mesh.rotation.y = m.yaw;
     const moving = m.speed > 0.05 && m.onGround;
-    if (moving) m.walkPhase += dt * 8;
+    if (moving) m.walkPhase += dt * (m.type === 'pig' ? 8 : 10);
     const swing = moving ? Math.sin(m.walkPhase) * 0.55 : 0;
     const legs = m.mesh.userData.legs;
-    legs[0].rotation.x = swing; legs[3].rotation.x = swing;
-    legs[1].rotation.x = -swing; legs[2].rotation.x = -swing;
+    if (legs.length === 2) {
+      legs[0].rotation.x = swing; legs[1].rotation.x = -swing;
+    } else {
+      legs[0].rotation.x = swing; legs[3].rotation.x = swing;
+      legs[1].rotation.x = -swing; legs[2].rotation.x = -swing;
+    }
+    if (m.mesh.userData.arms) {
+      const armSwing = -Math.PI / 2 + (moving ? Math.sin(m.walkPhase) * 0.12 : 0);
+      m.mesh.userData.arms[0].rotation.x = armSwing;
+      m.mesh.userData.arms[1].rotation.x = armSwing;
+    }
     // 受击闪红恢复
     if (m.hurtT > 0) {
       m.hurtT -= dt;
@@ -2878,24 +3179,23 @@ function updateMobs(dt) {
   }
 }
 
-// 击中动物:扣血 + 击退 + 闪红;HP 归零 → 粒子消散
-function hurtMob(m, dmg, kx, kz) {
+// 击中生物:扣血 + 击退 + 闪红;HP 归零 → 粒子消散(silent=不播音效,燃烧伤害用)
+function hurtMob(m, dmg, kx, kz, silent) {
   m.hp -= dmg;
   m.hurtT = 0.25;
   m.kvx += kx * 6; m.kvz += kz * 6; m.vy = 4;
   const mats = m.mesh.userData.mats;
   for (let k = 0; k < mats.length; k++) mats[k].color.setHex(0xd05a5a);
-  audio.play('pig');
+  if (!silent) audio.play(m.type === 'zombie' ? 'zombie' : m.type === 'creeper' ? 'hurt' : 'pig');
   if (m.hp <= 0) {
     const p = m.mesh.position;
-    spawnParticles(p.x - 0.5, p.y - 0.5, p.z - 0.5, 0xeba3a9, 12);
-    const idx = mobs.indexOf(m);
-    if (idx >= 0) removeMob(idx);
-    showToast('🐷 击倒了猪');
+    spawnParticles(p.x - 0.5, p.y - 0.5, p.z - 0.5, m.type === 'pig' ? 0xeba3a9 : 0x7a9a7a, 12);
+    killMob(m);
+    showToast(m.type === 'zombie' ? '🧟 击倒了僵尸' : m.type === 'creeper' ? '💥 击倒了苦力怕' : '🐷 击倒了猪');
   }
 }
 
-// 视线命中动物(球体近似:沿视线 3.5 格内、夹角最小者)
+// 视线命中生物(球体近似:沿视线 3.5 格内、夹角最小者)
 function raycastMob(maxDist) {
   const dx = -Math.sin(yaw) * Math.cos(pitch), dy = Math.sin(pitch), dz = -Math.cos(yaw) * Math.cos(pitch);
   let best = null, bestT = maxDist;
@@ -2908,6 +3208,60 @@ function raycastMob(maxDist) {
     if (perp2 < 0.55) { best = m; bestT = proj; }
   }
   return best;
+}
+
+// ============================================================
+// 沙子/沙砾重力(复刻经典 MC):失去支撑后化为下落实体坠落堆积
+// setBlock 时向队列写入支撑检查(本格 + 上格);链式反应逐列崩落
+// ============================================================
+const fallingBlocks = [];
+const fallCheckQueue = [];   // 平铺 [x,y,z,...],避免对象分配
+const FALLING_TYPES = { sand: 1, gravel: 1 };
+
+function scheduleFallCheck(x, y, z) {
+  fallCheckQueue.push(x, y, z);
+}
+
+// 下落实体:以方块外观坠落,落到固体顶部即还原为方块(记录改动,随存档持久)
+function startFallingBlock(x, y, z, type) {
+  setBlock(x, y, z, null);   // 原位变空气(并触发上方同类的支撑检查 → 链式崩落)
+  const mesh = new THREE.Mesh(blockGeo, materials[type]);
+  mesh.position.set(x + 0.5, y + 0.5, z + 0.5);
+  scene.add(mesh);
+  fallingBlocks.push({ mesh, type, vy: 0 });
+}
+
+function updateFallingBlocks(dt) {
+  // 处理支撑检查队列(处理中可能入队更多 → while 直至清空,链式级联)
+  while (fallCheckQueue.length) {
+    const z = fallCheckQueue.pop(), y = fallCheckQueue.pop(), x = fallCheckQueue.pop();
+    if (y <= 0 || y >= WORLD_HEIGHT) continue;
+    const b = getBlock(x, y, z);
+    if (b && FALLING_TYPES[b] && !isSolidAt(x, y - 1, z)) startFallingBlock(x, y, z, b);
+  }
+  for (let i = fallingBlocks.length - 1; i >= 0; i--) {
+    const f = fallingBlocks[i];
+    f.vy = Math.max(-22, f.vy - GRAVITY * dt);
+    let ny = f.mesh.position.y + f.vy * dt;
+    const bx = Math.floor(f.mesh.position.x), bz = Math.floor(f.mesh.position.z);
+    const below = Math.floor(ny - 0.5);
+    if (isSolidAt(bx, below, bz)) {
+      // 落地:还原为方块
+      setBlock(bx, below + 1, bz, f.type);
+      scene.remove(f.mesh);
+      fallingBlocks.splice(i, 1);
+      audio.play('step');
+      continue;
+    }
+    f.mesh.position.y = ny;
+    if (ny < -10) { scene.remove(f.mesh); fallingBlocks.splice(i, 1); }
+  }
+}
+
+function clearFallingBlocks() {
+  for (const f of fallingBlocks) scene.remove(f.mesh);
+  fallingBlocks.length = 0;
+  fallCheckQueue.length = 0;
 }
 
 // ============================================================
@@ -3310,7 +3664,8 @@ function animate() {
   const locked = document.pointerLockElement === renderer.domElement;
   const prevVy = velocity.y;
   if (locked) updatePlayer(dt, prevVy);
-  if (locked && settings.mobs) updateMobs(dt);   // 动物(暂停时冻结)
+  if (locked) updateFallingBlocks(dt);             // 沙砾重力(暂停时冻结)
+  if (locked && settings.mobs) updateMobs(dt);     // 生物(暂停时冻结)
   updateArrows(dt);
   updateDroppedItems(dt);
   updateParticles(dt);   // 粒子效果
@@ -3833,6 +4188,9 @@ const audio = {
       case 'water': this._tone('sine', 180, 0.4, 0.25, t); this._tone('sine', 240, 0.4, 0.15, t + 0.05); break;
       case 'hurt':  this._tone('sawtooth', 200, 0.15, 0.3, t); break;
       case 'pig':   this._tone('triangle', 330, 0.1, 0.22, t); this._tone('triangle', 250, 0.12, 0.18, t + 0.09); break;
+      case 'zombie':  this._tone('sawtooth', 95, 0.32, 0.2, t); this._tone('sawtooth', 72, 0.3, 0.16, t + 0.18); break;
+      case 'fuse':    this._noise(0.9, 5200, 0.28, t); break;
+      case 'explode': this._noise(0.5, 280, 0.75, t); this._tone('sawtooth', 55, 0.4, 0.35, t); break;
     }
   },
   _tone(wave, freq, dur, gain, t0) {
@@ -3879,7 +4237,7 @@ const audio = {
 // 设置持久化(localStorage)
 // ============================================================
 const SETTINGS_KEY = 'myword_settings';
-let settings = { volume: 0.35, soundEnabled: true, fov: 75, renderDist: 5, dropItems: false, dayNightEnabled: true, dayCycleSpeed: 120, mobs: true };
+let settings = { volume: 0.35, soundEnabled: true, fov: 75, renderDist: 5, dropItems: false, dayNightEnabled: true, dayCycleSpeed: 120, mobs: true, hostiles: true };
 function loadSettings() {
   try {
     const s = localStorage.getItem(SETTINGS_KEY);
@@ -3901,6 +4259,8 @@ function loadSettings() {
   if (bd) bd.textContent = '掉落物:' + (settings.dropItems ? '开' : '关');
   const bm = document.getElementById('btn-mobs');
   if (bm) bm.textContent = '动物:' + (settings.mobs ? '开' : '关');
+  const bh = document.getElementById('btn-hostiles');
+  if (bh) bh.textContent = '怪物:' + (settings.hostiles ? '开' : '关');
 }
 function saveSettings() {
   try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) {}

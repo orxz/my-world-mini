@@ -41,11 +41,12 @@ const BLOCK_TYPES = {
   glass:        { name: '玻璃',   top: '#c8e6f0', side: '#c8e6f0', bottom: '#c8e6f0', solid: true, tool: 'any', hardness: 0.4 },
   bed:          { name: '床',     top: '#c0392b', side: '#8a2820', bottom: '#6e4f2a', solid: true, tool: 'axe', hardness: 0.3 },
   chest:        { name: '箱子',   top: '#a0763a', side: '#96682e', bottom: '#8a5f28', solid: true, tool: 'axe', hardness: 1.8 },
+  ladder:       { name: '梯子',   top: '#9a6b3f', side: '#9a6b3f', bottom: '#9a6b3f', solid: false, tool: 'axe', hardness: 0.5 },
 };
 const HOTBAR_ORDER = ['grass', 'dirt', 'stone', 'wood', 'leaves', 'sand', 'planks', 'brick'];
 
 // 方块数字 id(用于紧凑的 Uint8Array 区块存储)
-const BLOCK_ID = { air: 0, grass: 1, dirt: 2, stone: 3, wood: 4, leaves: 5, sand: 6, planks: 7, brick: 8, water: 9, snow: 10, gravel: 11, wool_red: 12, wool_yellow: 13, wool_white: 14, wool_black: 15, door: 16, door_iron: 17, door_stone: 18, door_gold: 19, door_diamond: 20, crafting_table: 21, cobblestone: 22, coal_ore: 23, iron_ore: 24, diamond_ore: 25, tnt: 26, furnace: 27, glass: 28, bed: 29, chest: 30 };
+const BLOCK_ID = { air: 0, grass: 1, dirt: 2, stone: 3, wood: 4, leaves: 5, sand: 6, planks: 7, brick: 8, water: 9, snow: 10, gravel: 11, wool_red: 12, wool_yellow: 13, wool_white: 14, wool_black: 15, door: 16, door_iron: 17, door_stone: 18, door_gold: 19, door_diamond: 20, crafting_table: 21, cobblestone: 22, coal_ore: 23, iron_ore: 24, diamond_ore: 25, tnt: 26, furnace: 27, glass: 28, bed: 29, chest: 30, ladder: 31 };
 const ID_TO_BLOCK = Object.keys(BLOCK_ID);
 
 // ============================================================
@@ -268,6 +269,22 @@ function drawBlockFace(ctx, type, face, s, seedRand) {
         ctx.moveTo(0, gy + Math.floor(seedRand() * 3));
         for (let gx = 0; gx <= s; gx += 4) ctx.lineTo(gx, gy + Math.floor(seedRand() * 4));
         ctx.stroke();
+      }
+      break;
+    }
+    case 'ladder': {
+      // 梯子:两根竖轨 + 横档,间隙透明(alphaTest);攀爬体积(非固体)
+      ctx.clearRect(0, 0, s, s);
+      const rw = Math.max(1, Math.floor(s / 9));
+      const railX0 = Math.floor(s * 0.18);
+      const railX1 = s - Math.floor(s * 0.18) - rw;
+      ctx.fillStyle = '#8a5a30';
+      ctx.fillRect(railX0, 0, rw, s);
+      ctx.fillRect(railX1, 0, rw, s);
+      ctx.fillStyle = '#b5824f';
+      const step = Math.max(2, Math.floor(s / 4));
+      for (let gy = Math.floor(step * 0.5); gy < s; gy += step) {
+        ctx.fillRect(railX0, gy, railX1 + rw - railX0, rw);
       }
       break;
     }
@@ -2703,7 +2720,13 @@ function placeBlock() {
   const ny = t.y + Math.round(t.normal.y);
   const nz = t.z + Math.round(t.normal.z);
   if (getBlock(nx, ny, nz) || doorBlocksAt(nx, ny, nz)) { showToast('此处已有方块或门'); return; }
-  if (overlapsPlayer(nx, ny, nz)) { showToast('挡住自己了,换个方向'); return; }
+  // 梯子:需贴墙/贴地放置(经典附着),且非固体可放在自己脚下
+  if (selectedType === 'ladder') {
+    const hasSupport = isSolidAt(nx - 1, ny, nz) || isSolidAt(nx + 1, ny, nz)
+      || isSolidAt(nx, ny, nz - 1) || isSolidAt(nx, ny, nz + 1) || isSolidAt(nx, ny - 1, nz);
+    if (!hasSupport) { showToast('梯子需要贴着实体墙或地面放置'); return; }
+  }
+  if (selectedType !== 'ladder' && overlapsPlayer(nx, ny, nz)) { showToast('挡住自己了,换个方向'); return; }
   if (selectedType && selectedType.indexOf('door') === 0) {
     const facing = Math.abs(Math.sin(yaw)) > 0.5 ? 1 : 0;
     if (placeDoor(nx, ny, nz, selectedType, facing)) {
@@ -4180,11 +4203,21 @@ function updatePlayer(dt, prevVy) {
   } else {
     velocity.x = move.x * speed;
     velocity.z = move.z * speed;
-    velocity.y -= GRAVITY * dt;
-    if (keys['Space'] && onGround) {
-      velocity.y = JUMP_SPEED;
-      const now = performance.now();
-      if (now - lastJumpTime > 250) { audio.play('jump'); lastJumpTime = now; }
+    // 梯子攀爬(经典):在梯子体积内 —— 空格上升 / Shift 悬停 / 其余缓慢下滑;
+    // 水平移动不受限,可左右挪出梯子
+    const onLadder = getBlock(Math.floor(playerPos.x), Math.floor(playerPos.y - 0.3), Math.floor(playerPos.z)) === 'ladder'
+      || getBlock(Math.floor(playerPos.x), Math.floor(playerPos.y + 0.3), Math.floor(playerPos.z)) === 'ladder';
+    if (onLadder) {
+      if (keys['Space']) velocity.y = 3.2;
+      else if (keys['ShiftLeft'] || keys['ShiftRight']) velocity.y = 0;
+      else velocity.y = Math.max(velocity.y - GRAVITY * dt, -1.8);
+    } else {
+      velocity.y -= GRAVITY * dt;
+      if (keys['Space'] && onGround) {
+        velocity.y = JUMP_SPEED;
+        const now = performance.now();
+        if (now - lastJumpTime > 250) { audio.play('jump'); lastJumpTime = now; }
+      }
     }
   }
 
@@ -4810,7 +4843,7 @@ function buildInventoryPanel() {
   addSection(grid, '方块');
   HOTBAR_ORDER.forEach(id => addCell({ kind: 'block', id }));
   // 新增方块也可取用
-  ['water', 'snow', 'gravel', 'door', 'door_iron', 'door_stone', 'door_gold', 'door_diamond', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'bed', 'chest'].forEach(id => addCell({ kind: 'block', id }));
+  ['water', 'snow', 'gravel', 'door', 'door_iron', 'door_stone', 'door_gold', 'door_diamond', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'bed', 'chest', 'ladder'].forEach(id => addCell({ kind: 'block', id }));
   addSection(grid, '材料 · 宝石');
   ITEM_ORDER.forEach(id => addCell({ kind: 'item', id, count: 64 }));
 }
@@ -4929,7 +4962,7 @@ function openTablePanel() {
   if (closeBtn) closeBtn.onclick = closeTablePanel;
   // 目录循环列表:方块 + 材料物品(矿石/圆石/木棍等,按 kind 区分图标)
   const catalog = HOTBAR_ORDER.map(id => ({ kind: 'block', id }))
-    .concat(['water', 'snow', 'gravel', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'sand', 'bed', 'chest', 'wool_red', 'wool_white'].map(id => ({ kind: 'block', id })))
+    .concat(['water', 'snow', 'gravel', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'sand', 'bed', 'chest', 'ladder', 'wool_red', 'wool_white'].map(id => ({ kind: 'block', id })))
     .concat(['gem_gold', 'gem_diamond', 'gem_emerald', 'arrow', 'stick', 'coal'].map(id => ({ kind: 'item', id })));
   document.querySelectorAll('#table-grid .inv-cell').forEach((cell, i) => {
     cell.onclick = () => {

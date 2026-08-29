@@ -53,6 +53,8 @@
     // 床:3 羊毛 + 3 木板(经典;红/白两色羊毛任选)
     { name: '床', pattern: ['wool_red', 'wool_red', 'wool_red', 'planks', 'planks', 'planks', null, null, null], result: { kind: 'block', id: 'bed' }, count: 1, shapeless: false },
     { name: '床(白)', pattern: ['wool_white', 'wool_white', 'wool_white', 'planks', 'planks', 'planks', null, null, null], result: { kind: 'block', id: 'bed' }, count: 1, shapeless: false },
+    // 梯子:7 木棍 H 形(经典配方)
+    { name: '梯子', pattern: ['stick', null, 'stick', 'stick', 'stick', 'stick', 'stick', null, 'stick'], result: { kind: 'block', id: 'ladder' }, count: 3, shapeless: false },
     // ---- 工具配方(3×3:3 材料上排 + 2 木棍中列,经典镐形)----
     { name: '木镐', pattern: ['planks', 'planks', 'planks', null, 'stick', null, null, 'stick', null], result: { kind: 'tool', id: 'pickaxe_wood' }, shapeless: false },
     { name: '石镐', pattern: ['cobblestone', 'cobblestone', 'cobblestone', null, 'stick', null, null, 'stick', null], result: { kind: 'tool', id: 'pickaxe_stone' }, shapeless: false },

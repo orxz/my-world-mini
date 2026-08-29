@@ -246,6 +246,10 @@ test('床:3 羊毛 + 3 木板(经典配方)', () => {
   const r = matchRecipeGrid(G9(['wool_red', 'wool_red', 'wool_red', 'planks', 'planks', 'planks', null, null, null]), 3, RECIPES);
   assert(r && r.name === '床' && r.result.id === 'bed', 'got: ' + (r && r.name));
 });
+test('梯子:7 木棍 H 形(经典配方,×3)', () => {
+  const r = matchRecipeGrid(G9(['stick', null, 'stick', 'stick', 'stick', 'stick', 'stick', null, 'stick']), 3, RECIPES);
+  assert(r && r.name === '梯子' && r.result.id === 'ladder' && r.count === 3, 'got: ' + (r && r.name));
+});
 test('镐形材料区分:木镐不受圆石影响', () => {
   const r = matchRecipeGrid(G9(['cobblestone', 'cobblestone', 'cobblestone', null, 'stick', null, null, 'stick', null]), 3, RECIPES);
   assert(r && r.name === '石镐' && r.result.id !== 'pickaxe_wood', '应为石镐而非木镐');

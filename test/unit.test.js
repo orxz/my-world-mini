@@ -226,6 +226,10 @@ test('烧制演示:1 圆石 → 1 石头(无序)', () => {
   const r = matchRecipeGrid(G9([null, null, null, null, 'cobblestone', null, null, null, null]), 3, RECIPES);
   assert(r && r.name === '石头' && r.result.id === 'stone', 'got: ' + (r && r.name));
 });
+test('TNT:1 煤炭 + 3 沙(无序)', () => {
+  const r = matchRecipe([{ id: 'coal' }, { id: 'sand' }, { id: 'sand' }, { id: 'sand' }], RECIPES);
+  assert(r && r.name === 'TNT' && r.result.id === 'tnt', 'got: ' + (r && r.name));
+});
 test('镐形材料区分:木镐不受圆石影响', () => {
   const r = matchRecipeGrid(G9(['cobblestone', 'cobblestone', 'cobblestone', null, 'stick', null, null, 'stick', null]), 3, RECIPES);
   assert(r && r.name === '石镐' && r.result.id !== 'pickaxe_wood', '应为石镐而非木镐');

@@ -44,6 +44,8 @@
     { name: '石砖(大量)', pattern: ['stone', 'stone', 'stone', 'stone', null, 'stone', 'stone', 'stone', 'stone'], result: { kind: 'block', id: 'brick' }, count: 4, shapeless: false },
     // 圆石→石头(经典烧制的合成演示;无熔炉版本)
     { name: '石头', pattern: ['cobblestone', null, null, null], result: { kind: 'block', id: 'stone' }, count: 1, shapeless: true },
+    // TNT:1 煤炭 + 3 沙(无序,火药替代演示)
+    { name: 'TNT', pattern: ['coal', 'sand', 'sand', 'sand'], result: { kind: 'block', id: 'tnt' }, count: 1, shapeless: true },
     // ---- 工具配方(3×3:3 材料上排 + 2 木棍中列,经典镐形)----
     { name: '木镐', pattern: ['planks', 'planks', 'planks', null, 'stick', null, null, 'stick', null], result: { kind: 'tool', id: 'pickaxe_wood' }, shapeless: false },
     { name: '石镐', pattern: ['cobblestone', 'cobblestone', 'cobblestone', null, 'stick', null, null, 'stick', null], result: { kind: 'tool', id: 'pickaxe_stone' }, shapeless: false },

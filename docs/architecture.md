@@ -74,6 +74,10 @@ three.min.js  ── Three.js r160(第三方渲染库,内置,离线)
 | 19 | 存档/读档 | IndexedDB 多存档、seed + modifications diff、自动保存 |
 | 20 | 启动 | 入口:DOM 就绪 → `init` → 主循环 |
 
+> 另有:**天空系统**(`createSky`/`updateSky`,渐变天穹+星空+日月光晕,挂第七部分)、
+> **动物系统**(`spawnMob`/`updateMobs`/`hurtMob`/`raycastMob`,被动生物粉红猪,挂掉落物系统后)、
+> **破坏裂纹覆盖层**(`createCrackOverlay`,4 阶段程序化裂纹纹理,随破坏进度切换)。
+
 ## 4. 核心数据流
 
 ### 4.1 区块生命周期

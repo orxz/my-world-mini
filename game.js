@@ -820,16 +820,40 @@ const highlightBox = new THREE.LineSegments(
   new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.4 })
 );
 
-// 云朵系统:扁平白色半透明面片,漂浮在高空,缓慢飘动
+// 云朵系统:高空半透明块状云面片(像素化云纹理),缓慢飘动
 const clouds = [];
 let cloudGeo = null;
+// 块状云纹理:16×8 单元格拼出像素云团(3 个变体,确定性种子)
+let cloudTextures = null;
+function makeCloudTexture(seed) {
+  const c = document.createElement('canvas');
+  c.width = 64; c.height = 32;
+  const ctx = c.getContext('2d');
+  ctx.clearRect(0, 0, 64, 32);
+  ctx.fillStyle = '#ffffff';
+  let st = seed >>> 0;
+  const rand = () => { st = (st * 1664525 + 1013904223) >>> 0; return st / 4294967296; };
+  for (let cy = 0; cy < 8; cy++) {
+    for (let cx = 0; cx < 16; cx++) {
+      const ddx = (cx - 7.5) / 7.5, ddy = (cy - 3.5) / 3.5;
+      const d = ddx * ddx + ddy * ddy * 1.6;
+      if (d < 0.5 + rand() * 0.45) ctx.fillRect(cx * 4, cy * 4, 4, 4);
+    }
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestFilter;
+  return tex;
+}
 function createClouds() {
   if (cloudGeo) return;   // 幂等:只构建一次几何体
-  cloudGeo = new THREE.PlaneGeometry(20, 12);
-  const COUNT = 8;
+  cloudGeo = new THREE.PlaneGeometry(26, 14);
+  if (!cloudTextures) { cloudTextures = [makeCloudTexture(101), makeCloudTexture(202), makeCloudTexture(303)]; }
+  const COUNT = 10;
   for (let i = 0; i < COUNT; i++) {
     const mat = new THREE.MeshBasicMaterial({
-      color: 0xffffff, transparent: true, opacity: 0.7, depthWrite: false, side: THREE.DoubleSide,
+      map: cloudTextures[i % cloudTextures.length],
+      transparent: true, opacity: 0.75, depthWrite: false, side: THREE.DoubleSide,
       fog: false,   // 云不受雾影响(避免远处被雾吞没)
     });
     const cloud = new THREE.Mesh(cloudGeo, mat);
@@ -847,6 +871,83 @@ function createClouds() {
     scene.add(cloud);
     clouds.push(cloud);
   }
+}
+
+// ============================================================
+// 天空系统:渐变天穹(顶亮/地平线雾色一致)+ 夜晚星星 + 日/月光晕
+// 天穹用 MeshBasicMaterial+顶点色(与背景/雾走同一色调映射管线,衔接无缝)
+// ============================================================
+const skyGroup = new THREE.Group();
+let skyDomeGeo = null, starMat = null, glowTexture = null;
+const _skyTop = new THREE.Color();
+const _skyHorizon = new THREE.Color();
+const _zenithDay = new THREE.Color(0x3a7bd0);   // 白天天顶色(比天空色略深)
+
+function makeGlowTexture() {
+  if (glowTexture) return glowTexture;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(32, 32, 2, 32, 32, 32);
+  g.addColorStop(0, 'rgba(255,255,255,0.9)');
+  g.addColorStop(0.25, 'rgba(255,255,255,0.32)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 64, 64);
+  glowTexture = new THREE.CanvasTexture(c);
+  return glowTexture;
+}
+
+function createSky() {
+  // 渐变天穹(每帧按昼夜刷新顶点色)
+  skyDomeGeo = new THREE.SphereGeometry(420, 20, 12);
+  const vcount = skyDomeGeo.attributes.position.count;
+  skyDomeGeo.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(vcount * 3).fill(1), 3));
+  const dome = new THREE.Mesh(skyDomeGeo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, depthWrite: false, fog: false }));
+  dome.renderOrder = -2;
+  skyGroup.add(dome);
+  // 星星(上半球随机分布,夜晚淡入)
+  const starCount = 320;
+  const pos = new Float32Array(starCount * 3);
+  for (let i = 0; i < starCount; i++) {
+    let x, y, z, l;
+    do { x = Math.random() * 2 - 1; y = Math.random(); z = Math.random() * 2 - 1; l = Math.sqrt(x * x + y * y + z * z); } while (l < 0.1 || y / l < 0.03);
+    pos[i * 3] = x / l * 400; pos[i * 3 + 1] = y / l * 400; pos[i * 3 + 2] = z / l * 400;
+  }
+  const starGeo = new THREE.BufferGeometry();
+  starGeo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 1.6, sizeAttenuation: false, transparent: true, opacity: 0, depthWrite: false, fog: false });
+  const stars = new THREE.Points(starGeo, starMat);
+  stars.renderOrder = -1;
+  skyGroup.add(stars);
+  scene.add(skyGroup);
+  // 日/月光晕(叠加混合 Sprite,挂在天体 mesh 上随其升降)
+  const sunGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture(), color: 0xffeeaa, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+  sunGlow.scale.set(60, 60, 1);
+  sunMeshRef.add(sunGlow);
+  const moonGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture(), color: 0xaabbff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+  moonGlow.scale.set(34, 34, 1);
+  moonMeshRef.add(moonGlow);
+}
+
+// 刷新天穹顶点色(地平线=天空/雾色,与远处地形雾衔接无缝;天顶=白天稍深蓝)
+function updateSky(tDay) {
+  _skyHorizon.copy(_dayColor);
+  _skyTop.copy(_dayColor);
+  if (tDay > 0) _skyTop.lerp(_zenithDay, 0.35 * tDay);
+  const pos = skyDomeGeo.attributes.position, col = skyDomeGeo.attributes.color;
+  for (let i = 0; i < pos.count; i++) {
+    const h = pos.getY(i) / 420;
+    let t = (h + 0.06) / 0.48;
+    t = Math.max(0, Math.min(1, t));
+    t = t * t * (3 - 2 * t);
+    col.setXYZ(i,
+      _skyHorizon.r + (_skyTop.r - _skyHorizon.r) * t,
+      _skyHorizon.g + (_skyTop.g - _skyHorizon.g) * t,
+      _skyHorizon.b + (_skyTop.b - _skyHorizon.b) * t);
+  }
+  col.needsUpdate = true;
+  if (starMat) starMat.opacity = (1 - tDay) * 0.9;
 }
 
 // 更新云朵:缓慢 +x 方向飘动,越过 x=200 后重置到 x=-200(环绕)
@@ -1189,6 +1290,7 @@ function updateThirdPersonCamera() {
   camera.rotation.y = yaw + (dir < 0 ? Math.PI : 0);
   // 略俯视(-0.15 弧度≈-8.6°)+ 鼠标 pitch 的一半
   camera.rotation.x = -0.15 + pitch * 0.5;
+  camera.rotation.z = 0;   // 第三人称无 roll(避免第一人称视角摆动残留)
   camera.fov = 70;
   camera.updateProjectionMatrix();
 }
@@ -1265,8 +1367,12 @@ function init() {
 
   scene.add(highlightBox);
 
-  // 云朵(场景设置完毕后创建,高空扁平半透明面片)
+  // 云朵(场景设置完毕后创建,高空块状半透明面片)
   createClouds();
+  // 天空系统:渐变天穹 + 星空 + 日/月光晕(依赖 sunMeshRef/moonMeshRef)
+  createSky();
+  // 破坏裂纹覆盖层
+  createCrackOverlay();
 
   // 纹理:图集(区块网格用)+ 单方块材质(UI/手持用)
   buildAtlas();
@@ -1524,6 +1630,7 @@ function clearWorld() {
   for (const a of arrows) scene.remove(a);
   arrows.length = 0;
   clearDroppedItems();   // 清掉落物,避免旧世界残留
+  clearMobs();           // 清动物,避免旧世界残留
   breakTargetKey = null; breakProgress = 0;
   hideBreakOverlay();
   // 清理粒子/农作物计时器(避免跨世界残留)
@@ -1904,6 +2011,7 @@ function setupInput() {
   const setVolume = document.getElementById('set-volume');
   const setRender = document.getElementById('set-render');
   const setDrops = document.getElementById('set-drops');
+  const setMobs = document.getElementById('set-mobs');
   const setDN = document.getElementById('set-daynight');
   const setDNSpeed = document.getElementById('set-dayspeed');
   const setDNTime = document.getElementById('set-daytime');
@@ -1922,6 +2030,7 @@ function setupInput() {
     if (setVolume) setVolume.value = Math.round(settings.volume * 100);
     if (setRender) setRender.value = String(settings.renderDist);
     if (setDrops) setDrops.textContent = settings.dropItems ? '开' : '关';
+    if (setMobs) setMobs.textContent = settings.mobs ? '开' : '关';
     if (setDN) {
       setDN.textContent = settings.dayNightEnabled ? '开' : '关';
       if (daynightControls) {
@@ -1957,6 +2066,11 @@ function setupInput() {
   if (setDrops) setDrops.addEventListener('click', () => {
     settings.dropItems = !settings.dropItems;
     dropItems = settings.dropItems;
+    saveSettings(); refreshSettingsUI();
+  });
+  if (setMobs) setMobs.addEventListener('click', () => {
+    settings.mobs = !settings.mobs;
+    if (!settings.mobs) clearMobs();
     saveSettings(); refreshSettingsUI();
   });
   if (setDN) setDN.addEventListener('click', () => {
@@ -2016,6 +2130,15 @@ function setupInput() {
     settings.dropItems = dropItems;
     saveSettings();
     showToast('掉落物已' + (dropItems ? '开启' : '关闭'));
+  });
+  // 动物开关(暂停菜单)
+  const btnMobs = document.getElementById('btn-mobs');
+  if (btnMobs) btnMobs.addEventListener('click', () => {
+    settings.mobs = !settings.mobs;
+    btnMobs.textContent = '动物:' + (settings.mobs ? '开' : '关');
+    if (!settings.mobs) clearMobs();
+    saveSettings();
+    showToast('动物已' + (settings.mobs ? '开启' : '关闭'));
   });
 
   document.addEventListener('mousemove', (e) => {
@@ -2479,6 +2602,49 @@ function updateParticles(dt) {
 }
 
 // ============================================================
+// 破坏裂纹覆盖层(Minecraft 风格:方块表面随进度出现裂纹,4 阶段)
+// ============================================================
+let crackMesh = null, crackMats = null, breakCostTotal = 1;
+function makeCrackTexture(stage) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 32;
+  const ctx = c.getContext('2d');
+  // 确定性伪随机(固定种子,每次加载裂纹一致)
+  let st = (1234567 + stage * 7919) >>> 0;
+  const rand = () => { st = (st * 1664525 + 1013904223) >>> 0; return st / 4294967296; };
+  ctx.strokeStyle = 'rgba(15,12,8,0.68)';
+  ctx.lineCap = 'round';
+  const lines = 3 + stage * 2;
+  for (let i = 0; i < lines; i++) {
+    let x = 4 + rand() * 24, y = 4 + rand() * 24;
+    ctx.lineWidth = (stage >= 2 && rand() < 0.4) ? 2 : 1;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    const segs = 3 + ((rand() * 3) | 0);
+    for (let sgi = 0; sgi < segs; sgi++) {
+      x = Math.max(1, Math.min(31, x + (rand() - 0.5) * 12));
+      y = Math.max(1, Math.min(31, y + (rand() - 0.5) * 12));
+      ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestFilter;
+  return tex;
+}
+function createCrackOverlay() {
+  crackMats = [];
+  for (let s = 0; s < 4; s++) {
+    crackMats.push(new THREE.MeshBasicMaterial({ map: makeCrackTexture(s), transparent: true, depthWrite: false }));
+  }
+  crackMesh = new THREE.Mesh(new THREE.BoxGeometry(1.004, 1.004, 1.004), crackMats[0]);
+  crackMesh.visible = false;
+  crackMesh.renderOrder = 2;
+  scene.add(crackMesh);
+}
+
+// ============================================================
 // 掉落物实体(创造模式:视觉趣味 + 未来生存模式钩子)
 // ============================================================
 // 小旋转方块(0.3 大小),从被破坏方块中心生成,受重力 + 地面支撑,30 秒后淡出消失
@@ -2558,6 +2724,190 @@ function updateDroppedItems(dt) {
 function clearDroppedItems() {
   for (const d of droppedItems) scene.remove(d);
   droppedItems.length = 0;
+}
+
+// ============================================================
+// 动物系统(被动生物:粉红猪;游荡 AI + 重力/碰撞 + 可击退)
+// 环境氛围生物,不入存档;暂停时冻结;可在暂停菜单/设置中开关
+// ============================================================
+const mobs = [];
+const MOB_CAP = 10;
+let mobSpawnTimer = 2;
+
+// 粉红猪模型:-z 为前(与玩家模型一致);userData 携带腿/材质引用(动画与受击闪红依赖)
+function buildPigMesh() {
+  const g = new THREE.Group();
+  const bodyMat = new THREE.MeshLambertMaterial({ color: 0xeba3a9 });
+  const headMat = new THREE.MeshLambertMaterial({ color: 0xf0adb2 });
+  const snoutMat = new THREE.MeshLambertMaterial({ color: 0xd97f88 });
+  const eyeMat = new THREE.MeshLambertMaterial({ color: 0x2a2a2a });
+  const legMat = new THREE.MeshLambertMaterial({ color: 0xdd8f96 });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.5, 0.95), bodyMat);
+  body.position.y = 0.55;
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.45, 0.4), headMat);
+  head.position.set(0, 0.62, -0.62);
+  const snout = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.14, 0.08), snoutMat);
+  snout.position.set(0, 0.56, -0.85);
+  const eyeL = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.08, 0.03), eyeMat);
+  eyeL.position.set(-0.12, 0.68, -0.83);
+  const eyeR = eyeL.clone();
+  eyeR.position.x = 0.12;
+  // 4 条腿(Group 旋转中心在髋部,便于行走摆动)
+  const legs = [];
+  const mkLeg = (lx, lz) => {
+    const lg = new THREE.Group();
+    const m = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.32, 0.16), legMat);
+    m.position.y = -0.16;
+    lg.add(m);
+    lg.position.set(lx, 0.32, lz);
+    legs.push(lg);
+    return lg;
+  };
+  mkLeg(-0.18, -0.3); mkLeg(0.18, -0.3); mkLeg(-0.18, 0.3); mkLeg(0.18, 0.3);
+  g.add(body, head, snout, eyeL, eyeR, legs[0], legs[1], legs[2], legs[3]);
+  g.userData = { legs, mats: [bodyMat, headMat, snoutMat, legMat], baseColors: [0xeba3a9, 0xf0adb2, 0xd97f88, 0xdd8f96] };
+  return g;
+}
+
+function spawnMob(x, groundY, z) {
+  const mesh = buildPigMesh();
+  mesh.position.set(x, groundY + 0.45, z);   // 身体中心离地 0.45
+  scene.add(mesh);
+  mobs.push({
+    mesh, vy: 0, kvx: 0, kvz: 0,
+    yaw: Math.random() * Math.PI * 2,
+    turnT: 1 + Math.random() * 2, speed: 0,
+    hp: 10, hurtT: 0, walkPhase: Math.random() * 6, onGround: false,
+  });
+}
+
+function removeMob(i) {
+  const m = mobs[i];
+  m.mesh.traverse(function(o) {
+    if (o.isMesh) { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }
+  });
+  scene.remove(m.mesh);
+  mobs.splice(i, 1);
+}
+function clearMobs() { for (let i = mobs.length - 1; i >= 0; i--) removeMob(i); }
+
+// 尝试生成:随机挑一个已加载区块,找草地面(离玩家 >10 格,水下/沙漠不刷)
+function trySpawnMob() {
+  if (!settings.mobs || mobs.length >= MOB_CAP || chunks.size === 0) return;
+  const arr = Array.from(chunks.values());
+  const ch = arr[(Math.random() * arr.length) | 0];
+  const wx = ch.cx * CHUNK_SIZE + ((Math.random() * CHUNK_SIZE) | 0) + 0.5;
+  const wz = ch.cz * CHUNK_SIZE + ((Math.random() * CHUNK_SIZE) | 0) + 0.5;
+  const dx = wx - playerPos.x, dz = wz - playerPos.z;
+  if (dx * dx + dz * dz < 100) return;
+  const fx = Math.floor(wx), fz = Math.floor(wz);
+  for (let y = WORLD_HEIGHT - 2; y > SEA_LEVEL; y--) {
+    const b = getBlock(fx, y, fz);
+    if (!b) continue;
+    if (b === 'grass' && !getBlock(fx, y + 1, fz)) spawnMob(wx, y + 1, wz);
+    break;   // 只看地表第一个非空气方块
+  }
+}
+
+// 动物更新:游荡 AI + 重力/浮力 + 简单碰撞(撞墙跳一格或转向)+ 走路摆腿 + 受击闪红
+function updateMobs(dt) {
+  mobSpawnTimer -= dt;
+  if (mobSpawnTimer <= 0) { mobSpawnTimer = 1.5; trySpawnMob(); }
+  const maxDist = (RENDER_DISTANCE + 2) * CHUNK_SIZE;
+  for (let i = mobs.length - 1; i >= 0; i--) {
+    const m = mobs[i];
+    const p = m.mesh.position;
+    const dxp = p.x - playerPos.x, dzp = p.z - playerPos.z;
+    // 距离过远或所在区块已卸载 → 移除
+    if (dxp * dxp + dzp * dzp > maxDist * maxDist
+        || !chunks.has(chunkKey(Math.floor(p.x / CHUNK_SIZE), Math.floor(p.z / CHUNK_SIZE)))) {
+      removeMob(i); continue;
+    }
+    // 换向计时
+    m.turnT -= dt;
+    if (m.turnT <= 0) {
+      m.turnT = 1.5 + Math.random() * 3;
+      m.speed = Math.random() < 0.65 ? 1.3 : 0;
+      m.yaw = Math.random() * Math.PI * 2;
+    }
+    const inW = getBlock(Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)) === 'water';
+    const dirx = -Math.sin(m.yaw) * m.speed, dirz = -Math.cos(m.yaw) * m.speed;
+    // 重力 / 水中浮力
+    if (inW) m.vy += (2.2 - m.vy) * Math.min(1, dt * 3);
+    else m.vy -= GRAVITY * dt;
+    // 前方阻挡检测(脚部+半高两处),撞墙则跳或转向
+    const footY = Math.floor(p.y - 0.35), midY = Math.floor(p.y + 0.1);
+    const aheadX = Math.floor(p.x + dirx * dt * 3 + Math.sign(dirx) * 0.35);
+    const aheadZ = Math.floor(p.z + dirz * dt * 3 + Math.sign(dirz) * 0.35);
+    const blocked = (dirx || dirz) && (isSolidAt(aheadX, footY, aheadZ) || isSolidAt(aheadX, midY, aheadZ));
+    if (blocked && m.onGround) {
+      if (Math.random() < 0.5) m.vy = 7.2;   // 跳上一格
+      else { m.yaw += Math.PI * (0.5 + Math.random()); m.turnT = 1 + Math.random() * 2; }
+    }
+    // 位移(x/z 分轴,撞墙滑动并反弹转向)
+    let nx = p.x + dirx * dt;
+    if (dirx !== 0 && (isSolidAt(Math.floor(nx + Math.sign(dirx) * 0.3), footY, Math.floor(p.z)) || isSolidAt(Math.floor(nx + Math.sign(dirx) * 0.3), midY, Math.floor(p.z)))) { nx = p.x; m.yaw = Math.PI - m.yaw; }
+    let nz = p.z + dirz * dt;
+    if (dirz !== 0 && (isSolidAt(Math.floor(nx), footY, Math.floor(nz + Math.sign(dirz) * 0.3)) || isSolidAt(Math.floor(nx), midY, Math.floor(nz + Math.sign(dirz) * 0.3)))) { nz = p.z; m.yaw = -m.yaw; }
+    p.x = nx; p.z = nz;
+    let ny = p.y + m.vy * dt;
+    m.onGround = false;
+    if (m.vy <= 0) {
+      const supportY = Math.floor(ny - 0.45);
+      if (isSolidAt(Math.floor(p.x), supportY, Math.floor(p.z))) { ny = supportY + 1 + 0.45; m.vy = 0; m.onGround = true; }
+    }
+    p.y = ny;
+    // 防止掉出世界
+    if (p.y < -5) { removeMob(i); continue; }
+    // 朝向 + 走路摆腿(对角步态)
+    m.mesh.rotation.y = m.yaw;
+    const moving = m.speed > 0.05 && m.onGround;
+    if (moving) m.walkPhase += dt * 8;
+    const swing = moving ? Math.sin(m.walkPhase) * 0.55 : 0;
+    const legs = m.mesh.userData.legs;
+    legs[0].rotation.x = swing; legs[3].rotation.x = swing;
+    legs[1].rotation.x = -swing; legs[2].rotation.x = -swing;
+    // 受击闪红恢复
+    if (m.hurtT > 0) {
+      m.hurtT -= dt;
+      if (m.hurtT <= 0) {
+        const mats = m.mesh.userData.mats, base = m.mesh.userData.baseColors;
+        for (let k = 0; k < mats.length; k++) mats[k].color.setHex(base[k]);
+      }
+    }
+  }
+}
+
+// 击中动物:扣血 + 击退 + 闪红;HP 归零 → 粒子消散
+function hurtMob(m, dmg, kx, kz) {
+  m.hp -= dmg;
+  m.hurtT = 0.25;
+  m.kvx += kx * 6; m.kvz += kz * 6; m.vy = 4;
+  const mats = m.mesh.userData.mats;
+  for (let k = 0; k < mats.length; k++) mats[k].color.setHex(0xd05a5a);
+  audio.play('pig');
+  if (m.hp <= 0) {
+    const p = m.mesh.position;
+    spawnParticles(p.x - 0.5, p.y - 0.5, p.z - 0.5, 0xeba3a9, 12);
+    const idx = mobs.indexOf(m);
+    if (idx >= 0) removeMob(idx);
+    showToast('🐷 击倒了猪');
+  }
+}
+
+// 视线命中动物(球体近似:沿视线 3.5 格内、夹角最小者)
+function raycastMob(maxDist) {
+  const dx = -Math.sin(yaw) * Math.cos(pitch), dy = Math.sin(pitch), dz = -Math.cos(yaw) * Math.cos(pitch);
+  let best = null, bestT = maxDist;
+  for (const m of mobs) {
+    const p = m.mesh.position;
+    const tx = p.x - playerPos.x, ty = p.y - playerPos.y, tz = p.z - playerPos.z;
+    const proj = tx * dx + ty * dy + tz * dz;
+    if (proj <= 0.3 || proj > bestT) continue;
+    const perp2 = tx * tx + ty * ty + tz * tz - proj * proj;
+    if (perp2 < 0.55) { best = m; bestT = proj; }
+  }
+  return best;
 }
 
 // ============================================================
@@ -2783,7 +3133,10 @@ function updatePlayer(dt, prevVy) {
   collidePlayer(dt);
 
   // 落地音效:仅在"从空中→触地"这一帧触发(边沿检测),避免着地后重复播放
-  if (onGround && !wasOnGround && prevVy < -6) audio.play('jump');
+  if (onGround && !wasOnGround && prevVy < -6) {
+    audio.play('jump');
+    if (!water) spawnParticles(playerPos.x, playerPos.y - 0.7, playerPos.z, 0x9a8a6a, 6);   // 落地尘土
+  }
   // Fall damage: when landing with prevVy < -15 (~4+ blocks), scale by speed. Flying immune.
   if (onGround && !wasOnGround && !isFlying && prevVy < -15 && !inWater()) {
     const dmg = Math.floor((-prevVy - 15) / 3);
@@ -2854,6 +3207,7 @@ let wasOnGround = false;   // 落地边沿检测
 // ============================================================
 let lastTime = performance.now();
 let fpsAcc = 0, fpsFrames = 0, fpsTimer = 0;
+let bobPhase = 0, bobAmp = 0;   // 第一人称行走视角摆动
 
 // 昼夜循环:dayTime 0..1(0=午夜,0.25=日出,0.5=正午,0.75=日落),起步 0.3(早晨)
 let dayTime = 0.3;
@@ -2939,6 +3293,9 @@ function updateDayNight(dt) {
     const str = (hh < 10 ? '0' + hh : hh) + ':' + (mm < 10 ? '0' + mm : mm);
     if (str !== _lastDaytimeStr) { _daytimeEl.textContent = str; _lastDaytimeStr = str; }
   }
+
+  // 天穹渐变色 + 星星透明度(随昼夜)
+  updateSky(tDay);
 }
 let _daytimeEl = null;      // 昼夜时间 DOM 元素缓存
 let _lastDaytimeStr = '';
@@ -2953,6 +3310,7 @@ function animate() {
   const locked = document.pointerLockElement === renderer.domElement;
   const prevVy = velocity.y;
   if (locked) updatePlayer(dt, prevVy);
+  if (locked && settings.mobs) updateMobs(dt);   // 动物(暂停时冻结)
   updateArrows(dt);
   updateDroppedItems(dt);
   updateParticles(dt);   // 粒子效果
@@ -2976,9 +3334,20 @@ function animate() {
     camera.rotation.y = yaw;
     camera.rotation.x = pitch;
     if (camera.fov !== 75) { camera.fov = 75; camera.updateProjectionMatrix(); }
+    // 行走视角摆动(轻微起伏 + 微 roll,落地感/移动感)
+    const hspd = Math.hypot(velocity.x, velocity.z);
+    const bobTarget = (onGround && !isFlying && hspd > 0.8) ? 1 : 0;
+    bobAmp += (bobTarget - bobAmp) * Math.min(1, dt * 8);
+    bobPhase += dt * hspd * 1.7;
+    camera.position.y += Math.sin(bobPhase * 2) * 0.042 * bobAmp;
+    camera.rotation.z = Math.sin(bobPhase) * 0.007 * bobAmp;
   } else {
     updateThirdPersonCamera();
   }
+
+  // 天空穹顶/星星跟随相机(无视差),缓慢旋转(星星周日视运动)
+  skyGroup.position.copy(camera.position);
+  skyGroup.rotation.y += dt * 0.004;
 
   // 玩家模型:每帧跟随玩家位置/朝向(无论 cameraMode),避免切换人称时模型停留原地
   if (playerModel) {
@@ -3025,13 +3394,28 @@ function animate() {
     breakProgress = 0;
     hideBreakOverlay();
   }
+  // 破坏裂纹 3D 覆盖层(阶段随进度推进)
+  if (crackMesh) {
+    const cracking = !!(target && breakProgress > 0 && curKey === breakTargetKey);
+    crackMesh.visible = cracking;
+    if (cracking) {
+      crackMesh.position.set(target.x + 0.5, target.y + 0.5, target.z + 0.5);
+      const stage = Math.min(3, Math.floor(breakProgress / breakCostTotal * 4));
+      if (crackMesh.material !== crackMats[stage]) crackMesh.material = crackMats[stage];
+    }
+  }
 
   // 昼夜循环:推进 dayTime 并调整光照/天空/天体(updateDayNight 内部仅在非水下时覆盖背景/雾)
   updateDayNight(dt);
+  // 水面呼吸波动(所有水网格整体微幅升降)
+  const waterBob = Math.sin(now * 0.0012) * 0.035;
+  for (const ch of chunks.values()) { if (ch.mesh && ch.mesh.water) ch.mesh.water.position.y = waterBob; }
   // 雾/背景:水中色调优先级最高(覆盖昼夜色调),水下视野大幅拉近(沉浸感)
   // 出水后由 updateDayNight 在下一帧重新应用昼夜色
   const _waterBg = 0x1f5fa8, _waterBg2 = 0x143d6e;
-  if (inWater()) {
+  const inWaterNow = inWater();
+  skyGroup.visible = !inWaterNow;   // 水下隐藏天穹/星星(蓝雾接管)
+  if (inWaterNow) {
     if (scene.background.getHex() !== _waterBg) {
       scene.background.setHex(_waterBg);
       scene.fog.color.setHex(_waterBg2);
@@ -3448,6 +3832,7 @@ const audio = {
       case 'jump':  this._sweep(300, 600, 0.12, t); break;
       case 'water': this._tone('sine', 180, 0.4, 0.25, t); this._tone('sine', 240, 0.4, 0.15, t + 0.05); break;
       case 'hurt':  this._tone('sawtooth', 200, 0.15, 0.3, t); break;
+      case 'pig':   this._tone('triangle', 330, 0.1, 0.22, t); this._tone('triangle', 250, 0.12, 0.18, t + 0.09); break;
     }
   },
   _tone(wave, freq, dur, gain, t0) {
@@ -3494,7 +3879,7 @@ const audio = {
 // 设置持久化(localStorage)
 // ============================================================
 const SETTINGS_KEY = 'myword_settings';
-let settings = { volume: 0.35, soundEnabled: true, fov: 75, renderDist: 5, dropItems: false, dayNightEnabled: true, dayCycleSpeed: 120 };
+let settings = { volume: 0.35, soundEnabled: true, fov: 75, renderDist: 5, dropItems: false, dayNightEnabled: true, dayCycleSpeed: 120, mobs: true };
 function loadSettings() {
   try {
     const s = localStorage.getItem(SETTINGS_KEY);
@@ -3514,6 +3899,8 @@ function loadSettings() {
   if (bs) bs.textContent = '音效:' + (settings.soundEnabled ? '开' : '关');
   const bd = document.getElementById('btn-drops');
   if (bd) bd.textContent = '掉落物:' + (settings.dropItems ? '开' : '关');
+  const bm = document.getElementById('btn-mobs');
+  if (bm) bm.textContent = '动物:' + (settings.mobs ? '开' : '关');
 }
 function saveSettings() {
   try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) {}

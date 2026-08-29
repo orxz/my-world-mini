@@ -204,6 +204,21 @@
     animation: panelIn .18s ease-out;
   }
   #craft-table-panel h3 { font-size: 18px; margin-bottom: 4px; color: #3F3F3F; text-shadow: 1px 1px 0 #DBDBDB; }
+  #furnace-panel {
+    position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    z-index: 95; background: #C6C6C6;
+    border: 3px solid;
+    border-color: #FEFEFE #4E4E4E #4E4E4E #FEFEFE;
+    box-shadow: inset 1px 1px 0 #DBDBDB, inset -1px -1px 0 #A0A0A0, 0 8px 40px rgba(0,0,0,0.6);
+    border-radius: 2px; padding: 20px 22px; color: #3F3F3F;
+    animation: panelIn .18s ease-out;
+  }
+  #furnace-panel h3 { font-size: 18px; margin-bottom: 4px; color: #3F3F3F; text-shadow: 1px 1px 0 #DBDBDB; }
+  .furnace-col { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .furnace-flame { width: 56px; height: 8px; background: #555; border: 1px solid #333; }
+  #furnace-flame-fill { height: 100%; width: 0; background: linear-gradient(90deg, #ff8830, #ffcc50); }
+  .furnace-arrow { width: 80px; height: 12px; background: #999; border: 1px solid #666; }
+  #furnace-cook-fill { height: 100%; width: 0; background: #7a9a4a; }
 .table-grid { display: grid; grid-template-columns: repeat(3, 56px); grid-template-rows: repeat(3, 56px); gap: 4px; }
 .table-grid .inv-cell { width: 56px; height: 56px; }
 .table-grid .inv-cell canvas { width: 36px; height: 36px; }
@@ -346,6 +361,22 @@
       <button class="craft-btn" id="table-craft" disabled>合成</button>
     </div>
     <button class="craft-btn" id="table-clear" style="background:#666;border-color:#444;">清空</button>
+  </div>
+</div>
+
+<!-- 熔炉面板(对放置的熔炉右键打开) -->
+<div id="furnace-panel" class="hidden">
+  <span class="inv-close" id="furnace-close">×</span>
+  <h3>🔥 熔炉</h3>
+  <div class="inv-hint">上格放待冶炼物(铁矿/沙/圆石/猪排),下格放燃料(煤炭/木板/木头/木棍);左键循环,右键取出;产物点击收取</div>
+  <div class="craft-row" style="margin-top:12px;">
+    <div class="furnace-col">
+      <div class="inv-cell" id="furnace-in" style="width:56px;height:56px;"></div>
+      <div class="furnace-flame"><div id="furnace-flame-fill"></div></div>
+      <div class="inv-cell" id="furnace-fuel" style="width:56px;height:56px;"></div>
+    </div>
+    <div class="furnace-arrow"><div id="furnace-cook-fill"></div></div>
+    <div class="inv-cell" id="furnace-out" style="width:64px;height:64px;border-color:#8a6a20 #FFF #FFF #8a6a20;"></div>
   </div>
 </div>
 

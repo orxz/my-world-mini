@@ -37,11 +37,13 @@ const BLOCK_TYPES = {
   iron_ore:     { name: '铁矿',   top: '#888888', side: '#7c7c7c', bottom: '#6e6e6e', solid: true, tool: 'pickaxe', hardness: 3.0 },
   diamond_ore:  { name: '钻石矿', top: '#888888', side: '#7c7c7c', bottom: '#6e6e6e', solid: true, tool: 'pickaxe', hardness: 3.0 },
   tnt:          { name: 'TNT',     top: '#b03a2e', side: '#a83226', bottom: '#8a2820', solid: true, tool: 'any', hardness: 0.5 },
+  furnace:      { name: '熔炉',   top: '#888888', side: '#7c7c7c', bottom: '#6e6e6e', solid: true, tool: 'pickaxe', hardness: 3.5 },
+  glass:        { name: '玻璃',   top: '#c8e6f0', side: '#c8e6f0', bottom: '#c8e6f0', solid: true, tool: 'any', hardness: 0.4 },
 };
 const HOTBAR_ORDER = ['grass', 'dirt', 'stone', 'wood', 'leaves', 'sand', 'planks', 'brick'];
 
 // 方块数字 id(用于紧凑的 Uint8Array 区块存储)
-const BLOCK_ID = { air: 0, grass: 1, dirt: 2, stone: 3, wood: 4, leaves: 5, sand: 6, planks: 7, brick: 8, water: 9, snow: 10, gravel: 11, wool_red: 12, wool_yellow: 13, wool_white: 14, wool_black: 15, door: 16, door_iron: 17, door_stone: 18, door_gold: 19, door_diamond: 20, crafting_table: 21, cobblestone: 22, coal_ore: 23, iron_ore: 24, diamond_ore: 25, tnt: 26 };
+const BLOCK_ID = { air: 0, grass: 1, dirt: 2, stone: 3, wood: 4, leaves: 5, sand: 6, planks: 7, brick: 8, water: 9, snow: 10, gravel: 11, wool_red: 12, wool_yellow: 13, wool_white: 14, wool_black: 15, door: 16, door_iron: 17, door_stone: 18, door_gold: 19, door_diamond: 20, crafting_table: 21, cobblestone: 22, coal_ore: 23, iron_ore: 24, diamond_ore: 25, tnt: 26, furnace: 27, glass: 28 };
 const ID_TO_BLOCK = Object.keys(BLOCK_ID);
 
 // ============================================================
@@ -90,10 +92,12 @@ const ITEM_TYPES = {
   apple:       { name: '苹果',   color: '#d63a2f', shape: 'apple' },
   stick:       { name: '木棍',   color: '#9a6b3f', shape: 'stick' },
   coal:        { name: '煤炭',   color: '#262626', shape: 'gem' },
+  iron_ingot:  { name: '铁锭',   color: '#d8d8e0', shape: 'ingot' },
+  cooked_porkchop: { name: '熟猪排', color: '#b56b46', shape: 'meat' },
 };
-const ITEM_ORDER = ['gem_diamond','gem_gold','gem_emerald','arrow','porkchop','apple','stick','coal'];
+const ITEM_ORDER = ['gem_diamond','gem_gold','gem_emerald','arrow','porkchop','cooked_porkchop','apple','stick','coal','iron_ingot'];
 // 食物 → 恢复的饥饿值(右键进食)
-const FOODS = { porkchop: 8, apple: 4 };
+const FOODS = { porkchop: 8, apple: 4, cooked_porkchop: 12 };
 
 // ============================================================
 // 第三部分:像素纹理与图集(用于区块合并网格)
@@ -263,6 +267,28 @@ function drawBlockFace(ctx, type, face, s, seedRand) {
         for (let gx = 0; gx <= s; gx += 4) ctx.lineTo(gx, gy + Math.floor(seedRand() * 4));
         ctx.stroke();
       }
+      break;
+    }
+    case 'furnace': {
+      // 熔炉:石底 + 深色炉口 + 炉火 + 顶部通风口
+      noise(25);
+      ctx.fillStyle = '#2a2a2a';
+      ctx.fillRect(Math.floor(s * 0.2), Math.floor(s * 0.45), Math.floor(s * 0.6), Math.floor(s * 0.35));
+      ctx.fillStyle = '#ff8830';
+      ctx.fillRect(Math.floor(s * 0.28), Math.floor(s * 0.62), Math.floor(s * 0.44), Math.floor(s * 0.14));
+      ctx.fillStyle = '#3a3a3a';
+      ctx.fillRect(Math.floor(s * 0.3), Math.floor(s * 0.2), Math.floor(s * 0.4), Math.floor(s * 0.12));
+      break;
+    }
+    case 'glass': {
+      // 玻璃:浅色边框 + 斜高光,中心透明(alphaTest 挖空)
+      ctx.clearRect(0, 0, s, s);
+      ctx.strokeStyle = 'rgba(205,232,240,0.9)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(0.5, 0.5, s - 1, s - 1);
+      ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+      ctx.beginPath(); ctx.moveTo(s * 0.58, s * 0.16); ctx.lineTo(s * 0.84, s * 0.42); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(s * 0.7, s * 0.1); ctx.lineTo(s * 0.9, s * 0.3); ctx.stroke();
       break;
     }
     case 'tnt': {
@@ -1718,6 +1744,7 @@ function clearWorld() {
   clearMobs();           // 清生物,避免旧世界残留
   clearFallingBlocks();  // 清下落中的沙砾
   clearTNT();            // 清点燃的 TNT
+  clearFurnaces();       // 清熔炉状态
   tableOpen = false;
   for (let i = 0; i < 9; i++) tableGrid[i] = null;
   const tPanel = document.getElementById('craft-table-panel');
@@ -1788,7 +1815,9 @@ function initInventory() {
 
 // 方块图标的伪 3D 等距渲染:顶面(亮)+ 右侧面(中)+ 左侧面(暗),模拟立体感
 function drawBlockIcon3D(ctx, id, size) {
-  const topTex = materials[id][2].map, sideTex = materials[id][1].map;
+  const mats = materials[id];
+  if (!mats || !mats[2] || !mats[1]) return;   // 防御:无方块材质(如脏数据的 kind/id 不匹配)时不绘制
+  const topTex = mats[2].map, sideTex = mats[1].map;
   if (!topTex || !topTex.image || !sideTex || !sideTex.image) return;
   ctx.save();
   ctx.imageSmoothingEnabled = false;
@@ -2050,6 +2079,10 @@ function setupInput() {
       if (e.code === 'KeyE' || e.code === 'Escape') closeTablePanel();
       return;
     }
+    if (furnaceOpen) {
+      if (e.code === 'KeyE' || e.code === 'Escape') closeFurnacePanel();
+      return;
+    }
     if (inventoryOpen) {
       if (e.code === 'KeyE' || e.code === 'Escape') toggleInventory(false);
       return;
@@ -2124,7 +2157,7 @@ function setupInput() {
     if (locked) {
       overlay.classList.add('hidden');
       pauseMenu.classList.add('hidden');
-    } else if (gameStarted && !inventoryOpen && !tableOpen) {
+    } else if (gameStarted && !inventoryOpen && !tableOpen && !furnaceOpen) {
       pauseMenu.classList.remove('hidden');
       autosave(true);
     }
@@ -2520,6 +2553,18 @@ function breakBlock() {
   if (breakProgress < cost) return;
   spawnParticles(t.x, t.y, t.z, new THREE.Color(BLOCK_TYPES[type].top).getHex(), 8);
   setBlock(t.x, t.y, t.z, null);
+  // 熔炉被拆:掉落内含物(待冶炼/燃料/产物)
+  if (type === 'furnace') {
+    const fk = blockKey(t.x, t.y, t.z);
+    const f = furnaces.get(fk);
+    if (f) {
+      for (const it of [f.input, f.fuel, f.output]) {
+        if (it) spawnDroppedItem(t.x, t.y, t.z, it.id, it.count || 1, it.kind || 'block');
+      }
+      furnaces.delete(fk);
+      if (furnaceOpen === fk) closeFurnacePanel();
+    }
+  }
   // 经典掉落(生存采集):石头→圆石;煤矿→煤炭(1-2);钻石矿→钻石;树叶 15% 掉苹果
   let dropType = type, dropKind = 'block', dropCount = 1;
   if (type === 'stone') dropType = 'cobblestone';
@@ -2585,6 +2630,12 @@ function placeBlock() {
   const tTnt = raycastTarget();
   if (tTnt && getBlock(tTnt.x, tTnt.y, tTnt.z) === 'tnt') {
     igniteTNT(tTnt.x, tTnt.y, tTnt.z);
+    return;
+  }
+  // 熔炉:右键打开冶炼面板
+  const tFurnace = raycastTarget();
+  if (tFurnace && getBlock(tFurnace.x, tFurnace.y, tFurnace.z) === 'furnace') {
+    openFurnacePanel(tFurnace.x, tFurnace.y, tFurnace.z);
     return;
   }
   if (item && item.kind === 'item') {
@@ -3579,6 +3630,150 @@ function clearTNT() {
 }
 
 // ============================================================
+// 熔炉(经典:右键打开;燃料燃烧 + 冶炼进度,状态随存档持久化)
+// ============================================================
+const furnaces = new Map();   // "x,y,z" -> {x,y,z, input, fuel, output, burnT, burnMax, cookT}
+const COOK_TIME = 5;          // 每个产物冶炼秒数
+// 冶炼配方:输入 id -> 产物(铁矿石→铁锭、沙→玻璃、圆石→石头、猪排→熟猪排)
+const SMELT = {
+  iron_ore: { kind: 'item', id: 'iron_ingot' },
+  sand: { kind: 'block', id: 'glass' },
+  cobblestone: { kind: 'block', id: 'stone' },
+  porkchop: { kind: 'item', id: 'cooked_porkchop' },
+};
+// 燃料:可冶炼的产物个数(1 个产物 = COOK_TIME 秒)
+const FUELS = { coal: 8, wood: 1.5, planks: 1.5, stick: 0.5 };
+let furnaceOpen = null;   // 当前打开面板的熔炉 key(null=关)
+
+function getFurnace(x, y, z) {
+  const key = blockKey(x, y, z);
+  let f = furnaces.get(key);
+  if (!f) { f = { x, y, z, input: null, fuel: null, output: null, burnT: 0, burnMax: 1, cookT: 0 }; furnaces.set(key, f); }
+  return f;
+}
+
+function furnaceCanSmelt(f) {
+  if (!f.input || !SMELT[f.input.id]) return false;
+  const res = SMELT[f.input.id];
+  return !f.output || (f.output.id === res.id && f.output.kind === res.kind && (f.output.count || 1) < BLOCK_STACK_MAX);
+}
+
+// 熔炉状态机(每帧推进;燃烧中消耗燃料,完成后产出)
+function updateFurnaces(dt) {
+  let panelDirty = false;
+  for (const [key, f] of furnaces) {
+    const can = furnaceCanSmelt(f);
+    if (f.burnT > 0) f.burnT -= dt;
+    // 火灭了且还能烧:消耗 1 个燃料点燃
+    if (f.burnT <= 0 && can && f.fuel && FUELS[f.fuel.id]) {
+      f.burnMax = f.burnT = FUELS[f.fuel.id] * COOK_TIME;
+      f.fuel.count = (f.fuel.count || 1) - 1;
+      if (f.fuel.count <= 0) f.fuel = null;
+      panelDirty = true;
+    }
+    if (f.burnT > 0 && can) {
+      f.cookT += dt;
+      if (f.cookT >= COOK_TIME) {
+        f.cookT = 0;
+        const res = SMELT[f.input.id];
+        f.input.count = (f.input.count || 1) - 1;
+        if (f.input.count <= 0) f.input = null;
+        if (f.output) f.output.count = (f.output.count || 1) + 1;
+        else f.output = { kind: res.kind, id: res.id, count: 1 };
+        panelDirty = true;
+      }
+    } else if (f.cookT > 0) {
+      f.cookT = 0;   // 中断(没料/没火):进度归零
+      panelDirty = true;
+    }
+    if (panelDirty && furnaceOpen === key) renderFurnacePanel();
+  }
+}
+
+function clearFurnaces() {
+  furnaces.clear();
+  furnaceOpen = null;
+  const panel = document.getElementById('furnace-panel');
+  if (panel) panel.classList.add('hidden');
+}
+
+// ---- 熔炉面板 ----
+function openFurnacePanel(x, y, z) {
+  furnaceOpen = blockKey(x, y, z);
+  const f = getFurnace(x, y, z);
+  const panel = document.getElementById('furnace-panel');
+  if (!panel) return;
+  panel.classList.remove('hidden');
+  if (document.pointerLockElement) document.exitPointerLock();
+  const closeBtn = document.getElementById('furnace-close');
+  if (closeBtn) closeBtn.onclick = closeFurnacePanel;
+  // 放入循环目录(可冶炼物 + 燃料)
+  const inList = ['iron_ore', 'sand', 'cobblestone', 'porkchop'].map(id => ({ kind: SMELT[id].kind, id }));
+  const fuelList = ['coal', 'wood', 'planks', 'stick'].map(id => ({ kind: 'item', id }));
+  const bindCycle = (el, slot, list) => {
+    el.onclick = () => {
+      const cur = f[slot];
+      let idx = cur ? list.findIndex(c => c.id === cur.id) : -1;
+      idx = (idx + 1) % list.length;
+      f[slot] = { kind: list[idx].kind, id: list[idx].id };
+      renderFurnacePanel();
+    };
+    el.oncontextmenu = (e) => { e.preventDefault(); f[slot] = null; renderFurnacePanel(); };
+  };
+  bindCycle(document.getElementById('furnace-in'), 'input', inList);
+  bindCycle(document.getElementById('furnace-fuel'), 'fuel', fuelList);
+  const outCell = document.getElementById('furnace-out');
+  if (outCell) {
+    outCell.onclick = () => {
+      if (!f.output) return;
+      const want = f.output.count || 1;
+      const got = pickupIntoInventory(f.output.kind, f.output.id, want);
+      if (got >= want) f.output = null;
+      else f.output.count = want - got;
+      renderFurnacePanel();
+    };
+  }
+  renderFurnacePanel();
+}
+
+function closeFurnacePanel() {
+  furnaceOpen = null;
+  const panel = document.getElementById('furnace-panel');
+  if (panel) panel.classList.add('hidden');
+}
+
+function renderFurnaceCell(el, it) {
+  if (!el) return;
+  const old = el.querySelector('canvas'); if (old) old.remove();
+  const badge = el.querySelector('.cnt'); if (badge) badge.remove();
+  if (it) {
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 48;
+    drawItemIcon(it, cv);
+    el.appendChild(cv);
+    if ((it.count || 1) > 1) {
+      const c = document.createElement('span');
+      c.className = 'cnt';
+      c.textContent = it.count;
+      el.appendChild(c);
+    }
+  }
+}
+
+function renderFurnacePanel() {
+  if (!furnaceOpen) return;
+  const f = furnaces.get(furnaceOpen);
+  if (!f) { closeFurnacePanel(); return; }
+  renderFurnaceCell(document.getElementById('furnace-in'), f.input);
+  renderFurnaceCell(document.getElementById('furnace-fuel'), f.fuel);
+  renderFurnaceCell(document.getElementById('furnace-out'), f.output);
+  const burn = document.getElementById('furnace-flame-fill');
+  if (burn) burn.style.width = (f.burnT > 0 ? Math.max(0, f.burnT / f.burnMax) * 100 : 0) + '%';
+  const cook = document.getElementById('furnace-cook-fill');
+  if (cook) cook.style.width = (f.cookT / COOK_TIME) * 100 + '%';
+}
+
+// ============================================================
 // 生命系统(无怪物,先建立基础设施:跌落/溺水伤害 + HUD + 存档)
 // ============================================================
 const PLAYER_MAX_HP = 20;   // 10 颗心,每心 2 点
@@ -4036,6 +4231,7 @@ function animate() {
   if (locked) updatePlayer(dt, prevVy);
   if (locked) updateFallingBlocks(dt);             // 沙砾重力(暂停时冻结)
   if (locked) updateTNT(dt);                       // 点燃的 TNT(暂停时冻结)
+  updateFurnaces(dt);                              // 熔炉冶炼(经典:暂停也持续燃烧)
   if (locked) updateDroppedItems(dt);              // 掉落物(暂停时冻结)
   if (locked && settings.mobs) updateMobs(dt);     // 生物(暂停时冻结)
   updateArrows(dt);
@@ -4260,6 +4456,13 @@ function applySave(rec) {
     }
   }
   if (rec.cropTimersData) { cropTimers.clear(); for (const [k,v] of rec.cropTimersData) cropTimers.set(k,v); }
+  // 恢复熔炉状态(方块本体在 modifications 中,状态在这里)
+  furnaces.clear();
+  if (rec.furnacesData) {
+    for (const f of rec.furnacesData) {
+      furnaces.set(blockKey(f.x, f.y, f.z), { x: f.x, y: f.y, z: f.z, input: f.input || null, fuel: f.fuel || null, output: f.output || null, burnT: f.burnT || 0, burnMax: f.burnMax || 1, cookT: f.cookT || 0 });
+    }
+  }
   saveDirty = false;
 }
 
@@ -4440,7 +4643,7 @@ function buildInventoryPanel() {
   addSection(grid, '方块');
   HOTBAR_ORDER.forEach(id => addCell({ kind: 'block', id }));
   // 新增方块也可取用
-  ['water', 'snow', 'gravel', 'door', 'door_iron', 'door_stone', 'door_gold', 'door_diamond', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt'].forEach(id => addCell({ kind: 'block', id }));
+  ['water', 'snow', 'gravel', 'door', 'door_iron', 'door_stone', 'door_gold', 'door_diamond', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt', 'furnace', 'glass'].forEach(id => addCell({ kind: 'block', id }));
   addSection(grid, '材料 · 宝石');
   ITEM_ORDER.forEach(id => addCell({ kind: 'item', id, count: 64 }));
 }
@@ -4559,7 +4762,7 @@ function openTablePanel() {
   if (closeBtn) closeBtn.onclick = closeTablePanel;
   // 目录循环列表:方块 + 材料物品(矿石/圆石/木棍等,按 kind 区分图标)
   const catalog = HOTBAR_ORDER.map(id => ({ kind: 'block', id }))
-    .concat(['water', 'snow', 'gravel', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt'].map(id => ({ kind: 'block', id })))
+    .concat(['water', 'snow', 'gravel', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'sand'].map(id => ({ kind: 'block', id })))
     .concat(['gem_gold', 'gem_diamond', 'gem_emerald', 'arrow', 'stick', 'coal'].map(id => ({ kind: 'item', id })));
   document.querySelectorAll('#table-grid .inv-cell').forEach((cell, i) => {
     cell.onclick = () => {
@@ -4818,6 +5021,7 @@ async function saveSlot(name) {
       hotbar, currentSlot,
       modifications: Array.from(modifications.entries()),
       cropTimersData: Array.from(cropTimers.entries()),
+      furnacesData: Array.from(furnaces.values()).map(f => ({ x: f.x, y: f.y, z: f.z, input: f.input, fuel: f.fuel, output: f.output, burnT: f.burnT, burnMax: f.burnMax, cookT: f.cookT })),
       doorsData: Array.from(doors.entries()).map(function(e){return [e[0], {x:e[1].x,y:e[1].y,z:e[1].z,type:e[1].type,open:e[1].open,facing:e[1].facing}];}),
       timestamp: Date.now(),
     };

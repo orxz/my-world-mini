@@ -46,6 +46,8 @@
     { name: '石头', pattern: ['cobblestone', null, null, null], result: { kind: 'block', id: 'stone' }, count: 1, shapeless: true },
     // TNT:1 煤炭 + 3 沙(无序,火药替代演示)
     { name: 'TNT', pattern: ['coal', 'sand', 'sand', 'sand'], result: { kind: 'block', id: 'tnt' }, count: 1, shapeless: true },
+    // 熔炉:8 圆石围一圈(经典配方)
+    { name: '熔炉', pattern: ['cobblestone', 'cobblestone', 'cobblestone', 'cobblestone', null, 'cobblestone', 'cobblestone', 'cobblestone', 'cobblestone'], result: { kind: 'block', id: 'furnace' }, count: 1, shapeless: false },
     // ---- 工具配方(3×3:3 材料上排 + 2 木棍中列,经典镐形)----
     { name: '木镐', pattern: ['planks', 'planks', 'planks', null, 'stick', null, null, 'stick', null], result: { kind: 'tool', id: 'pickaxe_wood' }, shapeless: false },
     { name: '石镐', pattern: ['cobblestone', 'cobblestone', 'cobblestone', null, 'stick', null, null, 'stick', null], result: { kind: 'tool', id: 'pickaxe_stone' }, shapeless: false },
@@ -53,6 +55,7 @@
     // ---- 剑配方(3×3:2 材料竖列 + 1 木棍底,经典剑形)----
     { name: '木剑', pattern: ['planks', null, null, 'planks', null, null, 'stick', null, null], result: { kind: 'tool', id: 'sword_wood' }, shapeless: false },
     { name: '石剑', pattern: ['cobblestone', null, null, 'cobblestone', null, null, 'stick', null, null], result: { kind: 'tool', id: 'sword_stone' }, shapeless: false },
+    { name: '铁剑', pattern: ['iron_ingot', null, null, 'iron_ingot', null, null, 'stick', null, null], result: { kind: 'tool', id: 'sword_iron' }, shapeless: false },
     { name: '钻石剑', pattern: ['gem_diamond', null, null, 'gem_diamond', null, null, 'stick', null, null], result: { kind: 'tool', id: 'sword_diamond' }, shapeless: false },
   ];
 

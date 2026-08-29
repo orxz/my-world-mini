@@ -48,6 +48,11 @@
     { name: 'TNT', pattern: ['coal', 'sand', 'sand', 'sand'], result: { kind: 'block', id: 'tnt' }, count: 1, shapeless: true },
     // 熔炉:8 圆石围一圈(经典配方)
     { name: '熔炉', pattern: ['cobblestone', 'cobblestone', 'cobblestone', 'cobblestone', null, 'cobblestone', 'cobblestone', 'cobblestone', 'cobblestone'], result: { kind: 'block', id: 'furnace' }, count: 1, shapeless: false },
+    // 箱子:8 木板围一圈(经典配方)
+    { name: '箱子', pattern: ['planks', 'planks', 'planks', 'planks', null, 'planks', 'planks', 'planks', 'planks'], result: { kind: 'block', id: 'chest' }, count: 1, shapeless: false },
+    // 床:3 羊毛 + 3 木板(经典;红/白两色羊毛任选)
+    { name: '床', pattern: ['wool_red', 'wool_red', 'wool_red', 'planks', 'planks', 'planks', null, null, null], result: { kind: 'block', id: 'bed' }, count: 1, shapeless: false },
+    { name: '床(白)', pattern: ['wool_white', 'wool_white', 'wool_white', 'planks', 'planks', 'planks', null, null, null], result: { kind: 'block', id: 'bed' }, count: 1, shapeless: false },
     // ---- 工具配方(3×3:3 材料上排 + 2 木棍中列,经典镐形)----
     { name: '木镐', pattern: ['planks', 'planks', 'planks', null, 'stick', null, null, 'stick', null], result: { kind: 'tool', id: 'pickaxe_wood' }, shapeless: false },
     { name: '石镐', pattern: ['cobblestone', 'cobblestone', 'cobblestone', null, 'stick', null, null, 'stick', null], result: { kind: 'tool', id: 'pickaxe_stone' }, shapeless: false },

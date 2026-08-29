@@ -219,6 +219,19 @@
   #furnace-flame-fill { height: 100%; width: 0; background: linear-gradient(90deg, #ff8830, #ffcc50); }
   .furnace-arrow { width: 80px; height: 12px; background: #999; border: 1px solid #666; }
   #furnace-cook-fill { height: 100%; width: 0; background: #7a9a4a; }
+  #chest-panel {
+    position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    z-index: 95; background: #C6C6C6;
+    border: 3px solid;
+    border-color: #FEFEFE #4E4E4E #4E4E4E #FEFEFE;
+    box-shadow: inset 1px 1px 0 #DBDBDB, inset -1px -1px 0 #A0A0A0, 0 8px 40px rgba(0,0,0,0.6);
+    border-radius: 2px; padding: 20px 22px; color: #3F3F3F;
+    animation: panelIn .18s ease-out;
+  }
+  #chest-panel h3 { font-size: 18px; margin-bottom: 4px; color: #3F3F3F; text-shadow: 1px 1px 0 #DBDBDB; }
+  .chest-grid { display: grid; grid-template-columns: repeat(9, 52px); gap: 4px; margin-top: 12px; }
+  .chest-grid .inv-cell { width: 52px; height: 52px; }
+  .chest-grid .inv-cell canvas { width: 34px; height: 34px; }
 .table-grid { display: grid; grid-template-columns: repeat(3, 56px); grid-template-rows: repeat(3, 56px); gap: 4px; }
 .table-grid .inv-cell { width: 56px; height: 56px; }
 .table-grid .inv-cell canvas { width: 36px; height: 36px; }
@@ -378,6 +391,14 @@
     <div class="furnace-arrow"><div id="furnace-cook-fill"></div></div>
     <div class="inv-cell" id="furnace-out" style="width:64px;height:64px;border-color:#8a6a20 #FFF #FFF #8a6a20;"></div>
   </div>
+</div>
+
+<!-- 箱子面板(对放置的箱子右键打开,27 格储物) -->
+<div id="chest-panel" class="hidden">
+  <span class="inv-close" id="chest-close">×</span>
+  <h3>📦 箱子</h3>
+  <div class="inv-hint">点击有物格 → 整组取回快捷栏;点击空格 → 放入当前手持整组;右键清空该格;Esc/E 关闭</div>
+  <div class="chest-grid" id="chest-grid"></div>
 </div>
 
 <!-- 暂停菜单(游戏中按 Esc 唤起) -->

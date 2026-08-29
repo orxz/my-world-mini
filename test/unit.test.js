@@ -238,6 +238,14 @@ test('铁剑:2 铁锭 + 木棍(熔炉产物链)', () => {
   const r = matchRecipeGrid(G9(['iron_ingot', null, null, 'iron_ingot', null, null, 'stick', null, null]), 3, RECIPES);
   assert(r && r.name === '铁剑' && r.result.id === 'sword_iron', 'got: ' + (r && r.name));
 });
+test('箱子:8 木板环形(经典配方)', () => {
+  const r = matchRecipeGrid(G9(['planks', 'planks', 'planks', 'planks', null, 'planks', 'planks', 'planks', 'planks']), 3, RECIPES);
+  assert(r && r.name === '箱子' && r.result.id === 'chest', 'got: ' + (r && r.name));
+});
+test('床:3 羊毛 + 3 木板(经典配方)', () => {
+  const r = matchRecipeGrid(G9(['wool_red', 'wool_red', 'wool_red', 'planks', 'planks', 'planks', null, null, null]), 3, RECIPES);
+  assert(r && r.name === '床' && r.result.id === 'bed', 'got: ' + (r && r.name));
+});
 test('镐形材料区分:木镐不受圆石影响', () => {
   const r = matchRecipeGrid(G9(['cobblestone', 'cobblestone', 'cobblestone', null, 'stick', null, null, 'stick', null]), 3, RECIPES);
   assert(r && r.name === '石镐' && r.result.id !== 'pickaxe_wood', '应为石镐而非木镐');

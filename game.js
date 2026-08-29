@@ -39,11 +39,13 @@ const BLOCK_TYPES = {
   tnt:          { name: 'TNT',     top: '#b03a2e', side: '#a83226', bottom: '#8a2820', solid: true, tool: 'any', hardness: 0.5 },
   furnace:      { name: '熔炉',   top: '#888888', side: '#7c7c7c', bottom: '#6e6e6e', solid: true, tool: 'pickaxe', hardness: 3.5 },
   glass:        { name: '玻璃',   top: '#c8e6f0', side: '#c8e6f0', bottom: '#c8e6f0', solid: true, tool: 'any', hardness: 0.4 },
+  bed:          { name: '床',     top: '#c0392b', side: '#8a2820', bottom: '#6e4f2a', solid: true, tool: 'axe', hardness: 0.3 },
+  chest:        { name: '箱子',   top: '#a0763a', side: '#96682e', bottom: '#8a5f28', solid: true, tool: 'axe', hardness: 1.8 },
 };
 const HOTBAR_ORDER = ['grass', 'dirt', 'stone', 'wood', 'leaves', 'sand', 'planks', 'brick'];
 
 // 方块数字 id(用于紧凑的 Uint8Array 区块存储)
-const BLOCK_ID = { air: 0, grass: 1, dirt: 2, stone: 3, wood: 4, leaves: 5, sand: 6, planks: 7, brick: 8, water: 9, snow: 10, gravel: 11, wool_red: 12, wool_yellow: 13, wool_white: 14, wool_black: 15, door: 16, door_iron: 17, door_stone: 18, door_gold: 19, door_diamond: 20, crafting_table: 21, cobblestone: 22, coal_ore: 23, iron_ore: 24, diamond_ore: 25, tnt: 26, furnace: 27, glass: 28 };
+const BLOCK_ID = { air: 0, grass: 1, dirt: 2, stone: 3, wood: 4, leaves: 5, sand: 6, planks: 7, brick: 8, water: 9, snow: 10, gravel: 11, wool_red: 12, wool_yellow: 13, wool_white: 14, wool_black: 15, door: 16, door_iron: 17, door_stone: 18, door_gold: 19, door_diamond: 20, crafting_table: 21, cobblestone: 22, coal_ore: 23, iron_ore: 24, diamond_ore: 25, tnt: 26, furnace: 27, glass: 28, bed: 29, chest: 30 };
 const ID_TO_BLOCK = Object.keys(BLOCK_ID);
 
 // ============================================================
@@ -267,6 +269,41 @@ function drawBlockFace(ctx, type, face, s, seedRand) {
         for (let gx = 0; gx <= s; gx += 4) ctx.lineTo(gx, gy + Math.floor(seedRand() * 4));
         ctx.stroke();
       }
+      break;
+    }
+    case 'bed': {
+      // 床:顶面 = 白枕头(头端 1/3)+ 红毯;侧面红毯+木底
+      if (face === 'top') {
+        ctx.fillStyle = '#f0f0f0';
+        ctx.fillRect(0, 0, s, Math.floor(s / 3));
+        ctx.fillStyle = '#b03028';
+        ctx.fillRect(0, Math.floor(s / 3), s, s - Math.floor(s / 3));
+        ctx.fillStyle = 'rgba(255,255,255,0.25)';
+        ctx.fillRect(0, Math.floor(s / 3), s, 2);
+        ctx.fillStyle = 'rgba(0,0,0,0.18)';
+        for (let gx = 0; gx < s; gx += 4) ctx.fillRect(gx, Math.floor(s / 3) + 3, 1, s);
+      } else {
+        ctx.fillStyle = col; ctx.fillRect(0, 0, s, s);
+        ctx.fillStyle = '#8a5f28';
+        ctx.fillRect(0, Math.floor(s * 0.8), s, Math.floor(s * 0.2));
+        ctx.fillStyle = 'rgba(255,255,255,0.18)';
+        ctx.fillRect(0, Math.floor(s * 0.35), s, 2);
+      }
+      break;
+    }
+    case 'chest': {
+      // 箱子:木板底 + 深色箱沿 + 中间搭扣
+      noise(18);
+      ctx.fillStyle = 'rgba(70,45,18,0.85)';
+      ctx.fillRect(0, 0, s, 2);
+      ctx.fillRect(0, Math.floor(s * 0.42), s, 2);
+      ctx.fillRect(0, s - 2, s, 2);
+      ctx.fillRect(0, 0, 2, s);
+      ctx.fillRect(s - 2, 0, 2, s);
+      ctx.fillStyle = '#d8d8d8';
+      ctx.fillRect(Math.floor(s / 2) - 1, Math.floor(s * 0.42), 3, Math.floor(s * 0.18));
+      ctx.fillStyle = 'rgba(255,255,255,0.15)';
+      ctx.fillRect(3, 3, s - 6, 2);
       break;
     }
     case 'furnace': {
@@ -1745,6 +1782,8 @@ function clearWorld() {
   clearFallingBlocks();  // 清下落中的沙砾
   clearTNT();            // 清点燃的 TNT
   clearFurnaces();       // 清熔炉状态
+  clearChests();         // 清箱子内容
+  spawnPoint = null;     // 重生点回出生广场(读档会按存档恢复)
   tableOpen = false;
   for (let i = 0; i < 9; i++) tableGrid[i] = null;
   const tPanel = document.getElementById('craft-table-panel');
@@ -2083,6 +2122,10 @@ function setupInput() {
       if (e.code === 'KeyE' || e.code === 'Escape') closeFurnacePanel();
       return;
     }
+    if (chestOpen) {
+      if (e.code === 'KeyE' || e.code === 'Escape') closeChestPanel();
+      return;
+    }
     if (inventoryOpen) {
       if (e.code === 'KeyE' || e.code === 'Escape') toggleInventory(false);
       return;
@@ -2157,7 +2200,7 @@ function setupInput() {
     if (locked) {
       overlay.classList.add('hidden');
       pauseMenu.classList.add('hidden');
-    } else if (gameStarted && !inventoryOpen && !tableOpen && !furnaceOpen) {
+    } else if (gameStarted && !inventoryOpen && !tableOpen && !furnaceOpen && !chestOpen) {
       pauseMenu.classList.remove('hidden');
       autosave(true);
     }
@@ -2553,6 +2596,26 @@ function breakBlock() {
   if (breakProgress < cost) return;
   spawnParticles(t.x, t.y, t.z, new THREE.Color(BLOCK_TYPES[type].top).getHex(), 8);
   setBlock(t.x, t.y, t.z, null);
+  // 箱子被拆:掉落全部内容
+  if (type === 'chest') {
+    const ck = blockKey(t.x, t.y, t.z);
+    const c = chests.get(ck);
+    if (c) {
+      for (const it of c.slots) {
+        if (it) spawnDroppedItem(t.x, t.y, t.z, it.id, it.count || 1, it.kind || 'block');
+      }
+      chests.delete(ck);
+      if (chestOpen === ck) closeChestPanel();
+    }
+  }
+  // 床被拆:若是当前重生床则清除重生点
+  if (type === 'bed' && spawnPoint) {
+    if (Math.floor(spawnPoint.x) === t.x && Math.floor(spawnPoint.z) === t.z
+        && Math.floor(spawnPoint.y - 1.1) === t.y) {
+      spawnPoint = null;
+      showToast('重生床已拆除,重生点重置');
+    }
+  }
   // 熔炉被拆:掉落内含物(待冶炼/燃料/产物)
   if (type === 'furnace') {
     const fk = blockKey(t.x, t.y, t.z);
@@ -2620,23 +2683,15 @@ function placeBlock() {
     showToast('吃掉:' + ITEM_TYPES[item.id].name + '(饥饿 +' + FOODS[item.id] + ')');
     return;
   }
-  // 合成台:右键打开 3×3 合成面板(空手/手持方块/非食物物品均可)
-  const tTable = raycastTarget();
-  if (tTable && getBlock(tTable.x, tTable.y, tTable.z) === 'crafting_table') {
-    openTablePanel();
-    return;
-  }
-  // TNT:右键点燃(经典;左键仍可正常拆除回收)
-  const tTnt = raycastTarget();
-  if (tTnt && getBlock(tTnt.x, tTnt.y, tTnt.z) === 'tnt') {
-    igniteTNT(tTnt.x, tTnt.y, tTnt.z);
-    return;
-  }
-  // 熔炉:右键打开冶炼面板
-  const tFurnace = raycastTarget();
-  if (tFurnace && getBlock(tFurnace.x, tFurnace.y, tFurnace.z) === 'furnace') {
-    openFurnacePanel(tFurnace.x, tFurnace.y, tFurnace.z);
-    return;
+  // 交互方块(右键):合成台 / TNT / 熔炉 / 床 / 箱子 —— 单次射线统一分发
+  const tHit = raycastTarget();
+  if (tHit) {
+    const hitType = getBlock(tHit.x, tHit.y, tHit.z);
+    if (hitType === 'crafting_table') { openTablePanel(); return; }
+    if (hitType === 'tnt') { igniteTNT(tHit.x, tHit.y, tHit.z); return; }
+    if (hitType === 'furnace') { openFurnacePanel(tHit.x, tHit.y, tHit.z); return; }
+    if (hitType === 'bed') { trySleep(tHit.x, tHit.y, tHit.z); return; }
+    if (hitType === 'chest') { openChestPanel(tHit.x, tHit.y, tHit.z); return; }
   }
   if (item && item.kind === 'item') {
     showToast(`${itemName(item)} 不能放置,选中方块再放`);
@@ -3774,6 +3829,108 @@ function renderFurnacePanel() {
 }
 
 // ============================================================
+// 床(经典:夜间右键睡觉 → 跳到早晨 + 设置重生点;怪物太近睡不了)
+// ============================================================
+let spawnPoint = null;   // 床设置的重生点(null=回出生广场)
+
+function trySleep(x, y, z) {
+  if (sunHeight() > -0.05) { showToast('只能在夜晚睡觉'); return; }
+  for (const m of mobs) {
+    if (MOB_DEFS[m.type] && MOB_DEFS[m.type].hostile) {
+      const dx = m.mesh.position.x - x, dz = m.mesh.position.z - z;
+      if (dx * dx + dz * dz < 64) { showToast('附近有怪物,无法入睡'); return; }
+    }
+  }
+  spawnPoint = { x: x + 0.5, y: y + 1.1, z: z + 0.5 };
+  dayTime = 0.3;   // 直接跳到早晨
+  playerHP = PLAYER_MAX_HP; updateHPBar();
+  playerHunger = Math.min(20, playerHunger + 2); updateHungerBar();
+  showToast('😴 睡了个好觉,重生点已设在此床');
+  audio.play('place');
+  markDirtySave();
+}
+
+// ============================================================
+// 箱子(经典:右键打开 27 格储物;点击取出,点空格放入当前手持整组)
+// ============================================================
+const chests = new Map();   // "x,y,z" -> {x, y, z, slots: Array(27)}
+const CHEST_SLOTS = 27;
+let chestOpen = null;
+
+function getChest(x, y, z) {
+  const key = blockKey(x, y, z);
+  let c = chests.get(key);
+  if (!c) { c = { x, y, z, slots: new Array(CHEST_SLOTS).fill(null) }; chests.set(key, c); }
+  return c;
+}
+
+function openChestPanel(x, y, z) {
+  chestOpen = blockKey(x, y, z);
+  const c = getChest(x, y, z);
+  const panel = document.getElementById('chest-panel');
+  if (!panel) return;
+  panel.classList.remove('hidden');
+  if (document.pointerLockElement) document.exitPointerLock();
+  const closeBtn = document.getElementById('chest-close');
+  if (closeBtn) closeBtn.onclick = closeChestPanel;
+  // 惰性生成 27 个储物格
+  const gridEl = document.getElementById('chest-grid');
+  if (gridEl && gridEl.children.length === 0) {
+    for (let i = 0; i < CHEST_SLOTS; i++) {
+      const cell = document.createElement('div');
+      cell.className = 'inv-cell';
+      gridEl.appendChild(cell);
+    }
+  }
+  document.querySelectorAll('#chest-grid .inv-cell').forEach((cell, i) => {
+    cell.onclick = () => {
+      const it = c.slots[i];
+      if (it) {
+        // 有物:整组取出到快捷栏(工具带耐久)
+        const want = it.count || 1;
+        const got = pickupIntoInventory(it.kind || 'block', it.id, want, it.durability);
+        if (got >= want) c.slots[i] = null;
+        else it.count = want - got;
+      } else {
+        // 空:放入当前手持整组(保留耐久/数量)
+        const held = hotbar[currentSlot];
+        if (held) {
+          c.slots[i] = held;
+          hotbar[currentSlot] = null;
+          if (held.kind === 'block') selectedType = null;
+          buildHotbar(); updateHoldItem();
+        }
+      }
+      renderChestPanel();
+    };
+    cell.oncontextmenu = (e) => { e.preventDefault(); c.slots[i] = null; renderChestPanel(); };
+  });
+  renderChestPanel();
+}
+
+function closeChestPanel() {
+  chestOpen = null;
+  const panel = document.getElementById('chest-panel');
+  if (panel) panel.classList.add('hidden');
+}
+
+function renderChestPanel() {
+  if (!chestOpen) return;
+  const c = chests.get(chestOpen);
+  if (!c) { closeChestPanel(); return; }
+  document.querySelectorAll('#chest-grid .inv-cell').forEach((cell, i) => {
+    renderFurnaceCell(cell, c.slots[i]);   // 复用单元格渲染(图标+角标)
+  });
+}
+
+function clearChests() {
+  chests.clear();
+  chestOpen = null;
+  const panel = document.getElementById('chest-panel');
+  if (panel) panel.classList.add('hidden');
+}
+
+// ============================================================
 // 生命系统(无怪物,先建立基础设施:跌落/溺水伤害 + HUD + 存档)
 // ============================================================
 const PLAYER_MAX_HP = 20;   // 10 颗心,每心 2 点
@@ -3850,12 +4007,14 @@ function damagePlayer(amount) {
   if (playerHP <= 0) respawnPlayer();
 }
 
-// 死亡/重生:回到出生广场中心,满血;快捷栏(生存物资)保留
+// 死亡/重生:优先床重生点,否则回出生广场中心,满血;快捷栏(生存物资)保留
 let deathOverlayTimer = 0;
 function respawnPlayer() {
-  // 重生到出生广场中心(确定性,与 resetWorld 一致)
-  const plazaH = SEA_LEVEL + 6;
-  playerPos.set(0.5, plazaH + 1 + PLAYER_HEIGHT * 0.5, 0.5);
+  if (spawnPoint) playerPos.set(spawnPoint.x, spawnPoint.y, spawnPoint.z);
+  else {
+    const plazaH = SEA_LEVEL + 6;
+    playerPos.set(0.5, plazaH + 1 + PLAYER_HEIGHT * 0.5, 0.5);
+  }
   velocity.set(0, 0, 0);
   playerHP = PLAYER_MAX_HP;
   breathTimer = 0;
@@ -4463,6 +4622,14 @@ function applySave(rec) {
       furnaces.set(blockKey(f.x, f.y, f.z), { x: f.x, y: f.y, z: f.z, input: f.input || null, fuel: f.fuel || null, output: f.output || null, burnT: f.burnT || 0, burnMax: f.burnMax || 1, cookT: f.cookT || 0 });
     }
   }
+  // 恢复箱子内容与床重生点
+  chests.clear();
+  if (rec.chestsData) {
+    for (const c of rec.chestsData) {
+      chests.set(blockKey(c.x, c.y, c.z), { x: c.x, y: c.y, z: c.z, slots: c.slots || new Array(CHEST_SLOTS).fill(null) });
+    }
+  }
+  spawnPoint = (rec.spawnPoint && Number.isFinite(rec.spawnPoint.x) && Number.isFinite(rec.spawnPoint.y) && Number.isFinite(rec.spawnPoint.z)) ? rec.spawnPoint : null;
   saveDirty = false;
 }
 
@@ -4643,7 +4810,7 @@ function buildInventoryPanel() {
   addSection(grid, '方块');
   HOTBAR_ORDER.forEach(id => addCell({ kind: 'block', id }));
   // 新增方块也可取用
-  ['water', 'snow', 'gravel', 'door', 'door_iron', 'door_stone', 'door_gold', 'door_diamond', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt', 'furnace', 'glass'].forEach(id => addCell({ kind: 'block', id }));
+  ['water', 'snow', 'gravel', 'door', 'door_iron', 'door_stone', 'door_gold', 'door_diamond', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'bed', 'chest'].forEach(id => addCell({ kind: 'block', id }));
   addSection(grid, '材料 · 宝石');
   ITEM_ORDER.forEach(id => addCell({ kind: 'item', id, count: 64 }));
 }
@@ -4762,7 +4929,7 @@ function openTablePanel() {
   if (closeBtn) closeBtn.onclick = closeTablePanel;
   // 目录循环列表:方块 + 材料物品(矿石/圆石/木棍等,按 kind 区分图标)
   const catalog = HOTBAR_ORDER.map(id => ({ kind: 'block', id }))
-    .concat(['water', 'snow', 'gravel', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'sand'].map(id => ({ kind: 'block', id })))
+    .concat(['water', 'snow', 'gravel', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'sand', 'bed', 'chest', 'wool_red', 'wool_white'].map(id => ({ kind: 'block', id })))
     .concat(['gem_gold', 'gem_diamond', 'gem_emerald', 'arrow', 'stick', 'coal'].map(id => ({ kind: 'item', id })));
   document.querySelectorAll('#table-grid .inv-cell').forEach((cell, i) => {
     cell.onclick = () => {
@@ -5022,6 +5189,8 @@ async function saveSlot(name) {
       modifications: Array.from(modifications.entries()),
       cropTimersData: Array.from(cropTimers.entries()),
       furnacesData: Array.from(furnaces.values()).map(f => ({ x: f.x, y: f.y, z: f.z, input: f.input, fuel: f.fuel, output: f.output, burnT: f.burnT, burnMax: f.burnMax, cookT: f.cookT })),
+      chestsData: Array.from(chests.values()).map(c => ({ x: c.x, y: c.y, z: c.z, slots: c.slots })),
+      spawnPoint,
       doorsData: Array.from(doors.entries()).map(function(e){return [e[0], {x:e[1].x,y:e[1].y,z:e[1].z,type:e[1].type,open:e[1].open,facing:e[1].facing}];}),
       timestamp: Date.now(),
     };

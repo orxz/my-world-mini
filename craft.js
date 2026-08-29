@@ -55,6 +55,10 @@
     { name: '床(白)', pattern: ['wool_white', 'wool_white', 'wool_white', 'planks', 'planks', 'planks', null, null, null], result: { kind: 'block', id: 'bed' }, count: 1, shapeless: false },
     // 梯子:7 木棍 H 形(经典配方)
     { name: '梯子', pattern: ['stick', null, 'stick', 'stick', 'stick', 'stick', 'stick', null, 'stick'], result: { kind: 'block', id: 'ladder' }, count: 3, shapeless: false },
+    // 书:2 皮革 + 1 木棍(无序;经典纸+皮革的简化链)
+    { name: '书', pattern: ['leather', 'leather', 'stick', null], result: { kind: 'item', id: 'book' }, count: 1, shapeless: true },
+    // 书架:6 木板 + 3 书(经典配方)
+    { name: '书架', pattern: ['planks', 'planks', 'planks', 'book', 'book', 'book', 'planks', 'planks', 'planks'], result: { kind: 'block', id: 'bookshelf' }, count: 1, shapeless: false },
     // ---- 工具配方(3×3:3 材料上排 + 2 木棍中列,经典镐形)----
     { name: '木镐', pattern: ['planks', 'planks', 'planks', null, 'stick', null, null, 'stick', null], result: { kind: 'tool', id: 'pickaxe_wood' }, shapeless: false },
     { name: '石镐', pattern: ['cobblestone', 'cobblestone', 'cobblestone', null, 'stick', null, null, 'stick', null], result: { kind: 'tool', id: 'pickaxe_stone' }, shapeless: false },

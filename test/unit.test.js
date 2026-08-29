@@ -253,6 +253,14 @@ test('梯子:7 木棍 H 形(经典配方,×3)', () => {
   const r = matchRecipeGrid(G9(['stick', null, 'stick', 'stick', 'stick', 'stick', 'stick', null, 'stick']), 3, RECIPES);
   assert(r && r.name === '梯子' && r.result.id === 'ladder' && r.count === 3, 'got: ' + (r && r.name));
 });
+test('书:2 皮革 + 1 木棍(无序,皮革链闭环)', () => {
+  const r = matchRecipe([{ id: 'leather' }, { id: 'stick' }, { id: 'leather' }, null], RECIPES);
+  assert(r && r.name === '书' && r.result.id === 'book', 'got: ' + (r && r.name));
+});
+test('书架:6 木板 + 3 书(经典配方)', () => {
+  const r = matchRecipeGrid(G9(['planks', 'planks', 'planks', 'book', 'book', 'book', 'planks', 'planks', 'planks']), 3, RECIPES);
+  assert(r && r.name === '书架' && r.result.id === 'bookshelf', 'got: ' + (r && r.name));
+});
 
 console.log('\n=== 库存拾取(pickupIntoInventory / inventory.js) ===');
 const HB = (n) => new Array(n).fill(null);

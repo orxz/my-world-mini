@@ -42,11 +42,12 @@ const BLOCK_TYPES = {
   bed:          { name: '床',     top: '#c0392b', side: '#8a2820', bottom: '#6e4f2a', solid: true, tool: 'axe', hardness: 0.3 },
   chest:        { name: '箱子',   top: '#a0763a', side: '#96682e', bottom: '#8a5f28', solid: true, tool: 'axe', hardness: 1.8 },
   ladder:       { name: '梯子',   top: '#9a6b3f', side: '#9a6b3f', bottom: '#9a6b3f', solid: false, tool: 'axe', hardness: 0.5 },
+  bookshelf:    { name: '书架',   top: '#a0763a', side: '#96682e', bottom: '#8a5f28', solid: true, tool: 'axe', hardness: 1.5 },
 };
 const HOTBAR_ORDER = ['grass', 'dirt', 'stone', 'wood', 'leaves', 'sand', 'planks', 'brick'];
 
 // 方块数字 id(用于紧凑的 Uint8Array 区块存储)
-const BLOCK_ID = { air: 0, grass: 1, dirt: 2, stone: 3, wood: 4, leaves: 5, sand: 6, planks: 7, brick: 8, water: 9, snow: 10, gravel: 11, wool_red: 12, wool_yellow: 13, wool_white: 14, wool_black: 15, door: 16, door_iron: 17, door_stone: 18, door_gold: 19, door_diamond: 20, crafting_table: 21, cobblestone: 22, coal_ore: 23, iron_ore: 24, diamond_ore: 25, tnt: 26, furnace: 27, glass: 28, bed: 29, chest: 30, ladder: 31 };
+const BLOCK_ID = { air: 0, grass: 1, dirt: 2, stone: 3, wood: 4, leaves: 5, sand: 6, planks: 7, brick: 8, water: 9, snow: 10, gravel: 11, wool_red: 12, wool_yellow: 13, wool_white: 14, wool_black: 15, door: 16, door_iron: 17, door_stone: 18, door_gold: 19, door_diamond: 20, crafting_table: 21, cobblestone: 22, coal_ore: 23, iron_ore: 24, diamond_ore: 25, tnt: 26, furnace: 27, glass: 28, bed: 29, chest: 30, ladder: 31, bookshelf: 32 };
 const ID_TO_BLOCK = Object.keys(BLOCK_ID);
 
 // ============================================================
@@ -101,8 +102,9 @@ const ITEM_TYPES = {
   steak:       { name: '牛排',   color: '#8a4a2e', shape: 'meat' },
   mutton:      { name: '羊肉',   color: '#d07868', shape: 'meat' },
   leather:     { name: '皮革',   color: '#a8784a', shape: 'ingot' },
+  book:        { name: '书',     color: '#b03030', shape: 'book' },
 };
-const ITEM_ORDER = ['gem_diamond','gem_gold','gem_emerald','arrow','porkchop','cooked_porkchop','beef','steak','mutton','apple','stick','coal','iron_ingot','leather'];
+const ITEM_ORDER = ['gem_diamond','gem_gold','gem_emerald','arrow','porkchop','cooked_porkchop','beef','steak','mutton','apple','stick','coal','iron_ingot','leather','book'];
 // 食物表与堆叠上限来自纯函数模块 inventory.js(INVLIB)
 const FOODS = INVLIB.FOODS;
 
@@ -313,6 +315,37 @@ function drawBlockFace(ctx, type, face, s, seedRand) {
         ctx.moveTo(0, gy + Math.floor(seedRand() * 3));
         for (let gx = 0; gx <= s; gx += 4) ctx.lineTo(gx, gy + Math.floor(seedRand() * 4));
         ctx.stroke();
+      }
+      break;
+    }
+    case 'bookshelf': {
+      // 书架:木框 + 侧面三层彩色书脊(确定性),顶/底木板纹
+      if (face === 'top' || face === 'bottom') { noise(18); break; }
+      noise(18);
+      ctx.fillStyle = '#6e4f2a';
+      ctx.fillRect(0, 0, s, 2);
+      ctx.fillRect(Math.floor(s / 3), 2, 2, Math.floor(s / 3));
+      ctx.fillRect(Math.floor(s * 2 / 3), 2, 2, Math.floor(s / 3));
+      ctx.fillRect(0, Math.floor(s / 3), s, 2);
+      ctx.fillRect(Math.floor(s / 4), Math.floor(s / 3) + 2, 2, Math.floor(s / 3));
+      ctx.fillRect(Math.floor(s * 3 / 4), Math.floor(s / 3) + 2, 2, Math.floor(s / 3));
+      ctx.fillRect(0, Math.floor(s * 2 / 3), s, 2);
+      ctx.fillRect(0, s - 2, s, 2);
+      // 书脊(三层,确定性颜色)
+      const spineColors = ['#a03030', '#3a6a3a', '#3050a0', '#a08030', '#7a3a7a'];
+      let li = 0;
+      for (let row = 0; row < 3; row++) {
+        const y0 = 3 + row * Math.floor(s / 3);
+        let x = 3;
+        while (x < s - 3) {
+          const w = 1 + Math.floor(seedRand() * 2);
+          if (seedRand() < 0.82) {
+            ctx.fillStyle = spineColors[li % spineColors.length];
+            li++;
+            ctx.fillRect(x, y0, w, Math.floor(s / 3) - 3);
+          }
+          x += w + 1;
+        }
       }
       break;
     }
@@ -2070,6 +2103,17 @@ function drawMaterialIcon(ctx, itemId, size) {
     ctx.beginPath(); ctx.moveTo(-size * 0.24, size * 0.26); ctx.lineTo(size * 0.24, -size * 0.26); ctx.stroke();
     ctx.strokeStyle = 'rgba(255,235,200,0.35)'; ctx.lineWidth = size * 0.03;
     ctx.beginPath(); ctx.moveTo(-size * 0.2, size * 0.22); ctx.lineTo(size * 0.2, -size * 0.22); ctx.stroke();
+  } else if (def.shape === 'book') {
+    // 书:红色封面 + 白色书页边 + 书脊线
+    ctx.fillStyle = def.color;
+    ctx.fillRect(-size * 0.22, -size * 0.28, size * 0.44, size * 0.56);
+    ctx.strokeRect(-size * 0.22, -size * 0.28, size * 0.44, size * 0.56);
+    ctx.fillStyle = '#f0ead8';
+    ctx.fillRect(size * 0.14, -size * 0.24, size * 0.06, size * 0.48);
+    ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(-size * 0.1, -size * 0.28); ctx.lineTo(-size * 0.1, size * 0.28); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.fillRect(-size * 0.18, -size * 0.2, size * 0.05, size * 0.3);
   } else if (def.shape === 'meat') {
     // 猪排:粉色带骨肉排
     ctx.fillStyle = def.color;
@@ -5094,7 +5138,7 @@ function buildInventoryPanel() {
   addSection(grid, '方块');
   HOTBAR_ORDER.forEach(id => addCell({ kind: 'block', id }));
   // 新增方块也可取用
-  ['water', 'snow', 'gravel', 'door', 'door_iron', 'door_stone', 'door_gold', 'door_diamond', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'bed', 'chest', 'ladder'].forEach(id => addCell({ kind: 'block', id }));
+  ['water', 'snow', 'gravel', 'door', 'door_iron', 'door_stone', 'door_gold', 'door_diamond', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'bed', 'chest', 'ladder', 'bookshelf'].forEach(id => addCell({ kind: 'block', id }));
   addSection(grid, '材料 · 宝石');
   ITEM_ORDER.forEach(id => addCell({ kind: 'item', id, count: 64 }));
 }
@@ -5213,7 +5257,8 @@ function openTablePanel() {
   if (closeBtn) closeBtn.onclick = closeTablePanel;
   // 目录循环列表:方块 + 材料物品(矿石/圆石/木棍等,按 kind 区分图标)
   const catalog = HOTBAR_ORDER.map(id => ({ kind: 'block', id }))
-    .concat(['water', 'snow', 'gravel', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'sand', 'bed', 'chest', 'ladder', 'wool_red', 'wool_white'].map(id => ({ kind: 'block', id })))
+    .concat(['water', 'snow', 'gravel', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'sand', 'bed', 'chest', 'ladder', 'bookshelf', 'wool_red', 'wool_white'].map(id => ({ kind: 'block', id })))
+    .concat(['leather', 'book'].map(id => ({ kind: 'item', id })))
     .concat(['gem_gold', 'gem_diamond', 'gem_emerald', 'arrow', 'stick', 'coal'].map(id => ({ kind: 'item', id })));
   document.querySelectorAll('#table-grid .inv-cell').forEach((cell, i) => {
     cell.onclick = () => {

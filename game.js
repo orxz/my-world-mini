@@ -807,6 +807,11 @@ const FACE_SHADE = [0.86, 0.86, 1.0, 0.55, 0.72, 0.72];
 // 每面 UV 复用缓冲,避免每面分配 [ [u,v]×4 ] 小数组
 const faceUV = new Float64Array(8);
 
+// 水面 mesh 注册表(buildChunkMesh 维护):水面波动每帧只遍历水块,不扫全部 chunk
+const waterMeshes = [];
+function registerWaterMesh(wm) { waterMeshes.push(wm); }
+function unregisterWaterMesh(wm) { const i = waterMeshes.indexOf(wm); if (i >= 0) waterMeshes.splice(i, 1); }
+
 function buildChunkMesh(ch) {
   const ox = ch.cx * CHUNK_SIZE, oz = ch.cz * CHUNK_SIZE;
   const data = ch.data;
@@ -876,7 +881,7 @@ function buildChunkMesh(ch) {
   // 释放旧 mesh
   if (ch.mesh) {
     if (ch.mesh.solid) { scene.remove(ch.mesh.solid); ch.mesh.solid.geometry.dispose(); }
-    if (ch.mesh.water) { scene.remove(ch.mesh.water); ch.mesh.water.geometry.dispose(); }
+    if (ch.mesh.water) { scene.remove(ch.mesh.water); unregisterWaterMesh(ch.mesh.water); ch.mesh.water.geometry.dispose(); }
   }
   ch.mesh = {};
   ch.meshDirty = false;
@@ -909,6 +914,7 @@ function buildChunkMesh(ch) {
     wm.renderOrder = 1;
     scene.add(wm);
     ch.mesh.water = wm;
+    registerWaterMesh(wm);
     ch.hasMesh = true;
   }
 }
@@ -929,7 +935,7 @@ function updateChunks(playerWX, playerWZ) {
     if ((Math.abs(ch.cx - pcx) > R + 1 || Math.abs(ch.cz - pcz) > R + 1) && !(ch.cx === pcx && ch.cz === pcz)) {
       if (ch.mesh) {
         if (ch.mesh.solid) { scene.remove(ch.mesh.solid); ch.mesh.solid.geometry.dispose(); }
-        if (ch.mesh.water) { scene.remove(ch.mesh.water); ch.mesh.water.geometry.dispose(); }
+        if (ch.mesh.water) { scene.remove(ch.mesh.water); unregisterWaterMesh(ch.mesh.water); ch.mesh.water.geometry.dispose(); }
       }
       dirtyChunks.delete(ch);   // 已卸载的区块不再参与 mesh 重建
       chunks.delete(key);
@@ -1832,7 +1838,7 @@ function clearWorld() {
   for (const ch of chunks.values()) {
     if (ch.mesh) {
       if (ch.mesh.solid) { scene.remove(ch.mesh.solid); ch.mesh.solid.geometry.dispose(); }
-      if (ch.mesh.water) { scene.remove(ch.mesh.water); ch.mesh.water.geometry.dispose(); }
+      if (ch.mesh.water) { scene.remove(ch.mesh.water); unregisterWaterMesh(ch.mesh.water); ch.mesh.water.geometry.dispose(); }
     }
   }
   chunks.clear();
@@ -2103,6 +2109,39 @@ function drawMaterialIcon(ctx, itemId, size) {
     ctx.fillRect(-size * 0.3, size * 0.16, size * 0.1, size * 0.04);
   }
   ctx.restore();
+}
+
+// 单格轻量刷新(数量/耐久/图标变化时用,替代整条热栏 9 格 DOM 重建)
+function refreshHotbarSlot(i) {
+  const bar = document.getElementById('hotbar');
+  const slot = bar && bar.children[i];
+  if (!slot) { buildHotbar(); return; }
+  const item = hotbar[i];
+  slot.className = 'slot' + (i === currentSlot ? ' active' : '');
+  const oldCv = slot.querySelector('canvas'); if (oldCv) oldCv.remove();
+  const oldCnt = slot.querySelector('.cnt'); if (oldCnt) oldCnt.remove();
+  const oldDur = slot.querySelector('.dur'); if (oldDur) oldDur.remove();
+  const nameEl = slot.querySelector('.name');
+  if (nameEl) nameEl.textContent = itemName(item);
+  if (item) {
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 64;
+    slot.appendChild(cv);
+    drawItemIcon(item, cv);
+    if ((item.count || 1) > 1) {
+      const cnt = document.createElement('span');
+      cnt.className = 'cnt';
+      cnt.textContent = item.count;
+      slot.appendChild(cnt);
+    }
+    if (item.kind === 'tool') {
+      const bar2 = document.createElement('div');
+      bar2.className = 'dur';
+      const ratio = item.durability / TOOL_TYPES[item.id].durability;
+      bar2.innerHTML = `<span style="width:${Math.max(0, ratio) * 100}%;background:${ratio > 0.5 ? '#5fd35f' : ratio > 0.2 ? '#e0c040' : '#d35f5f'}"></span>`;
+      slot.appendChild(bar2);
+    }
+  }
 }
 
 function buildHotbar() {
@@ -2709,10 +2748,8 @@ function breakBlock() {
     if (tool.durability <= 0) {
       showToast(`${TOOL_TYPES[tool.id].name} 坏了!`);
       hotbar[currentSlot] = null;
-      buildHotbar();
-    } else {
-      buildHotbar();
     }
+    refreshHotbarSlot(currentSlot);   // 单格轻量刷新(每击一次都触发)
   }
   markDirtySave();
 }
@@ -2727,7 +2764,7 @@ function consumeSelected() {
     hotbar[currentSlot] = null;
     selectedType = null;
   }
-  buildHotbar();
+  refreshHotbarSlot(currentSlot);   // 单格轻量刷新(替代 9 格重建)
 }
 
 function placeBlock() {
@@ -2843,7 +2880,7 @@ function consumeToolDurability(item) {
     showToast(`${TOOL_TYPES[item.id].name} 坏了!`);
     hotbar[currentSlot] = null;
   }
-  buildHotbar();
+  refreshHotbarSlot(currentSlot);   // 单格轻量刷新(破坏方块每次都触发,避免 9 格重建)
   markDirtySave();
 }
 
@@ -3075,11 +3112,20 @@ function spawnDroppedItem(x, y, z, itemId, count = 1, kind = 'block', durability
 
 // 拾取入栏(委托纯函数模块 inventory.js;渲染/存档副作用在此)
 function pickupIntoInventory(kind, id, count, durability) {
+  // 快照对比:只刷新发生变化的格(替代整条热栏重建)
+  const snap = hotbar.map(s => s ? (s.kind + ':' + s.id + ':' + (s.count || 0) + ':' + (s.durability || 0)) : null);
   const absorbed = INVLIB.pickupIntoInventory(hotbar, kind, id, count, {
     durability,
     defaultDurability: TOOL_TYPES[id] ? TOOL_TYPES[id].durability : undefined,
   });
-  if (absorbed > 0) { buildHotbar(); markDirtySave(); }
+  if (absorbed > 0) {
+    for (let i = 0; i < HOTBAR_SIZE; i++) {
+      const it = hotbar[i];
+      const now = it ? (it.kind + ':' + it.id + ':' + (it.count || 0) + ':' + (it.durability || 0)) : null;
+      if (now !== snap[i]) refreshHotbarSlot(i);
+    }
+    markDirtySave();
+  }
   return absorbed;
 }
 
@@ -3937,8 +3983,8 @@ function furnaceCanSmelt(f) {
 
 // 熔炉状态机(每帧推进;燃烧中消耗燃料,完成后产出)
 function updateFurnaces(dt) {
-  let panelDirty = false;
   for (const [key, f] of furnaces) {
+    let changed = false;   // 仅本炉发生变化才刷新面板(修复:此前 dirty 一旦置位,每帧全渲染)
     const can = furnaceCanSmelt(f);
     if (f.burnT > 0) f.burnT -= dt;
     // 火灭了且还能烧:消耗 1 个燃料点燃
@@ -3946,7 +3992,7 @@ function updateFurnaces(dt) {
       f.burnMax = f.burnT = FUELS[f.fuel.id] * COOK_TIME;
       f.fuel.count = (f.fuel.count || 1) - 1;
       if (f.fuel.count <= 0) f.fuel = null;
-      panelDirty = true;
+      changed = true;
     }
     if (f.burnT > 0 && can) {
       f.cookT += dt;
@@ -3957,13 +4003,13 @@ function updateFurnaces(dt) {
         if (f.input.count <= 0) f.input = null;
         if (f.output) f.output.count = (f.output.count || 1) + 1;
         else f.output = { kind: res.kind, id: res.id, count: 1 };
-        panelDirty = true;
+        changed = true;
       }
     } else if (f.cookT > 0) {
       f.cookT = 0;   // 中断(没料/没火):进度归零
-      panelDirty = true;
+      changed = true;
     }
-    if (panelDirty && furnaceOpen === key) renderFurnacePanel();
+    if (changed && furnaceOpen === key) renderFurnacePanel();
   }
 }
 
@@ -4534,7 +4580,10 @@ let sunMeshRef = null, moonMeshRef = null;
 // 昼夜循环更新:根据 dayTime 调整光照强度/方向、天空与雾色、太阳/月亮位置
 // 注意:仅在非水下时覆盖背景/雾色(水下色调由 animate 的 inWater 逻辑接管,优先级最高)
 // 全周期 = 120 秒,昼夜由平滑函数(sin/cos)过渡
-function updateDayNight(dt) {
+function updateDayNight(dt, waterNow) {
+  // waterNow: 本帧是否在水中(由 animate 计算一次传入,避免每帧多次 getBlock;
+  // 缺省时自行计算,便于独立调用/测试)
+  if (waterNow === undefined) waterNow = inWater();
   // 昼夜循环:受设置控制(可关闭/调速度)
   if (settings.dayNightEnabled) {
     dayTime += dt / (settings.dayCycleSpeed || 120);  // 速度可调(秒/周期)
@@ -4588,7 +4637,7 @@ function updateDayNight(dt) {
     _dayColor.lerp(_dayColorB, dusk);
   }
   // 仅在非水下时覆盖背景/雾色(水下色调在 animate 中以更高优先级设置)
-  if (!inWater()) {
+  if (!waterNow) {
     if (scene.background.getHex() !== _dayColor.getHex()) {
       scene.background.setHex(_dayColor.getHex());
     }
@@ -4605,9 +4654,10 @@ function updateDayNight(dt) {
     if (str !== _lastDaytimeStr) { _daytimeEl.textContent = str; _lastDaytimeStr = str; }
   }
 
-  // 天穹渐变色 + 星星透明度(随昼夜)
-  updateSky(tDay);
+  // 天穹渐变色 + 星星透明度(随昼夜;每 4 帧刷新一次——颜色变化缓慢,降 75% 顶点上传)
+  if ((skyFrame++ & 3) === 0) updateSky(tDay);
 }
+let skyFrame = 0;
 let _daytimeEl = null;      // 昼夜时间 DOM 元素缓存
 let _lastDaytimeStr = '';
 
@@ -4720,15 +4770,16 @@ function animate() {
     }
   }
 
+  // 水态每帧只算一次(getBlock 字符串 key 查询),供昼夜/雾色/天穹可见性共用
+  const inWaterNow = inWater();
   // 昼夜循环:推进 dayTime 并调整光照/天空/天体(updateDayNight 内部仅在非水下时覆盖背景/雾)
-  updateDayNight(dt);
-  // 水面呼吸波动(所有水网格整体微幅升降)
+  updateDayNight(dt, inWaterNow);
+  // 水面呼吸波动(注册表遍历,只碰水 mesh)
   const waterBob = Math.sin(now * 0.0012) * 0.035;
-  for (const ch of chunks.values()) { if (ch.mesh && ch.mesh.water) ch.mesh.water.position.y = waterBob; }
+  for (const wm of waterMeshes) wm.position.y = waterBob;
   // 雾/背景:水中色调优先级最高(覆盖昼夜色调),水下视野大幅拉近(沉浸感)
   // 出水后由 updateDayNight 在下一帧重新应用昼夜色
   const _waterBg = 0x1f5fa8, _waterBg2 = 0x143d6e;
-  const inWaterNow = inWater();
   skyGroup.visible = !inWaterNow;   // 水下隐藏天穹/星星(蓝雾接管)
   if (inWaterNow) {
     if (scene.background.getHex() !== _waterBg) {

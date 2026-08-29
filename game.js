@@ -498,10 +498,15 @@ function ensureChunk(cx, cz) {
     growTreesInChunk(cx, cz);
     dirtyChunks.add(ch);
     // 新区块出现时,已存在(已构建 mesh)的相邻区块边界面可能需要重算
+    // (含对角:树冠可跨区块角落伸入对角区块)
     markChunkDirty(cx - 1, cz);
     markChunkDirty(cx + 1, cz);
     markChunkDirty(cx, cz - 1);
     markChunkDirty(cx, cz + 1);
+    markChunkDirty(cx - 1, cz - 1);
+    markChunkDirty(cx - 1, cz + 1);
+    markChunkDirty(cx + 1, cz - 1);
+    markChunkDirty(cx + 1, cz + 1);
   }
   return ch;
 }
@@ -1693,6 +1698,7 @@ function resetWorld() {
   initInventory();              // 重置快捷栏
   buildHotbar();
   playerHP = PLAYER_MAX_HP; breathTimer = 0; updateHPBar();   // 重置生命
+  playerHunger = 20; hungerDrain = 0; regenTimer = 0; starveTimer = 0; updateHungerBar();   // 重置饥饿
   for (let dx = -2; dx <= 2; dx++)
     for (let dz = -2; dz <= 2; dz++)
       ensureChunk(dx, dz);
@@ -1959,11 +1965,9 @@ function selectSlot(i) {
   if (i < 0 || i >= HOTBAR_SIZE || !Number.isInteger(i)) return;
   currentSlot = i;
   const item = hotbar[i];
-  if (item) {
-    if (item.kind === 'block') { selectedType = item.id; lastSelectedBlock = item.id; }
-  } else {
-    selectedType = null;   // 空手:无可放置方块
-  }
+  // 选中方块格记录可放置类型;工具/物品/空格置空(放置走各自分支)
+  selectedType = (item && item.kind === 'block') ? item.id : null;
+  if (selectedType) lastSelectedBlock = selectedType;
   document.querySelectorAll('#hotbar .slot').forEach(s => {
     s.classList.toggle('active', +s.dataset.slot === i);
   });
@@ -2006,19 +2010,18 @@ function setupInput() {
     if (e.code === 'F5') { e.preventDefault(); cycleCameraMode(); }
     if (e.code === 'KeyE') toggleInventory(true);
     if (e.code === 'KeyQ') {
-      // 经典丢弃:手持方块整组丢出(掉落物保留数量,可再拾回)
+      // 经典丢弃:手持任意物品整组丢出(掉落物保留类型/数量/工具耐久,可再拾回)
       const it = hotbar[currentSlot];
-      if (it && it.kind === 'block') {
+      if (it) {
         const fx = -Math.sin(yaw) * Math.cos(pitch), fy = Math.sin(pitch), fz = -Math.cos(yaw) * Math.cos(pitch);
-        spawnDroppedItem(playerPos.x + fx * 1.2, playerPos.y + fy * 1.2, playerPos.z + fz * 1.2, it.id, it.count || 1);
+        const d = spawnDroppedItem(playerPos.x + fx * 1.2, playerPos.y + fy * 1.2, playerPos.z + fz * 1.2,
+          it.id, it.kind === 'tool' ? 1 : (it.count || 1), it.kind, it.durability);
+        d.userData.pickupDelay = 0.8;   // 丢弃后稍等再可拾取,避免瞬间吸回
         hotbar[currentSlot] = null;
-        selectedType = null;
-        showToast('丢弃:' + BLOCK_TYPES[it.id].name);
-      } else if (it) {
-        hotbar[currentSlot] = null;
-        showToast('空手');
+        if (it.kind === 'block') selectedType = null;
+        showToast('丢弃:' + itemName(it));
+        buildHotbar(); updateHoldItem(); markDirtySave();
       }
-      buildHotbar(); updateHoldItem(); markDirtySave();
     }
   });
   addEventListener('keyup', (e) => { keys[e.code] = false; });
@@ -2803,7 +2806,7 @@ function getItemDropMat(id) {
   }
   return itemDropMatCache[id];
 }
-function spawnDroppedItem(x, y, z, itemId, count = 1, kind = 'block') {
+function spawnDroppedItem(x, y, z, itemId, count = 1, kind = 'block', durability) {
   if (!dropItemGeo) dropItemGeo = new THREE.BoxGeometry(0.3, 0.3, 0.3);
   const mat = materials[itemId] || getItemDropMat(itemId);
   const mesh = new THREE.Mesh(dropItemGeo, mat);
@@ -2812,6 +2815,7 @@ function spawnDroppedItem(x, y, z, itemId, count = 1, kind = 'block') {
     kind,
     type: itemId,
     count: count || 1,   // 掉落物携带数量(Q 丢弃整组时保留)
+    durability,          // 工具耐久(Q 丢弃工具时保留,拾取时还原)
     life: 30,          // 30 秒后消失
     pickupDelay: 0.5,  // 生成后 0.5 秒内不可拾取,避免刚破坏就吸回
     vy: 1.5 + Math.random() * 1.0,   // 初始上抛一点
@@ -2823,8 +2827,19 @@ function spawnDroppedItem(x, y, z, itemId, count = 1, kind = 'block') {
 }
 
 // 拾取入栏:优先叠加同 id 未满格,其次放入空格;返回吸收数量(0=快捷栏已满)
-function pickupIntoInventory(kind, id, count) {
+// 工具(kind==='tool')不堆叠:进空格并保留耐久
+function pickupIntoInventory(kind, id, count, durability) {
   let left = count;
+  if (kind === 'tool') {
+    for (let i = 0; i < HOTBAR_SIZE && left > 0; i++) {
+      if (!hotbar[i]) {
+        hotbar[i] = { kind, id, durability: (durability === undefined ? TOOL_TYPES[id].durability : durability) };
+        left -= 1;
+      }
+    }
+    if (left < count) { buildHotbar(); markDirtySave(); }
+    return count - left;
+  }
   for (let i = 0; i < HOTBAR_SIZE && left > 0; i++) {
     const it = hotbar[i];
     if (it && it.kind === kind && it.id === id && (it.count || 1) < BLOCK_STACK_MAX) {
@@ -2876,7 +2891,7 @@ function updateDroppedItems(dt) {
       const dy = d.position.y - playerPos.y;
       if (dx * dx + dy * dy + dz * dz < 1.44) {
         const want = u.count || 1;
-        const got = pickupIntoInventory(u.kind || 'block', u.type, want);
+        const got = pickupIntoInventory(u.kind || 'block', u.type, want, u.durability);
         if (got > 0) {
           audio.play('place');   // 拾取音
           if (got >= want) { scene.remove(d); droppedItems.splice(i, 1); continue; }
@@ -3887,6 +3902,7 @@ function animate() {
   const prevVy = velocity.y;
   if (locked) updatePlayer(dt, prevVy);
   if (locked) updateFallingBlocks(dt);             // 沙砾重力(暂停时冻结)
+  if (locked) updateDroppedItems(dt);              // 掉落物(暂停时冻结)
   if (locked && settings.mobs) updateMobs(dt);     // 生物(暂停时冻结)
   updateArrows(dt);
   updateDroppedItems(dt);
@@ -4321,8 +4337,20 @@ function renderCraftGrid() {
   const cells = document.querySelectorAll('#craft-grid .inv-cell');
   cells.forEach((cell, i) => {
     const old = cell.querySelector('canvas'); if (old) old.remove();
+    const badge = cell.querySelector('.cnt'); if (badge) badge.remove();
     const item = craftGrid[i];
-    if (item) { const cv = document.createElement('canvas'); cv.width = cv.height = 48; drawItemIcon(item, cv); cell.appendChild(cv); }
+    if (item) {
+      const cv = document.createElement('canvas');
+      cv.width = cv.height = 48;
+      drawItemIcon(item, cv);
+      cell.appendChild(cv);
+      if ((item.count || 1) > 1) {
+        const c = document.createElement('span');
+        c.className = 'cnt';
+        c.textContent = item.count;
+        cell.appendChild(c);
+      }
+    }
   });
 }
 
@@ -4395,13 +4423,16 @@ function openTablePanel() {
   if (clearBtn) clearBtn.onclick = clearTableGrid;
   const closeBtn = document.getElementById('table-close');
   if (closeBtn) closeBtn.onclick = closeTablePanel;
-  const blockList = HOTBAR_ORDER.slice().concat(['water', 'snow', 'gravel', 'crafting_table', 'planks', 'wood', 'stone']);
+  // 目录循环列表:方块 + 材料物品(金锭/钻石/箭 —— 3×3 专属配方所需,按 kind 区分图标)
+  const catalog = HOTBAR_ORDER.map(id => ({ kind: 'block', id }))
+    .concat(['water', 'snow', 'gravel', 'crafting_table'].map(id => ({ kind: 'block', id })))
+    .concat(['gem_gold', 'gem_diamond', 'gem_emerald', 'arrow'].map(id => ({ kind: 'item', id })));
   document.querySelectorAll('#table-grid .inv-cell').forEach((cell, i) => {
     cell.onclick = () => {
       const cur = tableGrid[i];
-      let idx = cur ? blockList.indexOf(cur.id) : -1;
-      idx = (idx + 1) % blockList.length;
-      tableGrid[i] = { kind: 'block', id: blockList[idx] };
+      let idx = cur ? catalog.findIndex(c => c.kind === cur.kind && c.id === cur.id) : -1;
+      idx = (idx + 1) % catalog.length;
+      tableGrid[i] = { kind: catalog[idx].kind, id: catalog[idx].id };
       renderTableGrid(); refreshTableResult();
     };
     cell.oncontextmenu = (e) => { e.preventDefault(); tableGrid[i] = null; renderTableGrid(); refreshTableResult(); };
@@ -4414,15 +4445,8 @@ function closeTablePanel() {
   tableOpen = false;
   const panel = document.getElementById('craft-table-panel');
   if (panel) panel.classList.add('hidden');
-  // 归还格内物品到快捷栏(放不下的掉在地上)
-  for (let i = 0; i < 9; i++) {
-    const it = tableGrid[i];
-    if (!it) continue;
-    const want = it.count || 1;
-    const got = pickupIntoInventory(it.kind || 'block', it.id, want);
-    if (got < want) spawnDroppedItem(playerPos.x, playerPos.y, playerPos.z, it.id, want - got, it.kind || 'block');
-    tableGrid[i] = null;
-  }
+  // 面板格内物品为目录演示来源:关闭/清空不退回(仅合成时消耗每格 1 个)
+  for (let i = 0; i < 9; i++) tableGrid[i] = null;
   renderTableGrid();
   refreshTableResult();
 }

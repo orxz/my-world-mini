@@ -66,6 +66,24 @@
 - 实测:白天拒绝/夜晚跳早晨+回血/重生到床/拆床清点;箱子存 dirt×7 取回/
   拆箱掉 coal×4;单测 50→52;面板截图确认(角标+耐久条)
 
+### R16 评审修复轮 ✅ 已验证(进度 16/50)
+子代理审查 R4-R15 发现 1 Critical + 6 Important,全部修复:
+- **Critical #1**:overwriteSave(自动保存唯一路径)缺 furnacesData/chestsData/
+  spawnPoint → 每次自动保存后读档,箱子/熔炉内容与重生点被静默清空!
+  修复:提取 buildSaveRecord() 字段单一来源,saveSlot/overwriteSave 共用
+- **#2** updateDroppedItems 每帧被调两次(重力×2、寿命×2,死亡掉落 15 秒即消失)
+  → 只保留 locked 门控调用一次;**#12** updateArrows 加 locked 门控
+  (面板打开时骷髅之箭不再继续飞行伤人)
+- **#3** 雨滴垂直区为绝对世界 Y[0,30],山地(y>30)无雨 → 以 playerPos.y 为基准
+  (y < py-12 回收到 py+12..18)
+- **#4** 拆箱/拆炉掉落丢工具耐久(拾起变满耐久漏洞)→ 传 it.durability
+- **#5** 箱子放入/熔炉状态变化从不 markDirtySave → 即使修了 #1 也不会触发
+  自动保存 → 均已接入(changed 标记/放入路径)
+- **#6** 天气无 30% roll,每周期必下雨 → 加 Math.random()<0.3 概率判定
+- **#7** respawnPlayer 不重置饥饿(重生饥饿 0 持续掉血)→ 重置 hungerState
+- 实测:saveRecord 三字段齐全、箱子放入 saveDirty true→触发、重生饥饿 20/
+  drain 0、roll 统计生效、单测 69/69、lint 0/0
+
 ### R15 死亡掉落轮 ✅ 已验证(进度 15/50)
 - **死亡掉落(经典)**:死亡(respawnPlayer 入口)时快捷栏全部物品掉落在死亡
   地点周围(轻微散布),含方块数量/材料/食物/工具耐久;重生后回到死亡点可全数

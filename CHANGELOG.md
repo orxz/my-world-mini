@@ -6,6 +6,11 @@
 ## [Unreleased]
 
 ### 变更(R10 起)
+- **存档持久化加固(R16 评审修复)**:提取 buildSaveRecord() 单一来源,修复
+  overwriteSave(自动保存)缺 furnacesData/chestsData/spawnPoint 导致读档清空
+  箱子/熔炉/重生点的 Critical 数据丢失;箱子/熔炉变动接入 markDirtySave;
+  拆箱/炉掉落保留工具耐久;双重 updateDroppedItems 修复(掉落寿命恢复正常);
+  箭矢随暂停冻结;雨区改相对玩家高度(山地有雨);天气 30% roll;重生重置饥饿
 - **生物战斗平衡(R12 平衡轮)**:僵尸攻击冷却 1.2→1.5s(经典间隔);
   骷髅箭伤 3→2;苦力怕爆炸 16→14 且衰减曲线更陡(2.6 倍半径);
   剑空挥不再扣耐久(经典:命中生物才损耗)

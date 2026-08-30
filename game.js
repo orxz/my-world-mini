@@ -1262,17 +1262,20 @@ function updateWeather(dt) {
   if (!settings.weather) { if (weather !== 'clear') { weather = 'clear'; if (rainMesh) rainMesh.visible = false; updateRainAudio(); } return; }
   weatherTimer -= dt;
   if (weatherTimer <= 0) {
-    if (weather === 'clear') { setWeather('rain'); weatherTimer = 45 + Math.random() * 45; }
-    else { setWeather('clear'); weatherTimer = 120 + Math.random() * 120; }
+    if (weather === 'clear') {
+      // 晴天到期:30% 概率下雨,否则重置计时继续等(经典随机)
+      if (Math.random() < 0.3) { setWeather('rain'); weatherTimer = 45 + Math.random() * 45; }
+      else weatherTimer = 120 + Math.random() * 120;
+    } else { setWeather('clear'); weatherTimer = 120 + Math.random() * 120; }
   }
-  // 雨滴下落 + 跟随玩家(超界回顶循环)
+  // 雨滴下落 + 跟随玩家(超界回顶循环;垂直以玩家为基准,山地高处也有雨)
   if (weather === 'rain' && rainMesh) {
     const posAttr = rainMesh.geometry.attributes.position;
     const arr = posAttr.array, spd = rainMesh.userData.speeds;
-    const px = playerPos.x, pz = playerPos.z;
+    const px = playerPos.x, pz = playerPos.z, py = playerPos.y;
     for (let i = 0; i < RAIN_COUNT; i++) {
       let y = arr[i * 3 + 1] - spd[i] * dt;
-      if (y < 0) y = 26 + Math.random() * 4;
+      if (y < py - 12) y = py + 12 + Math.random() * 6;
       arr[i * 3 + 1] = y;
       // 水平跟随:保持雨滴在玩家周围区域内(超出则折返)
       const dx = arr[i * 3] - px, dz = arr[i * 3 + 2] - pz;
@@ -2860,7 +2863,7 @@ function breakBlock() {
     const c = chests.get(ck);
     if (c) {
       for (const it of c.slots) {
-        if (it) spawnDroppedItem(t.x, t.y, t.z, it.id, it.count || 1, it.kind || 'block');
+        if (it) spawnDroppedItem(t.x, t.y, t.z, it.id, it.count || 1, it.kind || 'block', it.durability);
       }
       chests.delete(ck);
       if (chestOpen === ck) closeChestPanel();
@@ -2880,7 +2883,7 @@ function breakBlock() {
     const f = furnaces.get(fk);
     if (f) {
       for (const it of [f.input, f.fuel, f.output]) {
-        if (it) spawnDroppedItem(t.x, t.y, t.z, it.id, it.count || 1, it.kind || 'block');
+        if (it) spawnDroppedItem(t.x, t.y, t.z, it.id, it.count || 1, it.kind || 'block', it.durability);
       }
       furnaces.delete(fk);
       if (furnaceOpen === fk) closeFurnacePanel();
@@ -4164,6 +4167,7 @@ function updateFurnaces(dt) {
       f.cookT = 0;   // 中断(没料/没火):进度归零
       changed = true;
     }
+    if (changed) markDirtySave();   // 熔炉状态变化需触发自动保存
     if (changed && furnaceOpen === key) renderFurnacePanel();
   }
 }
@@ -4322,6 +4326,7 @@ function openChestPanel(x, y, z) {
           hotbar[currentSlot] = null;
           if (held.kind === 'block') selectedType = null;
           buildHotbar(); updateHoldItem();
+          markDirtySave();   // 箱子内容变化需触发自动保存
         }
       }
       renderChestPanel();
@@ -4459,7 +4464,8 @@ function respawnPlayer() {
   velocity.set(0, 0, 0);
   playerHP = PLAYER_MAX_HP;
   breathTimer = 0;
-  updateHPBar();
+  hungerState.hunger = 20; hungerState.drain = 0; hungerState.regenT = 0; hungerState.starveT = 0;   // 经典:死亡重置饥饿
+  updateHPBar(); updateHungerBar();
   // 显示"你死了"遮罩,2 秒后淡出
   const el = document.getElementById('death-overlay');
   if (el) { el.style.opacity = '1'; el.style.display = 'flex'; }
@@ -4850,10 +4856,9 @@ function animate() {
   if (locked) updateTNT(dt);                       // 点燃的 TNT(暂停时冻结)
   updateWeather(dt);                               // 天气(晴雨随机调度,暂停也推进)
   updateFurnaces(dt);                              // 熔炉冶炼(经典:暂停也持续燃烧)
-  if (locked) updateDroppedItems(dt);              // 掉落物(暂停时冻结)
+  if (locked) updateDroppedItems(dt);              // 掉落物(暂停时冻结;每帧仅一次)
   if (locked && settings.mobs) updateMobs(dt);     // 生物(暂停时冻结)
-  updateArrows(dt);
-  updateDroppedItems(dt);
+  if (locked) updateArrows(dt);                    // 箭矢(暂停时冻结,避免面板开着被骷髅射中)
   updateParticles(dt);   // 粒子效果
   updateDoorAnim(dt);    // 门开关动画
   updateDamageVignette(dt);
@@ -5641,21 +5646,8 @@ async function saveSlot(name) {
   try {
     const db = await openDB();
     if (!db) return null;
-    const rec = {
-      name: name || ('存档 ' + new Date().toLocaleString('zh-CN')),
-      seed: worldSeed,
-      playerPos: { x: playerPos.x, y: playerPos.y, z: playerPos.z },
-      yaw, pitch, cameraMode, isFlying,
-      playerHP, breathTimer: 0, playerHunger: hungerState.hunger,
-      hotbar, currentSlot,
-      modifications: Array.from(modifications.entries()),
-      cropTimersData: Array.from(cropTimers.entries()),
-      furnacesData: Array.from(furnaces.values()).map(f => ({ x: f.x, y: f.y, z: f.z, input: f.input, fuel: f.fuel, output: f.output, burnT: f.burnT, burnMax: f.burnMax, cookT: f.cookT })),
-      chestsData: Array.from(chests.values()).map(c => ({ x: c.x, y: c.y, z: c.z, slots: c.slots })),
-      spawnPoint,
-      doorsData: Array.from(doors.entries()).map(function(e){return [e[0], {x:e[1].x,y:e[1].y,z:e[1].z,type:e[1].type,open:e[1].open,facing:e[1].facing}];}),
-      timestamp: Date.now(),
-    };
+    const rec = buildSaveRecord();
+    rec.name = name || ('存档 ' + new Date().toLocaleString('zh-CN'));
     const tx = db.transaction(STORE, 'readwrite');
     return new Promise((resolve) => {
       const r = tx.objectStore(STORE).add(rec);
@@ -5665,23 +5657,31 @@ async function saveSlot(name) {
   } catch (e) { return null; }
 }
 
-// 覆盖保存当前存档:autosave 使用 overwriteSave;saveGame 已并入自动保存流程,移除死代码
+// 构建存档记录(字段单一来源:saveSlot 新建与 overwriteSave 覆盖共用,防止字段漂移)
+function buildSaveRecord() {
+  return {
+    seed: worldSeed,
+    playerPos: { x: playerPos.x, y: playerPos.y, z: playerPos.z },
+    yaw, pitch, cameraMode, isFlying,
+    playerHP, breathTimer: 0, playerHunger: hungerState.hunger,
+    hotbar, currentSlot,
+    modifications: Array.from(modifications.entries()),
+    cropTimersData: Array.from(cropTimers.entries()),
+    furnacesData: Array.from(furnaces.values()).map(f => ({ x: f.x, y: f.y, z: f.z, input: f.input, fuel: f.fuel, output: f.output, burnT: f.burnT, burnMax: f.burnMax, cookT: f.cookT })),
+    chestsData: Array.from(chests.values()).map(c => ({ x: c.x, y: c.y, z: c.z, slots: c.slots })),
+    spawnPoint,
+    doorsData: Array.from(doors.entries()).map(function(e){return [e[0], {x:e[1].x,y:e[1].y,z:e[1].z,type:e[1].type,open:e[1].open,facing:e[1].facing}];}),
+    timestamp: Date.now(),
+  };
+}
+
 async function overwriteSave(id) {
   try {
     const db = await openDB();
     if (!db) return false;
-    const rec = {
-      id, name: ('存档 ' + new Date().toLocaleString('zh-CN')),
-      seed: worldSeed,
-      playerPos: { x: playerPos.x, y: playerPos.y, z: playerPos.z },
-      yaw, pitch, cameraMode, isFlying,
-      playerHP, breathTimer: 0, playerHunger: hungerState.hunger,
-      hotbar, currentSlot,
-      doorsData: Array.from(doors.entries()).map(function(e){return [e[0], {x:e[1].x,y:e[1].y,z:e[1].z,type:e[1].type,open:e[1].open,facing:e[1].facing}];}),
-      modifications: Array.from(modifications.entries()),  // C2:不能丢失!
-      cropTimersData: Array.from(cropTimers.entries()),
-      timestamp: Date.now(),
-    };
+    const rec = buildSaveRecord();
+    rec.id = id;
+    rec.name = ('存档 ' + new Date().toLocaleString('zh-CN'));
     // 保留原名称:先读旧记录的 name
     const tx = db.transaction(STORE, 'readwrite');
     return new Promise((resolve) => {

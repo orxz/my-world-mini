@@ -1690,16 +1690,17 @@ function cycleCameraMode() {
 // 新手教程(分步引导 + 完成自动检测;localStorage 记忆已完成)
 // ============================================================
 const TUTORIAL_STEPS = [
-  { id: 'welcome', title: '👋 欢迎来到我的世界!', desc: '这是一个体素沙盒世界:挖矿、合成、建造、生存。跟着教程学会基本操作吧!(Esc 可跳过)', goal: null },
+  { id: 'welcome', title: '👋 欢迎来到我的世界!', desc: '这是一个体素沙盒世界:挖矿、合成、建造、生存。跟着教程学会基本操作吧!(Esc 可跳过;教程期间夜晚不会刷怪,放心学)', goal: null },
   { id: 'move',   title: '① 移动', desc: '按 W/A/S/D 键走动起来', goal: { type: 'move', n: 8 } },
-  { id: 'look',   title: '② 环顾四周', desc: '移动鼠标转动视角观察世界', goal: { type: 'look', n: 2.5 } },
-  { id: 'break',  title: '③ 挖掘方块', desc: '对准方块按左键连续点击(有裂纹进度条),破坏 3 个', goal: { type: 'break', n: 3 } },
-  { id: 'pickup', title: '④ 拾取掉落物', desc: '走近地上旋转的小方块,自动拾取 3 个', goal: { type: 'pickup', n: 3 } },
-  { id: 'place',  title: '⑤ 放置方块', desc: '手持方块(快捷栏)对准地面按右键,放置 2 个', goal: { type: 'place', n: 2 } },
+  { id: 'look',   title: '② 环顾四周', desc: '移动鼠标转动视角观察世界(转约半圈即可)', goal: { type: 'look', n: 2.5 } },
+  { id: 'break',  title: '③ 挖掘方块', desc: '对准方块按住左键(出现裂纹进度条,现在可以长按连挖),破坏 3 个', goal: { type: 'break', n: 3 } },
+  { id: 'pickup', title: '④ 拾取掉落物', desc: '走近地上旋转的小方块,自动拾取 2 个', goal: { type: 'pickup', n: 2 } },
+  { id: 'place',  title: '⑤ 放置方块', desc: '手持方块对准地面按右键放置,放 2 个', goal: { type: 'place', n: 2 } },
   { id: 'slot',   title: '⑥ 切换快捷栏', desc: '按数字键 1-9 或滚轮切换手持物品,切换 2 次', goal: { type: 'slot', n: 2 } },
-  { id: 'inventory', title: '⑦ 背包与合成', desc: '按 E 打开背包 —— 上方是物品目录(点击发放),下方有 2×2 合成格(试试 1 木头→4 木板)', goal: { type: 'inventory', n: 1 } },
-  { id: 'survival', title: '💡 生存须知', desc: '夜晚会刷新僵尸/骷髅/苦力怕 —— 躲屋里或战斗!挖圆石→合成台→熔炉(烧铁锭);砍树→床(睡觉跳早晨+设重生点);猪排可烤熟(饥饿+12)。按 Q 丢弃物品;死亡会掉落物品,回原地可拾回。', goal: null },
-  { id: 'done',   title: '🎓 教程完成!', desc: '暂停菜单(Esc)→「操作说明」有完整手册。祝玩得开心!', goal: null },
+  { id: 'inventory', title: '⑦ 背包与合成', desc: '按 E 打开背包 —— 上方是物品目录(点击发放 ×64),下方有 2×2 合成格(试试 1 木头→4 木板)', goal: { type: 'inventory', n: 1 } },
+  { id: 'survival1', title: '💡 生存须知(上)', desc: '夜晚会刷新僵尸/骷髅/苦力怕,白天它们会燃烧 —— 入夜前砍树做一张床(3 羊毛+3 木板),右键睡觉跳到早晨并设重生点;怪物太近时睡不了。', goal: null },
+  { id: 'survival2', title: '💡 生存须知(下)', desc: '发展链:挖圆石→合成台(4 木板)→熔炉(8 圆石,烧铁锭/玻璃/熟肉);猪排烤熟回饥饿更多。按 Q 丢弃;死亡会掉落全部物品,回原地可拾回。', goal: null },
+  { id: 'done',   title: '🎓 教程完成!', desc: '背包(E)里有全部物品目录随时取用;暂停菜单(Esc)→「操作说明」有完整手册。祝玩得开心!', goal: null },
 ];
 
 const tutorial = {
@@ -1710,6 +1711,23 @@ const tutorial = {
 
 function tutorialStep() { return TUTORIAL_STEPS[tutorial.step]; }
 
+// 步骤描述动态化:place 步骤检测当前手持是否为方块,不是则追加引导
+function tutorialDesc(s) {
+  if (s.id === 'place') {
+    const held = hotbar[currentSlot];
+    if (!held || held.kind !== 'block') return s.desc + '<br><b style="color:#8a4a20;">→ 先按数字键选中刚才拾取的方块(快捷栏亮框那格)再放置</b>';
+  }
+  return s.desc;
+}
+
+// 目标进度的人类可读显示(look 用百分比,move 用格,其余用次)
+function tutorialProgressText(goal) {
+  const cur = Math.min(tutorial.progress[goal.type] || 0, goal.n);
+  if (goal.type === 'look') return Math.round(cur / goal.n * 100) + '%';
+  if (goal.type === 'move') return cur.toFixed(1) + ' / ' + goal.n + ' 格';
+  return Math.round(cur) + ' / ' + goal.n + ' 次';
+}
+
 function renderTutorialCard() {
   const el = document.getElementById('tutorial-card');
   if (!el || !tutorial.active) return;
@@ -1717,9 +1735,14 @@ function renderTutorialCard() {
   if (!s) { el.classList.add('hidden'); return; }
   el.classList.remove('hidden');
   const goal = s.goal;
-  const prog = goal ? `<div class="tut-progress">${Math.min(tutorial.progress[goal.type] || 0, goal.n).toFixed(goal.type === 'move' || goal.type === 'look' ? 1 : 0)} / ${goal.n}${goal.type === 'move' ? ' 格' : goal.type === 'look' ? ' 弧度' : ' 次'}</div>` : '';
+  let prog = '', bar = '';
+  if (goal) {
+    const pct = Math.min(100, Math.round((tutorial.progress[goal.type] || 0) / goal.n * 100));
+    prog = `<div class="tut-progress">${tutorialProgressText(goal)}</div>`;
+    bar = `<div class="tut-bar"><div class="tut-bar-fill" style="width:${pct}%;"></div></div>`;
+  }
   const btn = goal ? '' : `<button class="craft-btn" id="tut-next" style="margin-top:8px;">继续 ▶</button>`;
-  el.innerHTML = `<div class="tut-title">${s.title}</div><div class="tut-desc">${s.desc}</div>${prog}${btn}
+  el.innerHTML = `<div class="tut-title">${s.title}</div><div class="tut-desc">${tutorialDesc(s)}</div>${prog}${bar}${btn}
     <div class="tut-skip" id="tut-skip">跳过教程</div><div class="tut-step-ind">${tutorial.step + 1} / ${TUTORIAL_STEPS.length}</div>`;
   // 到达完成卡即标记教程已完成(不再自动弹出)
   if (s.id === 'done') { try { localStorage.setItem('myword_tutorial_done', '1'); } catch (e2) {} }
@@ -1737,6 +1760,7 @@ function startTutorial(force) {
   tutorial.active = true;
   tutorial.step = 0;
   tutorial.progress = { move: 0, look: 0, break: 0, pickup: 0, place: 0, slot: 0, inventory: 0 };
+  delete tutorial._lx; delete tutorial._lz;   // 重开时清除上次的位移基准
   renderTutorialCard();
 }
 
@@ -3938,6 +3962,7 @@ function explodeAt(cx, cy, cz, radius, maxDamage) {
 // 夜间在距玩家 ≥12 格处生成敌对生物(僵尸 65% / 苦力怕 35%);关闭怪物或昼夜循环 = 和平模式
 function trySpawnHostile() {
   if (!settings.hostiles || !settings.dayNightEnabled) return;
+  if (tutorial.active) return;   // 新手教程期间不刷敌对生物(安全学习;跳过教程即恢复)
   if (sunHeight() > -0.05) return;   // 仅夜间
   if (countHostiles() >= HOSTILE_CAP || chunks.size === 0) return;
   const arr = Array.from(chunks.values());

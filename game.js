@@ -4432,7 +4432,25 @@ function damagePlayer(amount) {
 
 // 死亡/重生:优先床重生点,否则回出生广场中心,满血;快捷栏(生存物资)保留
 let deathOverlayTimer = 0;
+// 死亡掉落(经典):快捷栏全部物品掉落在死亡地点,重生后可回收(工具保留耐久)
+function dropInventoryOnDeath() {
+  for (let i = 0; i < HOTBAR_SIZE; i++) {
+    const it = hotbar[i];
+    if (!it) continue;
+    // 轻微散布在死亡点周围,便于拾取
+    const dx = (Math.random() - 0.5) * 1.6;
+    const dz = (Math.random() - 0.5) * 1.6;
+    spawnDroppedItem(playerPos.x + dx - 0.5, playerPos.y - 0.9, playerPos.z + dz - 0.5,
+      it.id, it.kind === 'tool' ? 1 : (it.count || 1), it.kind, it.durability);
+    hotbar[i] = null;
+  }
+  selectedType = null;
+  buildHotbar();
+  updateHoldItem();
+}
+
 function respawnPlayer() {
+  dropInventoryOnDeath();
   if (spawnPoint) playerPos.set(spawnPoint.x, spawnPoint.y, spawnPoint.z);
   else {
     const plazaH = SEA_LEVEL + 6;

@@ -1686,6 +1686,86 @@ function cycleCameraMode() {
 // 第十一部分:初始化
 // ============================================================
 // 经典 MC 标题屏:程序化泥土像素贴图平铺 + 半透明暗化(CSS 渐变叠加)
+// ============================================================
+// 新手教程(分步引导 + 完成自动检测;localStorage 记忆已完成)
+// ============================================================
+const TUTORIAL_STEPS = [
+  { id: 'welcome', title: '👋 欢迎来到我的世界!', desc: '这是一个体素沙盒世界:挖矿、合成、建造、生存。跟着教程学会基本操作吧!(Esc 可跳过)', goal: null },
+  { id: 'move',   title: '① 移动', desc: '按 W/A/S/D 键走动起来', goal: { type: 'move', n: 8 } },
+  { id: 'look',   title: '② 环顾四周', desc: '移动鼠标转动视角观察世界', goal: { type: 'look', n: 2.5 } },
+  { id: 'break',  title: '③ 挖掘方块', desc: '对准方块按左键连续点击(有裂纹进度条),破坏 3 个', goal: { type: 'break', n: 3 } },
+  { id: 'pickup', title: '④ 拾取掉落物', desc: '走近地上旋转的小方块,自动拾取 3 个', goal: { type: 'pickup', n: 3 } },
+  { id: 'place',  title: '⑤ 放置方块', desc: '手持方块(快捷栏)对准地面按右键,放置 2 个', goal: { type: 'place', n: 2 } },
+  { id: 'slot',   title: '⑥ 切换快捷栏', desc: '按数字键 1-9 或滚轮切换手持物品,切换 2 次', goal: { type: 'slot', n: 2 } },
+  { id: 'inventory', title: '⑦ 背包与合成', desc: '按 E 打开背包 —— 上方是物品目录(点击发放),下方有 2×2 合成格(试试 1 木头→4 木板)', goal: { type: 'inventory', n: 1 } },
+  { id: 'survival', title: '💡 生存须知', desc: '夜晚会刷新僵尸/骷髅/苦力怕 —— 躲屋里或战斗!挖圆石→合成台→熔炉(烧铁锭);砍树→床(睡觉跳早晨+设重生点);猪排可烤熟(饥饿+12)。按 Q 丢弃物品;死亡会掉落物品,回原地可拾回。', goal: null },
+  { id: 'done',   title: '🎓 教程完成!', desc: '暂停菜单(Esc)→「操作说明」有完整手册。祝玩得开心!', goal: null },
+];
+
+const tutorial = {
+  active: false,
+  step: 0,
+  progress: {},   // 各检测类型的累计量
+};
+
+function tutorialStep() { return TUTORIAL_STEPS[tutorial.step]; }
+
+function renderTutorialCard() {
+  const el = document.getElementById('tutorial-card');
+  if (!el || !tutorial.active) return;
+  const s = tutorialStep();
+  if (!s) { el.classList.add('hidden'); return; }
+  el.classList.remove('hidden');
+  const goal = s.goal;
+  const prog = goal ? `<div class="tut-progress">${Math.min(tutorial.progress[goal.type] || 0, goal.n).toFixed(goal.type === 'move' || goal.type === 'look' ? 1 : 0)} / ${goal.n}${goal.type === 'move' ? ' 格' : goal.type === 'look' ? ' 弧度' : ' 次'}</div>` : '';
+  const btn = goal ? '' : `<button class="craft-btn" id="tut-next" style="margin-top:8px;">继续 ▶</button>`;
+  el.innerHTML = `<div class="tut-title">${s.title}</div><div class="tut-desc">${s.desc}</div>${prog}${btn}
+    <div class="tut-skip" id="tut-skip">跳过教程</div><div class="tut-step-ind">${tutorial.step + 1} / ${TUTORIAL_STEPS.length}</div>`;
+  // 到达完成卡即标记教程已完成(不再自动弹出)
+  if (s.id === 'done') { try { localStorage.setItem('myword_tutorial_done', '1'); } catch (e2) {} }
+  const nextBtn = document.getElementById('tut-next');
+  if (nextBtn) nextBtn.onclick = () => { tutorial.step++; renderTutorialCard(); };
+  const skipBtn = document.getElementById('tut-skip');
+  if (skipBtn) skipBtn.onclick = endTutorial;
+}
+
+function startTutorial(force) {
+  if (tutorial.active) return;
+  if (!force) {
+    try { if (localStorage.getItem('myword_tutorial_done')) return; } catch (e) {}
+  }
+  tutorial.active = true;
+  tutorial.step = 0;
+  tutorial.progress = { move: 0, look: 0, break: 0, pickup: 0, place: 0, slot: 0, inventory: 0 };
+  renderTutorialCard();
+}
+
+function endTutorial() {
+  tutorial.active = false;
+  const el = document.getElementById('tutorial-card');
+  if (el) el.classList.add('hidden');
+  try { localStorage.setItem('myword_tutorial_done', '1'); } catch (e) {}
+}
+
+// 各系统上报进度(type 与 TUTORIAL_STEPS.goal.type 对应;完成后自动推进)
+function tutEvent(type, n) {
+  if (!tutorial.active) return;
+  const s = tutorialStep();
+  if (!s || !s.goal || s.goal.type !== type) return;
+  tutorial.progress[type] = (tutorial.progress[type] || 0) + n;
+  if (tutorial.progress[type] >= s.goal.n) {
+    tutorial.step++;
+    if (tutorial.step >= TUTORIAL_STEPS.length - 1) {
+      // 到达最后一步(完成卡)
+      tutorial.step = TUTORIAL_STEPS.length - 1;
+      try { localStorage.setItem('myword_tutorial_done', '1'); } catch (e) {}
+    }
+    renderTutorialCard();
+  } else {
+    renderTutorialCard();   // 刷新进度数字
+  }
+}
+
 function applyClassicMenuBackground() {
   const overlay = document.getElementById('overlay');
   if (!overlay) return;
@@ -2341,6 +2421,7 @@ function itemName(item) {
 let currentSlot = 0;
 function selectSlot(i) {
   if (i < 0 || i >= HOTBAR_SIZE || !Number.isInteger(i)) return;
+  if (i !== currentSlot) tutEvent('slot', 1);
   currentSlot = i;
   const item = hotbar[i];
   // 选中方块格记录可放置类型;工具/物品/空格置空(放置走各自分支)
@@ -2435,6 +2516,16 @@ function setupInput() {
     if (!gameStarted) gameStarted = true;
     overlay.classList.add('hidden');   // 直接隐藏开始遮罩(不依赖 pointer lock)
     enterGame();                        // 尝试锁定指针(失败也不影响进入)
+    startTutorial(false);               // 首次游戏(未完成过教程)自动开启
+  });
+  // 开始屏「新手教程」入口:强制开启
+  const btnTut = document.getElementById('btn-tutorial');
+  if (btnTut) btnTut.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!gameStarted) gameStarted = true;
+    overlay.classList.add('hidden');
+    enterGame();
+    startTutorial(true);
   });
 
   // 继续上次游戏入口(若有存档)
@@ -2617,6 +2708,13 @@ function setupInput() {
     saveSettings();
     showToast('怪物已' + (settings.hostiles ? '开启' : '关闭'));
   });
+  // 重新新手教程(暂停菜单)
+  const btnReplayTut = document.getElementById('btn-replay-tutorial');
+  if (btnReplayTut) btnReplayTut.addEventListener('click', () => {
+    document.getElementById('pause-menu').classList.add('hidden');
+    startTutorial(true);
+    showToast('教程已重新开始');
+  });
   // 天气开关(暂停菜单;关闭=强制晴天)
   const btnWeather = document.getElementById('btn-weather');
   if (btnWeather) btnWeather.addEventListener('click', () => {
@@ -2629,6 +2727,7 @@ function setupInput() {
   document.addEventListener('mousemove', (e) => {
     if (document.pointerLockElement !== renderer.domElement) return;
     yaw -= e.movementX * 0.0025;
+    if (tutorial.active) tutorial.progress.look = (tutorial.progress.look || 0) + Math.abs(e.movementX * 0.0025) + Math.abs(e.movementY * 0.0025), tutEvent('look', 0);
     pitch -= e.movementY * 0.0025;
     pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, pitch));
   });
@@ -2899,6 +2998,7 @@ function breakBlock() {
   breakProgress = 0; breakTargetKey = null;
   hideBreakOverlay();
   showToast(`破坏:${def.name}`);
+  tutEvent('break', 1);
   audio.play('break', type);
   if (tool) {
     tool.durability = Math.max(0, tool.durability - 1);
@@ -2982,6 +3082,7 @@ function placeBlock() {
   if (setBlock(nx, ny, nz, selectedType)) {
     spawnParticles(nx, ny, nz, new THREE.Color(BLOCK_TYPES[selectedType].top).getHex(), 4);
     showToast(`放置:${BLOCK_TYPES[selectedType].name}`);
+    tutEvent('place', 1);
     audio.play('place');
     markDirtySave();
     consumeSelected();
@@ -3276,6 +3377,7 @@ function pickupIntoInventory(kind, id, count, durability) {
     defaultDurability: TOOL_TYPES[id] ? TOOL_TYPES[id].durability : undefined,
   });
   if (absorbed > 0) {
+    tutEvent('pickup', absorbed);
     for (let i = 0; i < HOTBAR_SIZE; i++) {
       const it = hotbar[i];
       const now = it ? (it.kind + ':' + it.id + ':' + (it.count || 0) + ':' + (it.durability || 0)) : null;
@@ -4671,6 +4773,13 @@ function updatePlayer(dt, prevVy) {
   wasOnGround = onGround;
   // 记录最后安全位置(用于虚空救援):仅当稳稳站在实体方块上时更新
   if (onGround && !isFlying) lastSafePos.copy(playerPos);
+  // 教程:累计移动距离(仅落地行走计入)
+  if (tutorial.active) {
+    const dx = playerPos.x - (tutorial._lx === undefined ? playerPos.x : tutorial._lx);
+    const dz = playerPos.z - (tutorial._lz === undefined ? playerPos.z : tutorial._lz);
+    tutorial._lx = playerPos.x; tutorial._lz = playerPos.z;
+    if (onGround) tutEvent('move', Math.hypot(dx, dz));
+  }
 
   // 走路音效(按节拍)
   if (onGround && !isFlying) {
@@ -5189,6 +5298,7 @@ window.delSaveFromMgr = function(id) {
 
 function toggleInventory(open) {
   inventoryOpen = open;
+  if (open) tutEvent('inventory', 1);
   const panel = document.getElementById('inventory');
   if (!panel) return;
   if (open) {

@@ -252,6 +252,23 @@
     animation: panelIn .18s ease-out;
   }
   #chest-panel h3 { font-size: 18px; margin-bottom: 4px; color: #3F3F3F; text-shadow: 1px 1px 0 #DBDBDB; }
+
+  /* 新手教程卡片(经典灰岩小卡,屏幕中上) */
+  #tutorial-card {
+    position: fixed; left: 50%; top: 72px; transform: translateX(-50%);
+    z-index: 60; width: 340px; max-width: 92vw;
+    background: #C6C6C6; border: 3px solid;
+    border-color: #FEFEFE #4E4E4E #4E4E4E #FEFEFE;
+    box-shadow: inset 1px 1px 0 #DBDBDB, inset -1px -1px 0 #A0A0A0, 0 4px 18px rgba(0,0,0,0.4);
+    border-radius: 2px; padding: 12px 14px; color: #3F3F3F; text-align: center;
+    pointer-events: auto;
+  }
+  #tutorial-card .tut-title { font-size: 15px; font-weight: bold; color: #2F2F2F; margin-bottom: 6px; text-shadow: 1px 1px 0 #DBDBDB; }
+  #tutorial-card .tut-desc { font-size: 12.5px; line-height: 1.65; color: #4F4F4F; text-align: left; }
+  #tutorial-card .tut-progress { margin-top: 8px; font-size: 13px; font-weight: bold; color: #2a6a2a; }
+  #tutorial-card .tut-skip { margin-top: 8px; font-size: 11px; color: #888; cursor: pointer; text-decoration: underline; }
+  #tutorial-card .tut-skip:hover { color: #a03030; }
+  #tutorial-card .tut-step-ind { margin-top: 4px; font-size: 10px; color: #999; }
   .chest-grid { display: grid; grid-template-columns: repeat(9, 52px); gap: 4px; margin-top: 12px; }
   .chest-grid .inv-cell { width: 52px; height: 52px; }
   .chest-grid .inv-cell canvas { width: 34px; height: 34px; }
@@ -337,11 +354,13 @@
   <h2>Minecraft 风格 3D 体素小游戏 · 增强版</h2>
   <button id="btn-continue" class="menu-btn primary" style="display:none;margin-bottom:12px;">▶ 继续上次游戏</button>
   <div class="play">▶ 点击开始游戏(新世界)</div>
+  <div class="tut-entry menu-btn" id="btn-tutorial" style="width:auto;padding:8px 40px;margin-bottom:18px;font-size:14px;">📖 新手教程</div>
   <div class="controls">
-    <b>移动:</b> <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> &nbsp; <b>跳跃:</b> <kbd>空格</kbd> &nbsp; <b>下蹲:</b> <kbd>Shift</kbd><br>
-    <b>视角:</b> 鼠标移动 &nbsp; <b>破坏方块:</b> 鼠标左键(长按) &nbsp; <b>放置方块:</b> 鼠标右键<br>
-    <b>快捷栏:</b> 数字键 <kbd>1</kbd>-<kbd>9</kbd> 或滚轮 &nbsp; <b>背包:</b> <kbd>E</kbd> &nbsp; <b>切视角:</b> <kbd>F5</kbd><br>
-    <b>飞行:</b> 连按两次 <kbd>空格</kbd> &nbsp; <b>暂停:</b> <kbd>Esc</kbd> &nbsp; <b>世界无限:</b> 走动自动加载新区块
+    <b>移动:</b> <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> &nbsp; <b>跳跃:</b> <kbd>空格</kbd> &nbsp; <b>下蹲/悬停:</b> <kbd>Shift</kbd><br>
+    <b>视角:</b> 鼠标 &nbsp; <b>破坏:</b> 左键(连击) &nbsp; <b>放置/交互:</b> 右键 &nbsp; <b>丢弃:</b> <kbd>Q</kbd><br>
+    <b>快捷栏:</b> <kbd>1</kbd>-<kbd>9</kbd> / 滚轮 &nbsp; <b>背包/合成:</b> <kbd>E</kbd> &nbsp; <b>切视角:</b> <kbd>F5</kbd> &nbsp; <b>暂停:</b> <kbd>Esc</kbd><br>
+    <b>飞行:</b> 双击空格 &nbsp; <b>右键交互:</b> 合成台(3×3)/熔炉/箱子/床(睡觉)/TNT(点燃)<br>
+    <b>生存:</b> 挖矿→合成→烧炼;夜晚有怪,睡觉跳早晨;死亡掉落物品可回拾
   </div>
 </div>
 
@@ -424,6 +443,9 @@
   <div class="chest-grid" id="chest-grid"></div>
 </div>
 
+<!-- 新手教程卡片(随进度自动推进) -->
+<div id="tutorial-card" class="hidden"></div>
+
 <!-- 暂停菜单(游戏中按 Esc 唤起) -->
 <div id="pause-menu" class="hidden">
   <div class="pause-card">
@@ -437,13 +459,15 @@
     <button id="btn-mobs" class="menu-btn">动物:开</button>
     <button id="btn-hostiles" class="menu-btn">怪物:开</button>
     <button id="btn-weather" class="menu-btn">天气:开</button>
+    <button id="btn-replay-tutorial" class="menu-btn">📖 重新新手教程</button>
     <button id="btn-reset" class="menu-btn">重置世界(新地形)</button>
     <button id="btn-controls" class="menu-btn">操作说明</button>
     <div id="pause-controls" class="controls hidden">
-      <b>移动:</b> WASD &nbsp; <b>跳:</b> 空格 &nbsp; <b>下蹲/飞行下降:</b> Shift<br>
-      <b>视角:</b> 鼠标 &nbsp; <b>破坏:</b> 左键(长按,用对工具更快) &nbsp; <b>放置:</b> 右键<br>
-      <b>快捷栏:</b> 1-9 / 滚轮 &nbsp; <b>背包:</b> E &nbsp; <b>切视角:</b> F5<br>
-      <b>飞行:</b> 双击空格 &nbsp; <b>暂停:</b> Esc &nbsp; <b>世界:</b> 无限(走动自动加载)
+      <b>基础:</b> WASD 移动 · 空格跳/双击飞行 · Shift 下蹲/梯上悬停 · Q 丢弃整组 · F5 切视角<br>
+      <b>方块:</b> 左键连击破坏(用对工具更快) · 右键放置 · 破坏掉落物走近自动拾取<br>
+      <b>右键交互:</b> 合成台→3×3合成 · 熔炉→冶炼(铁矿→铁锭/沙→玻璃) · 箱子→27格储物 · 床→夜间睡觉跳早晨+设重生点 · TNT→点燃快跑<br>
+      <b>生存:</b> 挖圆石做熔炉/合成台 · 砍树做床 · 猪排烤熟回饥饿 · 梯子空格上爬 · 手持食物右键进食<br>
+      <b>战斗:</b> 剑近战(空挥不耗耐久) · 弓远程(需箭,骷髅掉箭) · 怪物夜间刷新、白天燃烧 · 死亡掉落物品回原地拾回
     </div>
   </div>
 </div>

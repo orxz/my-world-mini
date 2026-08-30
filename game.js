@@ -1197,6 +1197,11 @@ function updateSky(tDay) {
   _skyHorizon.copy(_dayColor);
   _skyTop.copy(_dayColor);
   if (tDay > 0) _skyTop.lerp(_zenithDay, 0.35 * tDay);
+  // 雨天:天穹整体灰化
+  if (weather === 'rain') {
+    _skyHorizon.lerp(_rainGray, 0.55);
+    _skyTop.lerp(_rainGray, 0.55);
+  }
   const pos = skyDomeGeo.attributes.position, col = skyDomeGeo.attributes.color;
   for (let i = 0; i < pos.count; i++) {
     const h = pos.getY(i) / 420;
@@ -1210,6 +1215,102 @@ function updateSky(tDay) {
   }
   col.needsUpdate = true;
   if (starMat) starMat.opacity = (1 - tDay) * 0.9;
+}
+
+// ============================================================
+// 天气系统(经典:随机下雨 —— 雨滴粒子 / 天色变暗 / 雨声;暂停菜单可关)
+// ============================================================
+const _rainGray = new THREE.Color(0x6a7580);
+let weather = 'clear';            // 'clear' | 'rain'
+let weatherTimer = 90;            // 距离下次天气 roll(秒)
+let rainMesh = null;              // 雨滴 Points
+const RAIN_COUNT = 420;
+const RAIN_AREA = 44;             // 覆盖半径(格)
+const RAIN_SPEED_MIN = 18, RAIN_SPEED_MAX = 26;
+
+function createRain() {
+  if (rainMesh) return;
+  const pos = new Float32Array(RAIN_COUNT * 3);
+  const spd = new Float32Array(RAIN_COUNT);
+  for (let i = 0; i < RAIN_COUNT; i++) {
+    pos[i * 3] = (Math.random() * 2 - 1) * RAIN_AREA;
+    pos[i * 3 + 1] = Math.random() * 28;
+    pos[i * 3 + 2] = (Math.random() * 2 - 1) * RAIN_AREA;
+    spd[i] = RAIN_SPEED_MIN + Math.random() * (RAIN_SPEED_MAX - RAIN_SPEED_MIN);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  const mat = new THREE.PointsMaterial({
+    color: 0x9ab8d8, size: 0.12, transparent: true, opacity: 0.65,
+    depthWrite: false, fog: true, sizeAttenuation: true,
+  });
+  rainMesh = new THREE.Points(geo, mat);
+  rainMesh.userData.speeds = spd;
+  rainMesh.visible = false;
+  rainMesh.frustumCulled = false;   // 手动跟随玩家,避免视锥剔除
+  scene.add(rainMesh);
+}
+
+function setWeather(w) {
+  weather = w;
+  if (rainMesh) rainMesh.visible = (w === 'rain');
+  updateRainAudio();
+  showToast(w === 'rain' ? '🌧️ 下雨了' : '🌤️ 雨停了');
+}
+
+function updateWeather(dt) {
+  if (!settings.weather) { if (weather !== 'clear') { weather = 'clear'; if (rainMesh) rainMesh.visible = false; updateRainAudio(); } return; }
+  weatherTimer -= dt;
+  if (weatherTimer <= 0) {
+    if (weather === 'clear') { setWeather('rain'); weatherTimer = 45 + Math.random() * 45; }
+    else { setWeather('clear'); weatherTimer = 120 + Math.random() * 120; }
+  }
+  // 雨滴下落 + 跟随玩家(超界回顶循环)
+  if (weather === 'rain' && rainMesh) {
+    const posAttr = rainMesh.geometry.attributes.position;
+    const arr = posAttr.array, spd = rainMesh.userData.speeds;
+    const px = playerPos.x, pz = playerPos.z;
+    for (let i = 0; i < RAIN_COUNT; i++) {
+      let y = arr[i * 3 + 1] - spd[i] * dt;
+      if (y < 0) y = 26 + Math.random() * 4;
+      arr[i * 3 + 1] = y;
+      // 水平跟随:保持雨滴在玩家周围区域内(超出则折返)
+      const dx = arr[i * 3] - px, dz = arr[i * 3 + 2] - pz;
+      if (dx > RAIN_AREA) arr[i * 3] -= RAIN_AREA * 2; else if (dx < -RAIN_AREA) arr[i * 3] += RAIN_AREA * 2;
+      if (dz > RAIN_AREA) arr[i * 3 + 2] -= RAIN_AREA * 2; else if (dz < -RAIN_AREA) arr[i * 3 + 2] += RAIN_AREA * 2;
+    }
+    posAttr.needsUpdate = true;
+  }
+}
+
+// 雨声:循环白噪声 + 低通(随天气开关淡入淡出)
+function updateRainAudio() {
+  if (!audio.ctx || !audio.masterGain) return;
+  if (weather === 'rain' && settings.weather && !audio._rainSrc) {
+    try {
+      const len = audio.ctx.sampleRate * 2;
+      const buf = audio.ctx.createBuffer(1, len, audio.ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+      const src = audio.ctx.createBufferSource();
+      src.buffer = buf; src.loop = true;
+      const filt = audio.ctx.createBiquadFilter();
+      filt.type = 'lowpass'; filt.frequency.value = 900;
+      const g = audio.ctx.createGain();
+      g.gain.value = 0;
+      g.gain.linearRampToValueAtTime(0.12, audio.ctx.currentTime + 2);   // 淡入
+      src.connect(filt); filt.connect(g); g.connect(audio.masterGain);
+      src.start();
+      audio._rainSrc = src; audio._rainGain = g;
+    } catch (e) { /* 音频失败静默 */ }
+  } else if (weather !== 'rain' && audio._rainSrc) {
+    try {
+      const g = audio._rainGain, src = audio._rainSrc;
+      g.gain.linearRampToValueAtTime(0, audio.ctx.currentTime + 1.5);   // 淡出
+      setTimeout(() => { try { src.stop(); } catch (e2) {} }, 1600);
+    } catch (e) { /* 忽略 */ }
+    audio._rainSrc = null; audio._rainGain = null;
+  }
 }
 
 // 更新云朵:缓慢 +x 方向飘动,越过 x=200 后重置到 x=-200(环绕)
@@ -1653,6 +1754,7 @@ function init() {
   createClouds();
   // 天空系统:渐变天穹 + 星星 + 日/月光晕(依赖 sunMeshRef/moonMeshRef)
   createSky();
+  createRain();   // 天气系统:雨滴粒子(默认隐藏,随机调度)
   // 破坏裂纹覆盖层
   createCrackOverlay();
 
@@ -2511,6 +2613,14 @@ function setupInput() {
     if (!settings.hostiles) clearHostiles();
     saveSettings();
     showToast('怪物已' + (settings.hostiles ? '开启' : '关闭'));
+  });
+  // 天气开关(暂停菜单;关闭=强制晴天)
+  const btnWeather = document.getElementById('btn-weather');
+  if (btnWeather) btnWeather.addEventListener('click', () => {
+    settings.weather = !settings.weather;
+    btnWeather.textContent = '天气:' + (settings.weather ? '开' : '关');
+    saveSettings();
+    showToast('天气已' + (settings.weather ? '开启' : '关闭'));
   });
 
   document.addEventListener('mousemove', (e) => {
@@ -4638,7 +4748,9 @@ function updateDayNight(dt, waterNow) {
   // 太阳角度:0=午夜,0.25=日出(东升),0.5=正午,0.75=日落(西落)
   const sunAngle = dayTime * Math.PI * 2 - Math.PI / 2;
   const sunH = Math.sin(sunAngle);       // -1..1(高度,>0 为白天)
-  const dayFactor = Math.max(0, sunH);   // 0..1,白天强度因子
+  let dayFactor = Math.max(0, sunH);   // 0..1,白天强度因子
+  // 雨天:白昼光照整体压暗 ~30%
+  if (weather === 'rain') dayFactor *= 0.7;
 
   // 光照强度:白天明亮(正午最强),夜晚昏暗
   // 用 dayFactor 平方做非线性过渡,白天更"亮得稳",黄昏过渡更柔和
@@ -4718,6 +4830,7 @@ function animate() {
   if (locked) updatePlayer(dt, prevVy);
   if (locked) updateFallingBlocks(dt);             // 沙砾重力(暂停时冻结)
   if (locked) updateTNT(dt);                       // 点燃的 TNT(暂停时冻结)
+  updateWeather(dt);                               // 天气(晴雨随机调度,暂停也推进)
   updateFurnaces(dt);                              // 熔炉冶炼(经典:暂停也持续燃烧)
   if (locked) updateDroppedItems(dt);              // 掉落物(暂停时冻结)
   if (locked && settings.mobs) updateMobs(dt);     // 生物(暂停时冻结)
@@ -5439,7 +5552,7 @@ const audio = {
 // 设置持久化(localStorage)
 // ============================================================
 const SETTINGS_KEY = 'myword_settings';
-let settings = { volume: 0.35, soundEnabled: true, fov: 75, renderDist: 5, dayNightEnabled: true, dayCycleSpeed: 120, mobs: true, hostiles: true };
+let settings = { volume: 0.35, soundEnabled: true, fov: 75, renderDist: 5, dayNightEnabled: true, dayCycleSpeed: 120, mobs: true, hostiles: true, weather: true };
 function loadSettings() {
   try {
     const s = localStorage.getItem(SETTINGS_KEY);
@@ -5460,6 +5573,8 @@ function loadSettings() {
   if (bm) bm.textContent = '动物:' + (settings.mobs ? '开' : '关');
   const bh = document.getElementById('btn-hostiles');
   if (bh) bh.textContent = '怪物:' + (settings.hostiles ? '开' : '关');
+  const bw = document.getElementById('btn-weather');
+  if (bw) bw.textContent = '天气:' + (settings.weather ? '开' : '关');
 }
 function saveSettings() {
   try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) {}

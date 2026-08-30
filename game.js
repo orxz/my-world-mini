@@ -2741,9 +2741,10 @@ function setupInput() {
       } catch (err) { /* 忽略锁定失败 */ }
       return;
     }
-    if (e.button === 0) breakBlock();
+    if (e.button === 0) { breakBlock(); mouseHeld = true; }
     else if (e.button === 2) placeBlock();
   });
+  renderer.domElement.addEventListener('mouseup', (e) => { if (e.button === 0) mouseHeld = false; });
   renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
 
   addEventListener('wheel', (e) => {
@@ -2795,7 +2796,7 @@ function setupInput() {
     bindBtn('touch-jump', () => { keys['Space'] = true; }, () => { keys['Space'] = false; });
   const tj = document.getElementById('touch-jump'); if (tj) tj.addEventListener('touchcancel', () => { keys['Space'] = false; });
   addEventListener('blur', () => { keys['Space'] = false; });
-    bindBtn('touch-break', () => { breakBlock(); });
+    bindBtn('touch-break', () => { breakBlock(); touchBreakHeld = true; }, () => { touchBreakHeld = false; });
     bindBtn('touch-place', () => { placeBlock(); });
     // 拖拽转视角(画面右半区拖动)
     let lookActive = false, lastX = 0, lastY = 0;
@@ -2940,7 +2941,6 @@ function breakBlock() {
   if (!type) return;
   if (t.y === 0) { showToast('基岩无法破坏'); return; }  // 基岩层不可挖
   if (type === 'water') { showToast('水不能破坏'); return; }
-  const def = BLOCK_TYPES[type];
 
   const cost = breakCost(type);
   breakCostTotal = cost;   // 供裂纹覆盖层换算阶段
@@ -2997,7 +2997,7 @@ function breakBlock() {
   spawnDroppedItem(t.x, t.y, t.z, dropType, dropCount, dropKind);
   breakProgress = 0; breakTargetKey = null;
   hideBreakOverlay();
-  showToast(`破坏:${def.name}`);
+  // 交互减噪:破坏不再逐次 toast(粒子/音效/裂纹已是充分反馈)
   tutEvent('break', 1);
   audio.play('break', type);
   if (tool) {
@@ -3095,32 +3095,31 @@ function useTool(item) {
   const now = performance.now();
   const cd = { sword: 350, bow: 600, shield: 500 }[def.tool] || 200;
   if (toolCooldown[item.id] && now - toolCooldown[item.id] < cd) return;
-  // cooldown set AFTER success checks (not before, to avoid locking failed actions)
   if (def.tool === 'sword') {
+    toolCooldown[item.id] = now;   // 交互:挥砍即进入冷却(经典攻击间隔)
     swingArm();
     swingHoldItem();
     const m = raycastMob(3.5);
     if (m) {
       hurtMob(m, def.damage || 3, -Math.sin(yaw), -Math.cos(yaw));
-      showToast(`挥砍:${def.name} · 伤害${def.damage} · 命中动物`);
+      showToast(`挥砍:${def.name} · 伤害${def.damage} · 命中生物`);
       audio.play('break');
       consumeToolDurability(item);   // 经典:命中才损耗耐久,空挥不扣
-    } else {
-      const t = raycastTarget();
-      showToast(`挥砍:${def.name} · 伤害${def.damage}` + (t ? ' · 命中' : ''));
     }
   } else if (def.tool === 'bow') {
     const arrowSlot = hotbar.findIndex(s => s && s.kind === 'item' && s.id === 'arrow' && s.count > 0);
     if (arrowSlot < 0) { showToast('没有箭,无法射击(背包取箭)'); return; }
+    toolCooldown[item.id] = now;   // 交互:射出才进入冷却(拉弓时间)
     hotbar[arrowSlot].count--;
     if (hotbar[arrowSlot].count <= 0) hotbar[arrowSlot] = null;
-    buildHotbar();
+    refreshHotbarSlot(arrowSlot);
     consumeToolDurability(item);
     shootArrow();
     swingHoldItem();
     audio.play('place');
     showToast(`射箭 · 剩余 ${hotbar[arrowSlot] ? hotbar[arrowSlot].count : 0} 支`);
   } else if (def.tool === 'shield') {
+    toolCooldown[item.id] = now;   // 交互:举盾进入冷却
     shieldActive = 0.6;
     swingHoldItem();
     showToast(`举盾:${def.name}`);
@@ -4320,10 +4319,21 @@ function openFurnacePanel(x, y, z) {
   renderFurnacePanel();
 }
 
+// 交互:关闭面板后自动重新锁定指针(无缝回到游戏,不必再点一下画面)
+function tryRelockPointer() {
+  if (!renderer || document.pointerLockElement === renderer.domElement) return;
+  if (inventoryOpen || tableOpen || furnaceOpen || chestOpen) return;   // 还有面板开着则不抢
+  try {
+    const p = renderer.domElement.requestPointerLock();
+    if (p && typeof p.catch === 'function') p.catch(() => {});
+  } catch (e) { /* 忽略 */ }
+}
+
 function closeFurnacePanel() {
   furnaceOpen = null;
   const panel = document.getElementById('furnace-panel');
   if (panel) panel.classList.add('hidden');
+  tryRelockPointer();
 }
 
 function renderFurnaceCell(el, it) {
@@ -4442,6 +4452,7 @@ function closeChestPanel() {
   chestOpen = null;
   const panel = document.getElementById('chest-panel');
   if (panel) panel.classList.add('hidden');
+  tryRelockPointer();
 }
 
 function renderChestPanel() {
@@ -4855,6 +4866,10 @@ let wasOnGround = false;   // 落地边沿检测
 let lastTime = performance.now();
 let fpsAcc = 0, fpsFrames = 0, fpsTimer = 0;
 let bobPhase = 0, bobAmp = 0;   // 第一人称行走视角摆动
+// 交互:按住左键/长按挖矿按钮 连续挖掘(经典 MC 手感)
+let mouseHeld = false;
+let touchBreakHeld = false;
+let autoMineTimer = 0;
 
 // 昼夜循环:dayTime 0..1(0=午夜,0.25=日出,0.5=正午,0.75=日落),起步 0.3(早晨)
 let dayTime = 0.3;
@@ -5035,6 +5050,14 @@ function animate() {
       if (p >= 1) { ud.swingT = 0; ud.armR.rotation.x = 0; }
       else { ud.armR.rotation.x = -Math.sin(p * Math.PI) * 1.6; }
     }
+  }
+
+  // 交互:按住左键(或长按移动端挖矿键)连续挖掘 —— 每 0.22 秒自动追加一次破坏点击
+  if (locked && (mouseHeld || touchBreakHeld)) {
+    autoMineTimer -= dt;
+    if (autoMineTimer <= 0) { autoMineTimer = 0.22; breakBlock(); }
+  } else {
+    autoMineTimer = 0;
   }
 
   const target = raycastTarget();
@@ -5308,6 +5331,7 @@ function toggleInventory(open) {
   } else {
     panel.classList.add('hidden');
     clearCraftGrid();
+    tryRelockPointer();   // 交互:关背包无缝回到游戏
   }
 }
 
@@ -5528,6 +5552,7 @@ function closeTablePanel() {
   for (let i = 0; i < 9; i++) tableGrid[i] = null;
   renderTableGrid();
   refreshTableResult();
+  tryRelockPointer();
 }
 
 function clearTableGrid() {

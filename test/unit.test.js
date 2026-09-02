@@ -601,6 +601,7 @@ test('validateSaveRecord 检出缺失字段(防 R16 类漂移)', () => {
   const miss = validateSaveRecord(rec);
   assert.ok(miss.includes('dayTime'));
   assert.ok(miss.includes('furnacesData'));
+  assert.ok(miss.includes('mobsData'));
   assert.ok(miss.includes('plazaBuilt'));
 });
 

@@ -119,7 +119,7 @@
     'seed', 'dayTime', 'playerPos', 'yaw', 'pitch', 'cameraMode', 'isFlying',
     'playerHP', 'playerHunger', 'hotbar', 'currentSlot', 'modifications',
     'cropTimersData', 'furnacesData', 'chestsData', 'spawnPoint',
-    'armorSlotsData', 'doorsData', 'minecartsData', 'plazaBuilt', 'timestamp',
+    'armorSlotsData', 'doorsData', 'minecartsData', 'mobsData', 'plazaBuilt', 'timestamp',
   ];
   // 返回缺失字段名数组(空数组 = 完整)
   function validateSaveRecord(rec) {

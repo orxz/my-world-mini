@@ -127,8 +127,10 @@ const ITEM_TYPES = {
   leather:     { name: '皮革',   color: '#a8784a', shape: 'ingot' },
   book:        { name: '书',     color: '#b03030', shape: 'book' },
   minecart:    { name: '矿车',   color: '#b8b8c0', shape: 'cart' },
+  string:      { name: '蛛丝',   color: '#e8e8e8', shape: 'stick' },
+  ender_pearl: { name: '末影珍珠', color: '#b06ee0', shape: 'gem' },
 };
-const ITEM_ORDER = ['gem_diamond','gem_gold','gem_emerald','arrow','porkchop','cooked_porkchop','beef','steak','mutton','apple','stick','coal','iron_ingot','leather','book','minecart'];
+const ITEM_ORDER = ['gem_diamond','gem_gold','gem_emerald','arrow','porkchop','cooked_porkchop','beef','steak','mutton','apple','stick','coal','iron_ingot','leather','book','minecart','string','ender_pearl'];
 // 食物表与堆叠上限来自纯函数模块 inventory.js(INVLIB)
 const FOODS = INVLIB.FOODS;
 
@@ -3846,6 +3848,8 @@ const MOB_DEFS = {
   zombie:   { hp: 20, hostile: true },
   creeper:  { hp: 20, hostile: true },
   skeleton: { hp: 16, hostile: true },
+  spider:   { hp: 16, hostile: true },     // R27:夜间敌对,白天中性(经典)
+  enderman: { hp: 40, hostile: false },    // R27:中立,被注视/被攻击才激怒
 };
 function countHostiles() {
   let n = 0;
@@ -3901,6 +3905,8 @@ function spawnMob(x, groundY, z, type) {
   const mesh = t === 'zombie' ? buildZombieMesh()
     : t === 'creeper' ? buildCreeperMesh()
     : t === 'skeleton' ? buildSkeletonMesh()
+    : t === 'spider' ? buildSpiderMesh()
+    : t === 'enderman' ? buildEndermanMesh()
     : t === 'cow' ? buildCowMesh()
     : t === 'sheep' ? buildSheepMesh()
     : buildPigMesh();
@@ -3954,6 +3960,75 @@ function buildZombieMesh() {
   };
   g.add(head, eyeL, eyeR, torso, mkArm(-1), mkArm(1), mkLeg(-1), mkLeg(1));
   g.userData = { legs: legGroups, arms, mats: [skin, shirt, pants], baseColors: [0x4a8a4a, 0x2a8a8a, 0x35459a] };
+  return g;
+}
+
+// 蜘蛛模型(R27):黑色扁身 + 红眼 + 侧伸 4 组腿(适配 4 腿摆动)
+function buildSpiderMesh() {
+  const g = new THREE.Group();
+  const bodyMat = new THREE.MeshLambertMaterial({ color: 0x2a2a30 });
+  const headMat = new THREE.MeshLambertMaterial({ color: 0x34343c });
+  const eyeMat = new THREE.MeshLambertMaterial({ color: 0xd03030 });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.4, 0.7), bodyMat);
+  body.position.set(0, 0.42, 0.18);
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.34, 0.36), headMat);
+  head.position.set(0, 0.38, -0.38);
+  const parts = [body, head];
+  for (const [ex, ez] of [[-0.12, -0.55], [0.12, -0.55], [-0.06, -0.57], [0.06, -0.57]]) {
+    const e = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.02), eyeMat);
+    e.position.set(ex, 0.44, ez);
+    parts.push(e);
+  }
+  const legGroups = [];
+  const mkLeg = (side, zo) => {
+    const lg = new THREE.Group();
+    const m = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.06, 0.08), bodyMat);
+    m.position.x = side * 0.32;
+    lg.add(m);
+    lg.position.set(0, 0.4, zo);
+    legGroups.push(lg);
+    return lg;
+  };
+  g.add(...parts, mkLeg(-1, -0.22), mkLeg(1, -0.22), mkLeg(-1, 0.28), mkLeg(1, 0.28));
+  g.userData = { legs: legGroups, mats: [bodyMat, headMat, eyeMat], baseColors: [0x2a2a30, 0x34343c, 0xd03030] };
+  return g;
+}
+
+// 末影人模型(R27):2.3 格高黑瘦人形 + 紫色横眼 + 长臂
+function buildEndermanMesh() {
+  const g = new THREE.Group();
+  const black = new THREE.MeshLambertMaterial({ color: 0x16161c });
+  const eyeMat = new THREE.MeshLambertMaterial({ color: 0xc06ae8 });
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.4, 0.42), black);
+  head.position.y = 2.05;
+  const eyeL = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.05, 0.03), eyeMat);
+  eyeL.position.set(-0.1, 2.08, -0.215);
+  const eyeR = eyeL.clone();
+  eyeR.position.x = 0.1;
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.9, 0.24), black);
+  torso.position.y = 1.4;
+  const arms = [];
+  const mkArm = (side) => {
+    const a = new THREE.Group();
+    const m = new THREE.Mesh(new THREE.BoxGeometry(0.11, 1.0, 0.11), black);
+    m.position.y = -0.5;
+    a.add(m);
+    a.position.set(side * 0.26, 1.82, 0);
+    arms.push(a);
+    return a;
+  };
+  const legGroups = [];
+  const mkLeg = (side) => {
+    const lg = new THREE.Group();
+    const m = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.95, 0.13), black);
+    m.position.y = -0.47;
+    lg.add(m);
+    lg.position.set(side * 0.1, 0.95, 0);
+    legGroups.push(lg);
+    return lg;
+  };
+  g.add(head, eyeL, eyeR, torso, mkArm(-1), mkArm(1), mkLeg(-1), mkLeg(1));
+  g.userData = { legs: legGroups, arms, mats: [black, eyeMat], baseColors: [0x16161c, 0xc06ae8] };
   return g;
 }
 
@@ -4209,6 +4284,83 @@ function zombieAI(m, dt, distP) {
     velocity.y = 4;   // 击退小跳
   }
   return burnStep(m, dt);
+}
+
+// ---- 蜘蛛 AI(R27):夜间快速爬行追击(经典白天中性化);近战 2 伤害 ----
+function spiderAI(m, dt, distP) {
+  const night = sunHeight() < 0.1;
+  if (night && distP < 20) {
+    m.yaw = faceYaw(m);
+    m.speed = 2.6;
+  } else {
+    wanderStep(m, dt, 1.2, 0.6);   // 白天变中性慢速游荡(经典)
+  }
+  m.attackCd -= dt;
+  if (distP < 1.5 && m.attackCd <= 0) {
+    m.attackCd = 1.2;
+    damagePlayer(2, 'combat');
+    const inv = 1 / Math.max(0.001, distP);
+    velocity.x += (playerPos.x - m.mesh.position.x) * inv * 6;
+    velocity.z += (playerPos.z - m.mesh.position.z) * inv * 6;
+    velocity.y = 4;
+  }
+  return false;
+}
+
+// ---- 末影人 AI(R27):中立游荡;被注视(0.8s)或被攻击激怒 → 高速追击(3.1)+
+//      近战 7 伤害;受击后短暂延迟瞬移(经典) ----
+function endermanAI(m, dt, distP) {
+  if (!m.angered) {
+    if (distP < 24) {
+      const p = m.mesh.position;
+      const tx = p.x - playerPos.x, ty = p.y - playerPos.y, tz = p.z - playerPos.z;
+      const dlen = Math.sqrt(tx * tx + ty * ty + tz * tz);
+      const dxv = -Math.sin(yaw) * Math.cos(pitch), dyv = Math.sin(pitch), dzv = -Math.cos(yaw) * Math.cos(pitch);
+      const cos = (tx * dxv + ty * dyv + tz * dzv) / dlen;
+      if (cos > 0.985) {   // 视线夹角 < ~10°
+        m.stareT = (m.stareT || 0) + dt;
+        if (m.stareT > 0.8) { m.angered = true; showToast('👁 末影人被激怒了!'); audio.play('zombie'); }
+      } else m.stareT = 0;
+    } else m.stareT = 0;
+    wanderStep(m, dt, 1.0, 0.5);
+  } else {
+    m.yaw = faceYaw(m);
+    m.speed = 3.1;
+  }
+  if (m.tpT > 0) {
+    m.tpT -= dt;
+    if (m.tpT <= 0) teleportEnderman(m);
+  }
+  m.attackCd -= dt;
+  if (m.angered && distP < 1.8 && m.attackCd <= 0) {
+    m.attackCd = 1.0;
+    damagePlayer(7, 'combat');
+    const inv = 1 / Math.max(0.001, distP);
+    velocity.x += (playerPos.x - m.mesh.position.x) * inv * 7;
+    velocity.z += (playerPos.z - m.mesh.position.z) * inv * 7;
+    velocity.y = 4.5;
+  }
+  return false;
+}
+
+// 末影人瞬移:随机 ±8 格找「实体上两格空气」的落点;紫粒子收发
+function teleportEnderman(m) {
+  for (let tries = 0; tries < 12; tries++) {
+    const nx = m.mesh.position.x + (Math.random() - 0.5) * 16;
+    const nz = m.mesh.position.z + (Math.random() - 0.5) * 16;
+    if (!chunks.has(chunkKey(Math.floor(nx / CHUNK_SIZE), Math.floor(nz / CHUNK_SIZE)))) continue;
+    const fx = Math.floor(nx), fz = Math.floor(nz);
+    for (let y = WORLD_HEIGHT - 3; y > 1; y--) {
+      if (isSolidAt(fx, y, fz) && !isSolidAt(fx, y + 1, fz) && !isSolidAt(fx, y + 2, fz)) {
+        spawnParticles(m.mesh.position.x, m.mesh.position.y, m.mesh.position.z, 0xb06ee0, 10);
+        m.mesh.position.set(nx, y + 1.45, nz);
+        m.vy = 0; m.kvx = m.kvz = 0;
+        spawnParticles(nx, y + 1, nz, 0xb06ee0, 10);
+        audio.play('place');
+        return;
+      }
+    }
+  }
 }
 
 // ---- 骷髅 AI:保持 7~11 格射程带(远则靠近/近则后退),2 秒一箭;白天燃烧 ----
@@ -4484,7 +4636,7 @@ function trySpawnHostile() {
       if (lightAtWorld(fx, y + 1, fz) < 8) {
         // 敌对生物池:僵尸 50% / 苦力怕 30% / 骷髅 20%
         const hr = Math.random();
-        spawnMob(wx, y + 1, fz, hr < 0.5 ? 'zombie' : hr < 0.8 ? 'creeper' : 'skeleton');
+        spawnMob(wx, y + 1, fz, hr < 0.4 ? 'zombie' : hr < 0.65 ? 'creeper' : hr < 0.85 ? 'skeleton' : hr < 0.95 ? 'spider' : 'enderman');
       }
     }
     break;   // 只看地表第一个非空气方块
@@ -4522,6 +4674,10 @@ function updateMobs(dt) {
       wanderStep(m, dt, 1.1, 0.6);
     } else if (m.type === 'zombie') {
       if (zombieAI(m, dt, distP)) continue;
+    } else if (m.type === 'spider') {
+      if (spiderAI(m, dt, distP)) continue;
+    } else if (m.type === 'enderman') {
+      if (endermanAI(m, dt, distP)) continue;
     } else if (m.type === 'skeleton') {
       if (skeletonAI(m, dt, distP)) continue;
     } else if (creeperAI(m, dt, distP)) {
@@ -4606,21 +4762,25 @@ function updateMobs(dt) {
 function hurtMob(m, dmg, kx, kz, silent) {
   m.hp -= dmg;
   m.hurtT = 0.25;
+  // 末影人被攻击即激怒,并短暂延迟后瞬移(经典)
+  if (m.type === 'enderman') { m.angered = true; m.tpT = 0.35; }
   m.kvx += kx * 6; m.kvz += kz * 6; m.vy = 4;
   const mats = m.mesh.userData.mats;
   for (let k = 0; k < mats.length; k++) mats[k].color.setHex(0xd05a5a);
   if (!silent) audio.play(m.type === 'zombie' ? 'zombie' : m.type === 'creeper' ? 'hurt' : 'pig');
   if (m.hp <= 0) {
     const p = m.mesh.position;
-    spawnParticles(p.x - 0.5, p.y - 0.5, p.z - 0.5, m.type === 'pig' ? 0xeba3a9 : m.type === 'cow' ? 0x6b4a2f : m.type === 'sheep' ? 0xe8e8e4 : 0x7a9a7a, 12);
+    spawnParticles(p.x - 0.5, p.y - 0.5, p.z - 0.5, m.type === 'pig' ? 0xeba3a9 : m.type === 'cow' ? 0x6b4a2f : m.type === 'sheep' ? 0xe8e8e4 : m.type === 'spider' ? 0x2a2a30 : m.type === 'enderman' ? 0x7a4a9a : 0x7a9a7a, 12);
     // 经典掉落(按生物类型)
     const dropAt = (id, kind, count) => spawnDroppedItem(p.x - 0.5, p.y - 0.2, p.z - 0.5, id, count, kind);
     if (m.type === 'pig') dropAt('porkchop', 'item', 1 + (Math.random() < 0.5 ? 1 : 0));
     else if (m.type === 'cow') { dropAt('beef', 'item', 1 + (Math.random() < 0.5 ? 1 : 0)); dropAt('leather', 'item', 1); }
     else if (m.type === 'sheep') { dropAt('mutton', 'item', 1 + (Math.random() < 0.5 ? 1 : 0)); dropAt('wool_white', 'block', 1); }
     else if (m.type === 'skeleton') dropAt('arrow', 'item', Math.random() < 0.7 ? 2 : 1);
+    else if (m.type === 'spider') dropAt('string', 'item', Math.random() < 0.5 ? 2 : 1);
+    else if (m.type === 'enderman' && Math.random() < 0.6) dropAt('ender_pearl', 'item', 1);
     killMob(m);
-    showToast(m.type === 'zombie' ? '🧟 击倒了僵尸' : m.type === 'creeper' ? '💥 击倒了苦力怕' : m.type === 'skeleton' ? '💀 击倒了骷髅' : m.type === 'cow' ? '🐮 击倒了牛' : m.type === 'sheep' ? '🐑 击倒了羊' : '🐷 击倒了猪');
+    showToast(m.type === 'zombie' ? '🧟 击倒了僵尸' : m.type === 'creeper' ? '💥 击倒了苦力怕' : m.type === 'skeleton' ? '💀 击倒了骷髅' : m.type === 'spider' ? '🕷 击倒了蜘蛛' : m.type === 'enderman' ? '🟣 击倒了末影人' : m.type === 'cow' ? '🐮 击倒了牛' : m.type === 'sheep' ? '🐑 击倒了羊' : '🐷 击倒了猪');
   }
 }
 
@@ -5853,6 +6013,16 @@ function applySave(rec) {
       if (Number.isFinite(mc.x) && Number.isFinite(mc.y) && Number.isFinite(mc.z)) spawnMinecart(mc.x, mc.y, mc.z);
     }
   }
+  // 恢复生物(R27:生物入存档 —— 类型/位置/血量;激怒/燃烧等瞬态重置)
+  clearMobs();
+  if (rec.mobsData) {
+    for (const md of rec.mobsData) {
+      if (!md || !MOB_DEFS[md.t] || !Number.isFinite(md.x) || !Number.isFinite(md.y) || !Number.isFinite(md.z)) continue;
+      spawnMob(md.x, md.y - 0.45, md.z, md.t);   // spawnMob 内部再 +0.45 回中心位
+      const mm = mobs[mobs.length - 1];
+      mm.hp = Math.max(1, Math.min(MOB_DEFS[md.t].hp, (typeof md.hp === 'number') ? md.hp : MOB_DEFS[md.t].hp));
+    }
+  }
   // 恢复护甲装备(4 部位;脏数据防御:非法 id/部位回 null)
   for (const s of ['head', 'chest', 'legs', 'feet']) {
     const a = rec.armorSlotsData ? rec.armorSlotsData.find(e => e && e[0] === s) : null;
@@ -6463,6 +6633,7 @@ function buildSaveRecord() {
     spawnPoint,
     armorSlotsData: ['head', 'chest', 'legs', 'feet'].map(s => armorSlots[s] ? [s, { id: armorSlots[s].id, durability: armorSlots[s].durability }] : [s, null]),
     minecartsData: minecarts.map(c => ({ x: c.cx, y: Math.round(c.y), z: c.cz })),
+    mobsData: mobs.map(mm => ({ t: mm.type, x: Math.round(mm.mesh.position.x * 100) / 100, y: Math.round(mm.mesh.position.y * 100) / 100, z: Math.round(mm.mesh.position.z * 100) / 100, hp: mm.hp })),
     doorsData: Array.from(doors.entries()).map(function(e){return [e[0], {x:e[1].x,y:e[1].y,z:e[1].z,type:e[1].type,open:e[1].open,facing:e[1].facing}];}),
     timestamp: Date.now(),
   };

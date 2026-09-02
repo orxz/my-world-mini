@@ -105,7 +105,7 @@ npm run serve    # python3 -m http.server 8843
 - **存档管理面板**:暂停菜单 → 「📂 存档管理」,列出所有存档(名称/位置/改动数/时间),可读取/删除
 - **自动保存**:有当前存档时,30 秒 + 暂停 + 改动防抖 自动覆盖保存
 - 只存 **种子 + 玩家改动 diff(modifications)**,不存全量方块,容量小加载快
-- 读档完全恢复:世界改动 + 玩家位置/朝向 + 快捷栏 + 视角模式
+- 读档完全恢复:世界改动 + 玩家位置/朝向 + 快捷栏 + 视角模式 + 世界时间(昼夜)
 
 ### 🔊 程序化音效(Web Audio,无外部文件)
 - 用 `OscillatorNode` + 白噪声合成,零依赖
@@ -236,7 +236,7 @@ npm run serve    # python3 -m http.server 8843
 
 ```bash
 npm install      # 安装开发依赖(ESLint 9)
-npm test         # 跑确定性函数单元测试(67 项)
+npm test         # 跑确定性函数单元测试(69 项)
 npm run lint     # ESLint 静态检查
 npm run serve    # 启动本地静态服务器 http://localhost:8843/
 ```
@@ -257,7 +257,7 @@ myword/
 ├── craft.js            合成与破坏计算模块(RECIPES/matchRecipe/breakCost,纯函数可独立测试)
 ├── inventory.js        库存/掉落/饥饿纯函数模块(pickupIntoInventory/hungerTick)
 ├── three.min.js        Three.js r160(已内置,离线可玩)
-├── test/unit.test.js   Node 单元测试(确定性函数验证,32 项)
+├── test/unit.test.js   Node 单元测试(确定性函数验证,69 项)
 ├── docs/               架构与模块文档(architecture.md / worldgen.md)
 ├── eslint.config.mjs   ESLint 9 flat config(仅开发期)
 ├── package.json        npm scripts(test / serve / lint)

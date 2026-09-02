@@ -1690,7 +1690,7 @@ function cycleCameraMode() {
 // 新手教程(分步引导 + 完成自动检测;localStorage 记忆已完成)
 // ============================================================
 const TUTORIAL_STEPS = [
-  { id: 'welcome', title: '👋 欢迎来到我的世界!', desc: '这是一个体素沙盒世界:挖矿、合成、建造、生存。跟着教程学会基本操作吧!(Esc 可跳过;教程期间夜晚不会刷怪,放心学)', goal: null },
+  { id: 'welcome', title: '👋 欢迎来到我的世界!', desc: '这是一个体素沙盒世界:挖矿、合成、建造、生存。跟着教程学会基本操作吧!(点下方「跳过教程」可随时跳过;教程期间夜晚不会刷怪,放心学)', goal: null },
   { id: 'move',   title: '① 移动', desc: '按 W/A/S/D 键走动起来', goal: { type: 'move', n: 8 } },
   { id: 'look',   title: '② 环顾四周', desc: '移动鼠标转动视角观察世界(转约半圈即可)', goal: { type: 'look', n: 2.5 } },
   { id: 'break',  title: '③ 挖掘方块', desc: '对准方块按住左键(出现裂纹进度条,现在可以长按连挖),破坏 3 个', goal: { type: 'break', n: 3 } },
@@ -1732,7 +1732,7 @@ function renderTutorialCard() {
   const el = document.getElementById('tutorial-card');
   if (!el || !tutorial.active) return;
   const s = tutorialStep();
-  if (!s) { el.classList.add('hidden'); return; }
+  if (!s) { endTutorial(); return; }   // 走完完成卡后正常结束(否则 active 永真,教程守卫会永久压制刷怪)
   el.classList.remove('hidden');
   const goal = s.goal;
   let prog = '', bar = '';
@@ -2108,6 +2108,7 @@ function clearWorld() {
   particles.length = 0;
   cropTimers.clear();
   clearDoors();
+  dayTime = 0.3;   // 新世界/切换存档前重置为早晨;读档由 applySave 按存档恢复(防跨存档时间串档)
 }
 
 function resetWorld() {
@@ -2564,7 +2565,9 @@ function setupInput() {
 
   document.addEventListener('pointerlockchange', () => {
     const locked = document.pointerLockElement === renderer.domElement;
-    if (!locked) for (const code in keys) keys[code] = false;
+    // 解锁(开面板/Esc)时同步清按住状态:mouseup 只绑在画布上,落在菜单 DOM 上收不到,
+    // 不清零会在恢复游戏后无操作自动连挖
+    if (!locked) { for (const code in keys) keys[code] = false; mouseHeld = false; touchBreakHeld = false; }
     if (locked) {
       overlay.classList.add('hidden');
       pauseMenu.classList.add('hidden');
@@ -2584,7 +2587,7 @@ function setupInput() {
   if (btnSettings) btnSettings.addEventListener('click', openSettingsPanel);
   const btnEmpty = document.getElementById('btn-empty-hand');
   if (btnEmpty) btnEmpty.addEventListener('click', () => {
-    hotbar[currentSlot] = null; buildHotbar(); updateHoldItem(); showToast('已清空当前手持(空手)');
+    hotbar[currentSlot] = null; buildHotbar(); updateHoldItem(); markDirtySave(); showToast('已清空当前手持(空手)');
   });
   document.getElementById('btn-controls').addEventListener('click', () => {
     document.getElementById('pause-controls').classList.toggle('hidden');
@@ -2816,6 +2819,7 @@ function setupInput() {
       if (!el) return;
       el.addEventListener('touchstart', (e) => { e.preventDefault(); onDown(); }, { passive: false });
       el.addEventListener('touchend', (e) => { e.preventDefault(); if (onUp) onUp(); }, { passive: false });
+      el.addEventListener('touchcancel', () => { if (onUp) onUp(); });   // 手势被系统取消时同样复位(防「挖」卡在连挖)
     };
     bindBtn('touch-jump', () => { keys['Space'] = true; }, () => { keys['Space'] = false; });
   const tj = document.getElementById('touch-jump'); if (tj) tj.addEventListener('touchcancel', () => { keys['Space'] = false; });
@@ -2832,9 +2836,12 @@ function setupInput() {
     renderer.domElement.addEventListener('touchmove', (e) => {
       if (!lookActive) return;
       const t = e.touches[0];
-      yaw -= (t.clientX - lastX) * 0.005;
-      pitch -= (t.clientY - lastY) * 0.005;
+      const dx = t.clientX - lastX, dy = t.clientY - lastY;
+      yaw -= dx * 0.005;
+      pitch -= dy * 0.005;
       pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, pitch));
+      // 触屏拖视角与鼠标同样累计教程「环顾四周」进度(否则移动端教程卡死在这一步)
+      if (tutorial.active) tutorial.progress.look = (tutorial.progress.look || 0) + Math.abs(dx * 0.005) + Math.abs(dy * 0.005), tutEvent('look', 0);
       lastX = t.clientX; lastY = t.clientY;
     }, { passive: true });
     renderer.domElement.addEventListener('touchend', () => { lookActive = false; }, { passive: true });
@@ -3054,6 +3061,17 @@ function placeBlock() {
   if (lookDoor && !holdingDoor) { toggleDoor(lookDoor.x, lookDoor.y, lookDoor.z); return; }
   const item = hotbar[currentSlot];
   if (item && item.kind === 'tool') { useTool(item); return; }
+  // 交互方块(右键):合成台 / TNT / 熔炉 / 床 / 箱子 —— 单次射线统一分发
+  // (先于食物分支:经典 MC 交互方块优先,持食物也能打开熔炉/箱子/床)
+  const tHit = raycastTarget();
+  if (tHit) {
+    const hitType = getBlock(tHit.x, tHit.y, tHit.z);
+    if (hitType === 'crafting_table') { openTablePanel(); return; }
+    if (hitType === 'tnt') { igniteTNT(tHit.x, tHit.y, tHit.z); return; }
+    if (hitType === 'furnace') { openFurnacePanel(tHit.x, tHit.y, tHit.z); return; }
+    if (hitType === 'bed') { trySleep(tHit.x, tHit.y, tHit.z); return; }
+    if (hitType === 'chest') { openChestPanel(tHit.x, tHit.y, tHit.z); return; }
+  }
   if (item && item.kind === 'item' && FOODS[item.id]) {
     // 食物:右键进食恢复饥饿值
     if (hungerState.hunger >= 20) { showToast('已经很饱了'); return; }
@@ -3065,16 +3083,6 @@ function placeBlock() {
     swingHoldItem();
     showToast('吃掉:' + ITEM_TYPES[item.id].name + '(饥饿 +' + FOODS[item.id] + ')');
     return;
-  }
-  // 交互方块(右键):合成台 / TNT / 熔炉 / 床 / 箱子 —— 单次射线统一分发
-  const tHit = raycastTarget();
-  if (tHit) {
-    const hitType = getBlock(tHit.x, tHit.y, tHit.z);
-    if (hitType === 'crafting_table') { openTablePanel(); return; }
-    if (hitType === 'tnt') { igniteTNT(tHit.x, tHit.y, tHit.z); return; }
-    if (hitType === 'furnace') { openFurnacePanel(tHit.x, tHit.y, tHit.z); return; }
-    if (hitType === 'bed') { trySleep(tHit.x, tHit.y, tHit.z); return; }
-    if (hitType === 'chest') { openChestPanel(tHit.x, tHit.y, tHit.z); return; }
   }
   if (item && item.kind === 'item') {
     showToast(`${itemName(item)} 不能放置,选中方块再放`);
@@ -5172,8 +5180,12 @@ function updateCrops() {
   for (const [key, plantTime] of cropTimers.entries()) {
     if (now - plantTime < 60000) continue;
     const [x, y, z] = key.split(',').map(Number);
-    if (getBlock(x, y, z) === 'snow') { setBlock(x, y, z, 'leaves'); showToast('小麦成熟了'); }
-    else if (getBlock(x, y, z) !== 'snow') cropTimers.delete(key);
+    const b = getBlock(x, y, z);
+    if (b === 'snow') { setBlock(x, y, z, 'leaves'); showToast('小麦成熟了'); }
+    // getBlock 对「未加载区块」与「空气」都返回 null:区块不在内存时保留计时器,
+    // 等玩家回访再判定(否则远离后计时器被误删,小麦永久停在幼苗)
+    else if (b === null && !chunks.has(chunkKey(Math.floor(x / CHUNK_SIZE), Math.floor(z / CHUNK_SIZE)))) continue;
+    else if (b !== 'snow') cropTimers.delete(key);
   }
 }
 
@@ -5198,6 +5210,7 @@ function applySave(rec) {
     playerPos.set(0.5, plazaH + 1 + PLAYER_HEIGHT * 0.5, 0.5);
   }
   yaw = rec.yaw || 0; pitch = rec.pitch || 0;
+  if (typeof rec.dayTime === 'number' && Number.isFinite(rec.dayTime)) dayTime = ((rec.dayTime % 1) + 1) % 1;   // 带范围校验恢复世界时间(旧档无此字段则沿用 clearWorld 重置的早晨)
   cameraMode = rec.cameraMode || 0; isFlying = rec.isFlying || false;
   velocity.set(0, 0, 0);
   wasOnGround = false; wasInWater = false;
@@ -5821,6 +5834,7 @@ async function saveSlot(name) {
 function buildSaveRecord() {
   return {
     seed: worldSeed,
+    dayTime,   // 世界时间随档走(0..1,0=午夜):防跨存档时间串档、床跳夜成果入档
     playerPos: { x: playerPos.x, y: playerPos.y, z: playerPos.z },
     yaw, pitch, cameraMode, isFlying,
     playerHP, breathTimer: 0, playerHunger: hungerState.hunger,

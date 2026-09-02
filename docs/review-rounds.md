@@ -22,8 +22,42 @@
 | 13 | 移动端小屏适配(热栏溢出) | ✅ R8 |
 | 14 | 骷髅(远程怪) | ✅ R9 |
 | 15 | 牛/羊(更多被动生物与掉落) | ✅ R9 |
+| 16 | 教程 active 永真(整局不刷怪/重开失效)等评审缺陷 11 项 | ✅ R20 |
+| 17 | 护甲系统(4 件套+减伤)+ 盾实际减伤 | ⏳ R21 候选 |
+| 18 | 火把与逐方块光照(光照传播/暗处刷怪) | ⏳ 候选 |
+| 19 | 洞穴生成(3D 噪声洞穴/峡谷) | ⏳ 候选 |
+| 20 | game.js 状态机提取纯模块+单测(教程/熔炉/天气/存档 schema) | ⏳ 治理轮 |
+| 21 | 出生广场 5.2 万条 diff 存档瘦身(plazaBuilt 标记,每档省 ~1MB) | ⏳ 治理轮 |
 
 ## 轮次记录
+
+### R20 评审修复轮 ✅ 已验证(进度 20/50)
+中期评估(根目录 findings.md)的 code-reviewer 全量审查发现 1 Critical +
+5 Important + 7 Minor,本轮修复全部高优先级 + 4 个顺手项:
+- **Critical 教程 active 永真**:完成卡「继续 ▶」只推进步骤从不结束教程 →
+  trySpawnHostile 的教程守卫永久压制刷怪(走完教程的玩家整局无怪)+
+  startTutorial 被挡回(暂停菜单「重新新手教程」失效)。修复:renderTutorialCard
+  无步骤分支兜底 endTutorial()
+- **作物计时器误删**:updateCrops 用 getBlock()!=='snow' 判删,但 getBlock 对
+  未加载区块也返回 null → 远离后(或读档预热 5×5 之外)小麦计时器被清、
+  永久停在幼苗。修复:区块不在内存时跳过,等玩家回访再判定
+- **无操作自动连挖**:mouseup 只绑在画布上,按住左键时 Esc/开面板后落在
+  菜单 DOM 收不到 → 恢复游戏后每 0.22s 自动破坏。修复:pointerlockchange
+  解锁分支清 mouseHeld/touchBreakHeld + 移动端按钮补 touchcancel
+- **dayTime 入存档**:buildSaveRecord 记录世界时间,applySave 带范围校验恢复,
+  clearWorld 重置早晨 —— 新游戏/切换存档不再沿用当前会话时间(跨存档串档、
+  床跳夜成果不随档走的问题一并解决)
+- **触屏教程卡死**:touchmove 拖视角分支与 mousemove 同样累计 look 进度
+  (此前移动端「环顾四周」步永远 0%)
+- **交互优先级(经典)**:右键分发顺序调整为 门→工具→**交互方块**→食物→放置,
+  持食物也能打开熔炉/箱子/床/合成台(此前被进食分支截胡)
+- 顺手:清空手持补 markDirtySave、欢迎卡跳过文案改真实入口(点「跳过教程」)、
+  补 favicon(消除 404)、game.js ?v= 击穿缓存
+- 实测:完成卡继续→active=false 且夜间 trySpawnHostile 恢复刷怪+重开教程生效;
+  未加载区块计时器保留/已加载空气删除;解锁事件后 held 清零;dayTime 0.8 入档
+  →读档恢复→clearWorld 回 0.3;hasTouch 上下文拖 100/60px→look 精确 +0.8;
+  持猪排直视合成台→打开 3×3 面板不进食;清空手持 saveDirty=true;console 0 error;
+  单测 69/69、lint 0/0
 
 ### R1 质量轮(死代码清理 + UX 修复)✅ 已验证
 - 12 个 lint warning 全部清零(死变量 fracX/Y/Z、lastSelectedBlock、holdItem、

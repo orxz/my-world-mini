@@ -6,6 +6,14 @@
 ## [Unreleased]
 
 ### 新增
+- **治理轮(R25):状态机提取 + 存档瘦身** —— 新增 machines.js 纯函数模块(教程
+  TUTORIAL_STEPS/advanceTutorial、熔炉 SMELT/FUELS/furnaceTick、天气
+  weatherNext、存档 schema SAVE_SCHEMA_FIELDS/validateSaveRecord),game.js
+  全面委托,状态机生命周期类 bug 从此可单测(单测 86→100 项,含 R20 Critical
+  「step 不越界」回归防线);**出生广场存档瘦身** —— 广场 5.2 万条已知 diff
+  不再落盘(plazaBuilt 标记 + plazaBlocks 登记,值未变的广场条目过滤),
+  新档体积 **1050KB → 1KB**(-99.9%),读档先重建广场再覆盖用户 diff
+  (等价性逐 key 断言通过),旧版全量存档向后兼容(缺字段警告提示)
 - **洞穴生成 + 天光遮蔽(R24)**:地下 3D 噪声(valueNoise3D)挖出蜿蜒隧道
   (双脊噪声交集)与深处空腔(y<20 奶酪洞);挖空率 ~1.5%,确定性随种子;
   保护出生广场(|x|,|z|≤30 不挖)、陆地地表 2 格壳(防塌顶/树悬空)、

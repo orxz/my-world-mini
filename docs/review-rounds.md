@@ -26,10 +26,27 @@
 | 17 | 护甲系统(4 件套+减伤)+ 盾实际减伤 | ✅ R21 |
 | 18 | 火把与逐方块光照(光照传播/暗处刷怪) | ✅ R22+R23 |
 | 19 | 洞穴生成(3D 噪声洞穴/峡谷) | ✅ R24 |
-| 20 | game.js 状态机提取纯模块+单测(教程/熔炉/天气/存档 schema) | ⏳ 治理轮 |
-| 21 | 出生广场 5.2 万条 diff 存档瘦身(plazaBuilt 标记,每档省 ~1MB) | ⏳ 治理轮 |
+| 20 | game.js 状态机提取纯模块+单测(教程/熔炉/天气/存档 schema) | ✅ R25 |
+| 21 | 出生广场 5.2 万条 diff 存档瘦身(plazaBuilt 标记,每档省 ~1MB) | ✅ R25(实测 1050KB→1KB) |
 
 ## 轮次记录
+
+### R25 治理轮 ✅ 已验证(进度 25/50)
+- **machines.js 纯函数模块(新 UMD 文件)**:TUTORIAL_STEPS + advanceTutorial
+  (step 钳制不越界 —— R20 Critical 回归防线)、SMELT/FUELS/COOK_TIME +
+  furnaceCanSmelt + furnaceTick(点燃/冶炼/堆叠/中断语义与原实现逐行一致)、
+  weatherNext(rand 注入)、SAVE_SCHEMA_FIELDS + validateSaveRecord(20 字段
+  清单,防 R16 类字段漂移;applySave 对旧档缺失字段 console.warn)
+- **game.js 委托**:tutEvent/updateFurnaces/updateWeather 状态转移全部走
+  MACHINES;删除本地重复定义(SMELT/FUELS/furnaceCanSmelt/BLOCK_STACK_MAX)
+- **广场存档瘦身**:buildSpawnPlaza 的 set() 同步登记 plazaBlocks(key→广场值);
+  buildSaveRecord 过滤「值未变的广场条目」+ 记录 plazaBuilt 标记;applySave
+  先重建广场已知 diff 再覆盖用户 diff;clearWorld 重置;旧版全量档向后兼容
+- 实测:全量 52,322 条 → 新档 modifications 0 条、JSON **1KB**(原 1050KB);
+  用户改动(拆广场石=null/远处放砖)两条全保留;读档等价性 M1(52,323) vs
+  M2(52,323) 逐 key/value 相同;旧格式档照常加载(缺字段警告为预期);
+  三状态机运行时回归(熔炉 5.1s 出铁锭+点燃、教程推进、晴雨转移)全过;
+  buildSaveRecord 过滤开销 7.1ms;FPS 120;单测 86→**100 项**、lint 0/0
 
 ### R24 洞穴轮 ✅ 已验证(进度 24/50)
 - **caveAt 纯函数(worldgen.js)**:valueNoise3D(三线性插值)+ 双脊噪声交集隧道

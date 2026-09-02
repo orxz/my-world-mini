@@ -14,6 +14,9 @@ const { hash2, hash3, valueNoise2D, valueNoise3D, fbm2D, BIOMES, biomeAt, height
 // ---- 从 craft.js 模块加载(合成/破坏计算的单一数据源) ----
 const { RECIPES, matchRecipe, matchRecipeGrid, breakCost } = require('../craft.js');
 
+// ---- 从 machines.js 模块加载(状态机纯函数:教程/熔炉/天气/存档 schema,R25) ----
+const { TUTORIAL_STEPS, advanceTutorial, furnaceCanSmelt, furnaceTick, weatherNext, SAVE_SCHEMA_FIELDS, validateSaveRecord } = require('../machines.js');
+
 // ---- 从 inventory.js 模块加载(库存/掉落/饥饿/护甲纯函数) ----
 const { STACK_MAX, FOODS, ARMOR_MAX_POINTS, armorReduce, pickupIntoInventory, normalizeHotbar, hungerTick } = require('../inventory.js');
 
@@ -497,6 +500,108 @@ test('caveAt 存在性与占比:40×15×40 采样有洞且不过密(0.1%~8%)', (
   const ratio = count / total;
   assert.ok(count > 0, '完全无洞');
   assert.ok(ratio > 0.001 && ratio < 0.08, '占比异常: ' + (ratio * 100).toFixed(2) + '%');
+});
+
+// ===== 状态机纯函数(R25 提取) =====
+console.log('\n=== 教程推进(advanceTutorial) ===');
+test('advanceTutorial 累计进度不达标返回 progress', () => {
+  const st = { active: true, step: 1, progress: { move: 0 } };
+  assert.strictEqual(advanceTutorial(st, 'move', 3), 'progress');
+  assert.strictEqual(st.progress.move, 3);
+});
+test('advanceTutorial 达标推进 step', () => {
+  const st = { active: true, step: 1, progress: { move: 5 } };
+  assert.strictEqual(advanceTutorial(st, 'move', 3), 'step');
+  assert.strictEqual(st.step, 2);
+});
+test('advanceTutorial 类型不匹配/未激活返回 none', () => {
+  const st = { active: true, step: 1, progress: {} };
+  assert.strictEqual(advanceTutorial(st, 'break', 1), 'none');
+  const off = { active: false, step: 1, progress: {} };
+  assert.strictEqual(advanceTutorial(off, 'move', 99), 'none');
+});
+test('advanceTutorial 走完全部目标步停在完成卡(step 不越界,R20 回归防线)', () => {
+  const st = { active: true, step: 0, progress: {} };
+  let guard = 0;
+  while (st.step < TUTORIAL_STEPS.length - 1 && guard++ < 50) {
+    const s = TUTORIAL_STEPS[st.step];
+    if (!s.goal) { st.step++; continue; }   // 无目标卡由游戏层「继续」推进(此处等价模拟)
+    assert.strictEqual(advanceTutorial(st, s.goal.type, s.goal.n), 'step');
+  }
+  assert.strictEqual(st.step, TUTORIAL_STEPS.length - 1);   // 停在完成卡
+  // 完成卡无 goal,任何上报都不会再推进/越界
+  assert.strictEqual(advanceTutorial(st, 'move', 999), 'none');
+  assert.strictEqual(st.step, TUTORIAL_STEPS.length - 1);
+});
+
+console.log('\n=== 熔炉状态机(furnaceTick) ===');
+test('furnaceTick 无燃料不点燃不冶炼', () => {
+  const f = { input: { kind: 'block', id: 'iron_ore', count: 1 }, fuel: null, output: null, burnT: 0, burnMax: 1, cookT: 0 };
+  assert.strictEqual(furnaceTick(f, 1), false);
+  assert.strictEqual(f.cookT, 0);
+});
+test('furnaceTick 点燃燃料(煤 8 个产能 = 40s)并冶炼', () => {
+  const f = { input: { kind: 'item', id: 'iron_ore', count: 1 }, fuel: { kind: 'item', id: 'coal', count: 2 }, output: null, burnT: 0, burnMax: 1, cookT: 0 };
+  assert.strictEqual(furnaceTick(f, 0.1), true);
+  assert.strictEqual(f.fuel.count, 1);
+  assert.ok(Math.abs(f.burnT - 40) < 1e-9);   // 点燃即满 40s(本帧 decrement 在点燃前,对 0 无效)
+  furnaceTick(f, 4.9);
+  assert.strictEqual(f.output.id, 'iron_ingot');
+  assert.strictEqual(f.output.count, 1);
+  assert.strictEqual(f.input, null);
+});
+test('furnaceTick 产物堆叠至 64 封顶停烧', () => {
+  const f = { input: { kind: 'item', id: 'iron_ore', count: 5 }, fuel: { kind: 'item', id: 'coal', count: 5 }, output: { kind: 'item', id: 'iron_ingot', count: 64 }, burnT: 10, burnMax: 10, cookT: 0 };
+  assert.strictEqual(furnaceCanSmelt(f), false);
+  furnaceTick(f, 6);
+  assert.strictEqual(f.output.count, 64);
+  assert.strictEqual(f.input.count, 5);
+});
+test('furnaceTick 中断(没火)进度归零', () => {
+  const f = { input: { kind: 'item', id: 'iron_ore', count: 1 }, fuel: null, output: null, burnT: 0, burnMax: 1, cookT: 3 };
+  assert.strictEqual(furnaceTick(f, 0.1), true);
+  assert.strictEqual(f.cookT, 0);
+});
+
+console.log('\n=== 天气状态机(weatherNext) ===');
+test('weatherNext 计时未到不变', () => {
+  const r = weatherNext('clear', 10, 0.5, Math.random);
+  assert.deepStrictEqual(r, { weather: 'clear', timer: 9.5, changed: false });
+});
+test('weatherNext 晴天到期 roll 成功(30%)→ 雨 45~90s', () => {
+  let calls = 0;
+  const rand = () => calls++ === 0 ? 0.1 : 0.5;
+  const r = weatherNext('clear', 0.5, 1, rand);
+  assert.strictEqual(r.weather, 'rain');
+  assert.strictEqual(r.changed, true);
+  assert.ok(r.timer >= 45 && r.timer <= 90);
+});
+test('weatherNext 晴天到期 roll 失败 → 继续晴 120~240s', () => {
+  let calls = 0;
+  const rand = () => calls++ === 0 ? 0.9 : 0.5;
+  const r = weatherNext('clear', 0.5, 1, rand);
+  assert.strictEqual(r.weather, 'clear');
+  assert.strictEqual(r.changed, false);
+  assert.ok(r.timer >= 120 && r.timer <= 240);
+});
+test('weatherNext 雨到期 → 晴 120~240s', () => {
+  const r = weatherNext('rain', 0.5, 1, () => 0.5);
+  assert.strictEqual(r.weather, 'clear');
+  assert.strictEqual(r.changed, true);
+});
+
+console.log('\n=== 存档 schema(validateSaveRecord) ===');
+test('validateSaveRecord 完整记录无缺失', () => {
+  const rec = {};
+  for (const f of SAVE_SCHEMA_FIELDS) rec[f] = 0;
+  assert.deepStrictEqual(validateSaveRecord(rec), []);
+});
+test('validateSaveRecord 检出缺失字段(防 R16 类漂移)', () => {
+  const rec = { seed: 1, modifications: [] };
+  const miss = validateSaveRecord(rec);
+  assert.ok(miss.includes('dayTime'));
+  assert.ok(miss.includes('furnacesData'));
+  assert.ok(miss.includes('plazaBuilt'));
 });
 
 console.log('\n=== 总结 ===');

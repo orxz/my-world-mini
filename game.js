@@ -633,6 +633,10 @@ const modsByChunk = new Map();
 // 跨区块种树的待写队列: chunkKey -> Map<chunkIdx, id>
 // 树叶可伸入尚未生成的区块;区块创建时应用队列(树只在自己区块创建时种一次,不再重复扫描)
 const pendingBlocks = new Map();
+// 出生广场已知 diff(R25 存档瘦身):key -> 广场放置的方块类型。
+// 存档时值未变的广场条目不落盘(省 ~1MB/档);读档先重建广场再覆盖用户 diff
+const plazaBlocks = new Map();
+let worldPlazaBuilt = false;
 // 待重建 mesh 的区块集合(替代每帧扫描 chunks + 分配数组 + 排序)
 const dirtyChunks = new Set();
 
@@ -1279,8 +1283,6 @@ const _rayNormal = new THREE.Vector3(); // 射线:命中面法线
 
 // 掉落物(生存采集核心:破坏方块必掉落,靠近自动拾取入快捷栏)
 const droppedItems = [];
-const BLOCK_STACK_MAX = INVLIB.STACK_MAX;   // 方块最大堆叠数(来自 inventory.js)
-
 // 玩家生命系统(无怪物,先建立基础设施:跌落/溺水伤害 + HUD + 存档)
 let playerHP = 20;       // 10 颗心,每心 2 点
 // 护甲装备槽(经典 4 部位):格 = {kind:'tool', id, durability};手持护甲右键穿上
@@ -1484,14 +1486,10 @@ function setWeather(w) {
 
 function updateWeather(dt) {
   if (!settings.weather) { if (weather !== 'clear') { weather = 'clear'; if (rainMesh) rainMesh.visible = false; updateRainAudio(); } return; }
-  weatherTimer -= dt;
-  if (weatherTimer <= 0) {
-    if (weather === 'clear') {
-      // 晴天到期:30% 概率下雨,否则重置计时继续等(经典随机)
-      if (Math.random() < 0.3) { setWeather('rain'); weatherTimer = 45 + Math.random() * 45; }
-      else weatherTimer = 120 + Math.random() * 120;
-    } else { setWeather('clear'); weatherTimer = 120 + Math.random() * 120; }
-  }
+  // 天气状态机转移走纯模块 machines.weatherNext(R25);视觉/音效由 setWeather 应用
+  const wn = MACHINES.weatherNext(weather, weatherTimer, dt, Math.random);
+  weatherTimer = wn.timer;
+  if (wn.weather !== weather) setWeather(wn.weather);
   // 雨滴下落 + 跟随玩家(超界回顶循环;垂直以玩家为基准,山地高处也有雨)
   if (weather === 'rain' && rainMesh) {
     const posAttr = rainMesh.geometry.attributes.position;
@@ -1917,20 +1915,9 @@ function cycleCameraMode() {
 // 经典 MC 标题屏:程序化泥土像素贴图平铺 + 半透明暗化(CSS 渐变叠加)
 // ============================================================
 // 新手教程(分步引导 + 完成自动检测;localStorage 记忆已完成)
+// 步骤定义与推进状态机提取到纯模块 machines.js(R25 治理轮,可单测)
 // ============================================================
-const TUTORIAL_STEPS = [
-  { id: 'welcome', title: '👋 欢迎来到我的世界!', desc: '这是一个体素沙盒世界:挖矿、合成、建造、生存。跟着教程学会基本操作吧!(点下方「跳过教程」可随时跳过;教程期间夜晚不会刷怪,放心学)', goal: null },
-  { id: 'move',   title: '① 移动', desc: '按 W/A/S/D 键走动起来', goal: { type: 'move', n: 8 } },
-  { id: 'look',   title: '② 环顾四周', desc: '移动鼠标转动视角观察世界(转约半圈即可)', goal: { type: 'look', n: 2.5 } },
-  { id: 'break',  title: '③ 挖掘方块', desc: '对准方块按住左键(出现裂纹进度条,现在可以长按连挖),破坏 3 个', goal: { type: 'break', n: 3 } },
-  { id: 'pickup', title: '④ 拾取掉落物', desc: '走近地上旋转的小方块,自动拾取 2 个', goal: { type: 'pickup', n: 2 } },
-  { id: 'place',  title: '⑤ 放置方块', desc: '手持方块对准地面按右键放置,放 2 个', goal: { type: 'place', n: 2 } },
-  { id: 'slot',   title: '⑥ 切换快捷栏', desc: '按数字键 1-9 或滚轮切换手持物品,切换 2 次', goal: { type: 'slot', n: 2 } },
-  { id: 'inventory', title: '⑦ 背包与合成', desc: '按 E 打开背包 —— 上方是物品目录(点击发放 ×64),下方有 2×2 合成格(试试 1 木头→4 木板)', goal: { type: 'inventory', n: 1 } },
-  { id: 'survival1', title: '💡 生存须知(上)', desc: '夜晚会刷新僵尸/骷髅/苦力怕,白天它们会燃烧 —— 入夜前砍树做一张床(3 羊毛+3 木板),右键睡觉跳到早晨并设重生点;怪物太近时睡不了。', goal: null },
-  { id: 'survival2', title: '💡 生存须知(下)', desc: '发展链:挖圆石→合成台(4 木板)→熔炉(8 圆石,烧铁锭/玻璃/熟肉);猪排烤熟回饥饿更多。按 Q 丢弃;死亡会掉落全部物品,回原地可拾回。', goal: null },
-  { id: 'done',   title: '🎓 教程完成!', desc: '背包(E)里有全部物品目录随时取用;暂停菜单(Esc)→「操作说明」有完整手册。祝玩得开心!', goal: null },
-];
+const TUTORIAL_STEPS = MACHINES.TUTORIAL_STEPS;
 
 const tutorial = {
   active: false,
@@ -2000,23 +1987,11 @@ function endTutorial() {
   try { localStorage.setItem('myword_tutorial_done', '1'); } catch (e) {}
 }
 
-// 各系统上报进度(type 与 TUTORIAL_STEPS.goal.type 对应;完成后自动推进)
+// 各系统上报进度(推进逻辑在 machines.advanceTutorial,纯函数可单测)
 function tutEvent(type, n) {
   if (!tutorial.active) return;
-  const s = tutorialStep();
-  if (!s || !s.goal || s.goal.type !== type) return;
-  tutorial.progress[type] = (tutorial.progress[type] || 0) + n;
-  if (tutorial.progress[type] >= s.goal.n) {
-    tutorial.step++;
-    if (tutorial.step >= TUTORIAL_STEPS.length - 1) {
-      // 到达最后一步(完成卡)
-      tutorial.step = TUTORIAL_STEPS.length - 1;
-      try { localStorage.setItem('myword_tutorial_done', '1'); } catch (e) {}
-    }
-    renderTutorialCard();
-  } else {
-    renderTutorialCard();   // 刷新进度数字
-  }
+  const res = MACHINES.advanceTutorial(tutorial, type, n);
+  if (res !== 'none') renderTutorialCard();
 }
 
 function applyClassicMenuBackground() {
@@ -2160,7 +2135,7 @@ const PIXEL_ART = {
 function buildSpawnPlaza() {
   const plazaR = 28;
   const platH = SEA_LEVEL + 6;
-  const set = (x, y, z, t) => { if (y >= 0 && y < WORLD_HEIGHT) addModification(x, y, z, t); };
+  const set = (x, y, z, t) => { if (y >= 0 && y < WORLD_HEIGHT) { addModification(x, y, z, t); plazaBlocks.set(blockKey(x, y, z), t); } };
   const setArt = (ox, oz, font, colorMap) => {
     for (let row = 0; row < font.length; row++)
       for (let col = 0; col < font[row].length; col++) {
@@ -2306,6 +2281,7 @@ function buildSpawnPlaza() {
       }
     }
   }
+  worldPlazaBuilt = true;   // 广场已知 diff 已登记(存档可瘦身)
 }
 
 
@@ -2321,6 +2297,8 @@ function clearWorld() {
   modsByChunk.clear();
   pendingBlocks.clear();
   dirtyChunks.clear();
+  plazaBlocks.clear();          // 广场已知 diff 随世界重置(重建时重新登记)
+  worldPlazaBuilt = false;
   for (const a of arrows) scene.remove(a);
   arrows.length = 0;
   clearDroppedItems();   // 清掉落物,避免旧世界残留
@@ -4552,17 +4530,10 @@ function clearTNT() {
 // 熔炉(经典:右键打开;燃料燃烧 + 冶炼进度,状态随存档持久化)
 // ============================================================
 const furnaces = new Map();   // "x,y,z" -> {x,y,z, input, fuel, output, burnT, burnMax, cookT}
-const COOK_TIME = 5;          // 每个产物冶炼秒数
-// 冶炼配方:输入 id -> 产物(铁矿石→铁锭、沙→玻璃、圆石→石头、猪排→熟猪排)
-const SMELT = {
-  iron_ore: { kind: 'item', id: 'iron_ingot' },
-  sand: { kind: 'block', id: 'glass' },
-  cobblestone: { kind: 'block', id: 'stone' },
-  porkchop: { kind: 'item', id: 'cooked_porkchop' },
-  beef: { kind: 'item', id: 'steak' },
-};
-// 燃料:可冶炼的产物个数(1 个产物 = COOK_TIME 秒)
-const FUELS = { coal: 8, wood: 1.5, planks: 1.5, stick: 0.5 };
+// 熔炉常量与状态机提取到纯模块 machines.js(R25 治理轮,可单测);
+// 燃料产能:1 个产物 = COOK_TIME 秒
+const COOK_TIME = MACHINES.COOK_TIME;
+const SMELT = MACHINES.SMELT;
 let furnaceOpen = null;   // 当前打开面板的熔炉 key(null=关)
 
 function getFurnace(x, y, z) {
@@ -4572,40 +4543,10 @@ function getFurnace(x, y, z) {
   return f;
 }
 
-function furnaceCanSmelt(f) {
-  if (!f.input || !SMELT[f.input.id]) return false;
-  const res = SMELT[f.input.id];
-  return !f.output || (f.output.id === res.id && f.output.kind === res.kind && (f.output.count || 1) < BLOCK_STACK_MAX);
-}
-
 // 熔炉状态机(每帧推进;燃烧中消耗燃料,完成后产出)
 function updateFurnaces(dt) {
   for (const [key, f] of furnaces) {
-    let changed = false;   // 仅本炉发生变化才刷新面板(修复:此前 dirty 一旦置位,每帧全渲染)
-    const can = furnaceCanSmelt(f);
-    if (f.burnT > 0) f.burnT -= dt;
-    // 火灭了且还能烧:消耗 1 个燃料点燃
-    if (f.burnT <= 0 && can && f.fuel && FUELS[f.fuel.id]) {
-      f.burnMax = f.burnT = FUELS[f.fuel.id] * COOK_TIME;
-      f.fuel.count = (f.fuel.count || 1) - 1;
-      if (f.fuel.count <= 0) f.fuel = null;
-      changed = true;
-    }
-    if (f.burnT > 0 && can) {
-      f.cookT += dt;
-      if (f.cookT >= COOK_TIME) {
-        f.cookT = 0;
-        const res = SMELT[f.input.id];
-        f.input.count = (f.input.count || 1) - 1;
-        if (f.input.count <= 0) f.input = null;
-        if (f.output) f.output.count = (f.output.count || 1) + 1;
-        else f.output = { kind: res.kind, id: res.id, count: 1 };
-        changed = true;
-      }
-    } else if (f.cookT > 0) {
-      f.cookT = 0;   // 中断(没料/没火):进度归零
-      changed = true;
-    }
+    const changed = MACHINES.furnaceTick(f, dt);   // 状态机在纯模块 machines.js(R25,可单测)
     if (changed) markDirtySave();   // 熔炉状态变化需触发自动保存
     if (changed && furnaceOpen === key) renderFurnacePanel();
   }
@@ -5603,9 +5544,16 @@ function updateCrops() {
 
 function applySave(rec) {
   if (autosaveTimer) { clearTimeout(autosaveTimer); autosaveTimer = null; }
+  const missingFields = MACHINES.validateSaveRecord(rec);
+  if (missingFields.length) console.warn('存档缺少字段(可能是旧版本存档):', missingFields.join(','));
   clearWorld();
   worldSeed = (typeof rec.seed === 'number') ? rec.seed : worldSeed;
   modifications.clear();
+  modsByChunk.clear();
+  // R25 存档瘦身:广场 diff 不在档里时先重建已知广场(用户 diff 随后覆盖);
+  // 旧档(无标记)自带全量广场 diff,直接应用即可
+  worldPlazaBuilt = !!rec.plazaBuilt;
+  if (worldPlazaBuilt) buildSpawnPlaza();
   // 重建全局 diff 表 + 区块桶(读档一次性解析 key,游戏期间按桶直接应用)
   if (rec.modifications) {
     for (const [k, v] of rec.modifications) {
@@ -6278,7 +6226,8 @@ function buildSaveRecord() {
     yaw, pitch, cameraMode, isFlying,
     playerHP, breathTimer: 0, playerHunger: hungerState.hunger,
     hotbar, currentSlot,
-    modifications: Array.from(modifications.entries()),
+    modifications: Array.from(modifications.entries()).filter(([k, v]) => !(worldPlazaBuilt && plazaBlocks.get(k) === v)),   // R25 瘦身:未变的广场 diff 不落盘(读档重建)
+    plazaBuilt: worldPlazaBuilt,   // R25:读档据此先重建广场已知 diff 再覆盖用户 diff
     cropTimersData: Array.from(cropTimers.entries()),
     furnacesData: Array.from(furnaces.values()).map(f => ({ x: f.x, y: f.y, z: f.z, input: f.input, fuel: f.fuel, output: f.output, burnT: f.burnT, burnMax: f.burnMax, cookT: f.cookT })),
     chestsData: Array.from(chests.values()).map(c => ({ x: c.x, y: c.y, z: c.z, slots: c.slots })),

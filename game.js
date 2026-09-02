@@ -2023,6 +2023,10 @@ function init() {
   const hemi = new THREE.HemisphereLight(0xbfdfff, 0x6b8f3e, 0.25); // 降低半球光
   scene.add(hemi);
   hemiLight = hemi;
+  // 手持火把照明(R23):暖色点光源跟随玩家,举火把时点亮(影响 Lambert 区块网格,真实距离衰减)
+  const thl = new THREE.PointLight(0xffc46b, 0, 11, 2);
+  scene.add(thl);
+  torchHoldLight = thl;
 
   const sunMesh = new THREE.Mesh(new THREE.SphereGeometry(4, 16, 16), new THREE.MeshBasicMaterial({ color: 0xfff2a8, fog: false }));
   sunMesh.position.set(62, 88, -42);   // 太阳球与光线同向
@@ -4233,9 +4237,12 @@ function trySpawnHostile() {
     const b = getBlock(fx, y, fz);
     if (!b) continue;
     if (b !== 'water' && BLOCK_TYPES[b] && BLOCK_TYPES[b].solid && !getBlock(fx, y + 1, fz) && !getBlock(fx, y + 2, fz)) {
-      // 敌对生物池:僵尸 50% / 苦力怕 30% / 骷髅 20%
-      const hr = Math.random();
-      spawnMob(wx, y + 1, fz, hr < 0.5 ? 'zombie' : hr < 0.8 ? 'creeper' : 'skeleton');
+      // 光照判定(经典,R23):生成点火把光级 ≥8 过亮 → 不刷(火把防刷怪;无光源区域光级 0 正常刷)
+      if (lightAtWorld(fx, y + 1, fz) < 8) {
+        // 敌对生物池:僵尸 50% / 苦力怕 30% / 骷髅 20%
+        const hr = Math.random();
+        spawnMob(wx, y + 1, fz, hr < 0.5 ? 'zombie' : hr < 0.8 ? 'creeper' : 'skeleton');
+      }
     }
     break;   // 只看地表第一个非空气方块
   }
@@ -5258,7 +5265,7 @@ let dayTime = 0.3;
 const _dayColor = new THREE.Color();
 const _dayColorB = new THREE.Color();
 // 光源/天体引用(在 init 中赋值)
-let sunLight = null, ambientLight = null, hemiLight = null;
+let sunLight = null, ambientLight = null, hemiLight = null, torchHoldLight = null;
 let sunMeshRef = null, moonMeshRef = null;
 
 // 昼夜循环更新:根据 dayTime 调整光照强度/方向、天空与雾色、太阳/月亮位置
@@ -5297,6 +5304,12 @@ function updateDayNight(dt, waterNow) {
   }
   // 火把光晕随昼夜调整:白天微光(0.3)、夜晚全亮(1.0) —— 火光与场景光解耦
   torchGlowUniform.value = 0.3 + 0.7 * (1 - dayFactor);
+  // 手持火把照明(R23):点光源跟随玩家,手持火把时点亮
+  if (torchHoldLight) {
+    const held = hotbar[currentSlot];
+    torchHoldLight.intensity = (held && held.kind === 'block' && held.id === 'torch') ? 1.6 : 0;
+    torchHoldLight.position.copy(playerPos);
+  }
 
   // 太阳/月亮天体:沿圆轨道运动,互为对侧
   const R2 = 120;

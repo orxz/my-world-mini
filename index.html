@@ -57,6 +57,7 @@
     #hp-bar { bottom: 56px; left: 8px; }
     #hunger-bar { bottom: 56px; right: 8px; }
     #armor-bar { bottom: 78px; left: 8px; }
+    #xp-bar { bottom: 52px; width: 70vw; }
     #info { font-size: 11px; padding: 4px 8px; line-height: 1.45; top: 6px; left: 6px; }
     .inv-grid { grid-template-columns: repeat(auto-fill, 56px); }
     .inv-cell { width: 56px; height: 56px; }
@@ -223,6 +224,10 @@
 #armor-bar .armoricon.full  { filter: none; }
 #armor-bar .armoricon.half  { filter: grayscale(0.5) brightness(0.8); }
 #armor-bar .armoricon.empty { filter: grayscale(1) brightness(0.4); }
+/* 经验条(R28):热栏上方居中,绿色进度 + 等级数字 */
+#xp-bar { position: fixed; left: 50%; transform: translateX(-50%); bottom: 76px; width: 262px; height: 6px; background: rgba(0,0,0,0.55); border: 1px solid #2a2a2a; z-index: 10; }
+#xp-fill { height: 100%; width: 0%; background: linear-gradient(#9fe86a, #4fa826); transition: width .2s; }
+#xp-level { position: absolute; right: -32px; top: -7px; color: #8ef24a; font-size: 13px; font-weight: bold; text-shadow: 1px 1px 1px #000; }
 
   /* 合成台 3×3 面板(经典 MC 灰岩面板) */
   #craft-table-panel {
@@ -346,6 +351,9 @@
 
 <!-- 护甲条(生命条上方,无护甲时隐藏) -->
 <div id="armor-bar"></div>
+
+<!-- 经验条(热栏上方,R28) -->
+<div id="xp-bar"><div id="xp-fill"></div><span id="xp-level"></span></div>
 
 <!-- 生命条(左下) -->
 <div id="hp-bar"></div>
@@ -558,10 +566,10 @@
 </div>
 
 <script src="worldgen.js?v=20260908"></script>
-<script src="craft.js?v=20260910"></script>
+<script src="craft.js?v=20260914"></script>
 <script src="inventory.js?v=20260903"></script>
-<script src="machines.js?v=20260913"></script>
+<script src="machines.js?v=20260914"></script>
 <script src="three.min.js?v=r160"></script>
-<script src="game.js?v=20260913"></script>
+<script src="game.js?v=20260914"></script>
 </body>
 </html>

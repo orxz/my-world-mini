@@ -114,12 +114,50 @@
     return (ahead.length ? ahead : opts)[0];
   }
 
+  // ---- 经验系统(R28):等级/进度;升级阈值随等级递增(纯函数可单测) ----
+  function xpToNext(level) { return 8 + level * 4; }
+  // 就地修改 state:{level, points};返回本次升了几级
+  function xpGain(state, amount) {
+    state.points += amount;
+    let gained = 0;
+    while (state.points >= xpToNext(state.level)) {
+      state.points -= xpToNext(state.level);
+      state.level++;
+      gained++;
+      if (gained > 1000) break;   // 防御
+    }
+    return gained;
+  }
+
+  // ---- 附魔(R28):类型池按物品类别;随机 3 个选项(等级=消耗经验等级) ----
+  const ENCHANT_NAMES = { sharpness: '锋利', efficiency: '效率', protection: '保护', unbreaking: '耐久', power: '力量' };
+  const ENCHANT_POOL = {
+    sword: ['sharpness', 'unbreaking'],
+    axe: ['sharpness', 'efficiency', 'unbreaking'],
+    pickaxe: ['efficiency', 'unbreaking'],
+    shovel: ['efficiency', 'unbreaking'],
+    bow: ['power', 'unbreaking'],
+    armor: ['protection', 'unbreaking'],
+    shield: ['unbreaking'],
+  };
+  // rand 注入保证可测;返回 3 个选项 [{type, level(1-3), cost(=level)}]
+  function rollEnchants(toolKind, rand) {
+    const pool = ENCHANT_POOL[toolKind] || ['unbreaking'];
+    const opts = [];
+    for (let i = 0; i < 3; i++) {
+      const type = pool[Math.floor(rand() * pool.length) % pool.length];
+      const level = 1 + Math.floor(rand() * 3);
+      opts.push({ type, level, cost: level });
+    }
+    return opts;
+  }
+
   // ---- 存档 schema(R16 Critical 防漂移:字段清单单一来源) ----
   const SAVE_SCHEMA_FIELDS = [
     'seed', 'dayTime', 'playerPos', 'yaw', 'pitch', 'cameraMode', 'isFlying',
     'playerHP', 'playerHunger', 'hotbar', 'currentSlot', 'modifications',
     'cropTimersData', 'furnacesData', 'chestsData', 'spawnPoint',
-    'armorSlotsData', 'doorsData', 'minecartsData', 'mobsData', 'plazaBuilt', 'timestamp',
+    'armorSlotsData', 'doorsData', 'minecartsData', 'mobsData', 'xpData', 'plazaBuilt', 'timestamp',
   ];
   // 返回缺失字段名数组(空数组 = 完整)
   function validateSaveRecord(rec) {
@@ -128,12 +166,13 @@
 
   // 导出(Node 环境)
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { TUTORIAL_STEPS, advanceTutorial, COOK_TIME, SMELT, FUELS, furnaceCanSmelt, furnaceTick, weatherNext, cartNextDir, SAVE_SCHEMA_FIELDS, validateSaveRecord };
+    module.exports = { TUTORIAL_STEPS, advanceTutorial, COOK_TIME, SMELT, FUELS, furnaceCanSmelt, furnaceTick, weatherNext, cartNextDir, xpToNext, xpGain, ENCHANT_NAMES, ENCHANT_POOL, rollEnchants, SAVE_SCHEMA_FIELDS, validateSaveRecord };
   }
   // 浏览器:挂到全局
   global.MACHINES = {
     TUTORIAL_STEPS, advanceTutorial, COOK_TIME, SMELT, FUELS, furnaceCanSmelt, furnaceTick,
-    weatherNext, cartNextDir, SAVE_SCHEMA_FIELDS, validateSaveRecord,
+    weatherNext, cartNextDir, xpToNext, xpGain, ENCHANT_NAMES, ENCHANT_POOL, rollEnchants,
+    SAVE_SCHEMA_FIELDS, validateSaveRecord,
   };
 
 })(typeof window !== 'undefined' ? window : globalThis);

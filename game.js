@@ -44,12 +44,13 @@ const BLOCK_TYPES = {
   ladder:       { name: '梯子',   top: '#9a6b3f', side: '#9a6b3f', bottom: '#9a6b3f', solid: false, tool: 'axe', hardness: 0.5 },
   torch:        { name: '火把',   top: '#ffd86b', side: '#ffd86b', bottom: '#8a6430', solid: false, tool: 'any', hardness: 0.05, light: 14 },
   rail:         { name: '铁轨',   top: '#b8b8c0', side: '#b8b8c0', bottom: '#b8b8c0', solid: false, tool: 'pickaxe', hardness: 0.5 },
+  enchanting_table: { name: '附魔台', top: '#2a1a3a', side: '#1a1024', bottom: '#1a1024', solid: true, tool: 'pickaxe', hardness: 3 },
   bookshelf:    { name: '书架',   top: '#a0763a', side: '#96682e', bottom: '#8a5f28', solid: true, tool: 'axe', hardness: 1.5 },
 };
 const HOTBAR_ORDER = ['grass', 'dirt', 'stone', 'wood', 'leaves', 'sand', 'planks', 'brick'];
 
 // 方块数字 id(用于紧凑的 Uint8Array 区块存储)
-const BLOCK_ID = { air: 0, grass: 1, dirt: 2, stone: 3, wood: 4, leaves: 5, sand: 6, planks: 7, brick: 8, water: 9, snow: 10, gravel: 11, wool_red: 12, wool_yellow: 13, wool_white: 14, wool_black: 15, door: 16, door_iron: 17, door_stone: 18, door_gold: 19, door_diamond: 20, crafting_table: 21, cobblestone: 22, coal_ore: 23, iron_ore: 24, diamond_ore: 25, tnt: 26, furnace: 27, glass: 28, bed: 29, chest: 30, ladder: 31, bookshelf: 32, torch: 33, rail: 34 };
+const BLOCK_ID = { air: 0, grass: 1, dirt: 2, stone: 3, wood: 4, leaves: 5, sand: 6, planks: 7, brick: 8, water: 9, snow: 10, gravel: 11, wool_red: 12, wool_yellow: 13, wool_white: 14, wool_black: 15, door: 16, door_iron: 17, door_stone: 18, door_gold: 19, door_diamond: 20, crafting_table: 21, cobblestone: 22, coal_ore: 23, iron_ore: 24, diamond_ore: 25, tnt: 26, furnace: 27, glass: 28, bed: 29, chest: 30, ladder: 31, bookshelf: 32, torch: 33, rail: 34, enchanting_table: 35 };
 const ID_TO_BLOCK = Object.keys(BLOCK_ID);
 
 // ============================================================
@@ -435,6 +436,24 @@ function drawBlockFace(ctx, type, face, s, seedRand) {
       ctx.fillRect(Math.floor(s * 0.28), Math.floor(s * 0.62), Math.floor(s * 0.44), Math.floor(s * 0.14));
       ctx.fillStyle = '#3a3a3a';
       ctx.fillRect(Math.floor(s * 0.3), Math.floor(s * 0.2), Math.floor(s * 0.4), Math.floor(s * 0.12));
+      break;
+    }
+    case 'enchanting_table': {
+      // 附魔台(R28):暗紫底 + 石台 + 红书页 + 钻石亮点
+      noise(14);
+      ctx.fillStyle = '#1a1024';
+      ctx.fillRect(0, 0, s, s);
+      ctx.fillStyle = '#3a2a4a';
+      ctx.fillRect(0, Math.floor(s * 0.62), s, Math.floor(s * 0.38));
+      ctx.fillStyle = '#d8d8e0';
+      ctx.fillRect(Math.floor(s * 0.18), Math.floor(s * 0.5), Math.floor(s * 0.64), Math.floor(s * 0.14));
+      ctx.fillStyle = '#a03030';
+      ctx.fillRect(Math.floor(s * 0.3), Math.floor(s * 0.14), Math.floor(s * 0.4), Math.floor(s * 0.32));
+      ctx.fillStyle = '#5fe3e8';
+      ctx.fillRect(Math.floor(s * 0.42), Math.floor(s * 0.2), Math.floor(s * 0.16), Math.floor(s * 0.18));
+      ctx.fillStyle = 'rgba(95,227,232,0.5)';
+      ctx.fillRect(Math.floor(s * 0.08), Math.floor(s * 0.08), Math.floor(s * 0.1), Math.floor(s * 0.1));
+      ctx.fillRect(Math.floor(s * 0.82), Math.floor(s * 0.3), Math.floor(s * 0.1), Math.floor(s * 0.1));
       break;
     }
     case 'rail': {
@@ -1309,6 +1328,8 @@ const _rayNormal = new THREE.Vector3(); // 射线:命中面法线
 const droppedItems = [];
 // 玩家生命系统(无怪物,先建立基础设施:跌落/溺水伤害 + HUD + 存档)
 let playerHP = 20;       // 10 颗心,每心 2 点
+// 经验(R28):击杀生物掉经验球(磁吸吸收)升级;附魔台消耗等级附魔
+const xpState = { level: 0, points: 0 };
 // 护甲装备槽(经典 4 部位):格 = {kind:'tool', id, durability};手持护甲右键穿上
 const armorSlots = { head: null, chest: null, legs: null, feet: null };
 const ARMOR_SLOT_NAMES = { head: '头盔', chest: '胸甲', legs: '护腿', feet: '靴子' };
@@ -1316,7 +1337,10 @@ function totalArmorPoints() {
   let p = 0;
   for (const s in armorSlots) {
     const it = armorSlots[s];
-    if (it && TOOL_TYPES[it.id]) p += TOOL_TYPES[it.id].armor || 0;
+    if (it && TOOL_TYPES[it.id]) {
+      p += TOOL_TYPES[it.id].armor || 0;
+      if (it.ench && it.ench.protection) p += it.ench.protection;   // 保护附魔(R28)
+    }
   }
   return p;
 }
@@ -2333,6 +2357,8 @@ function clearWorld() {
   clearFurnaces();       // 清熔炉状态
   clearChests();         // 清箱子内容
   clearMinecarts();      // 清矿车实体(R26)
+  clearXPOrbs();         // 清经验球(R28)
+  closeEnchantPanel();   // 关附魔面板(R28)
   spawnPoint = null;     // 重生点回出生广场(读档会按存档恢复)
   tableOpen = false;
   for (let i = 0; i < 9; i++) tableGrid[i] = null;
@@ -3238,9 +3264,14 @@ function currentTool() {
 
 function breakCost(blockType) {
   // 核心计算在 craft.js(纯函数,可单测);这里只做依赖注入(BLOCK_TYPES/TOOL_TYPES/currentTool)
+  // 效率附魔(R28):工具速度 ×(1 + 0.45×级)
   const def = BLOCK_TYPES[blockType];
   const tool = currentTool();
-  return CRAFTLIB.breakCost(def, tool ? TOOL_TYPES[tool.id] : null);
+  let tdef = tool ? TOOL_TYPES[tool.id] : null;
+  if (tdef && tool.ench && tool.ench.efficiency) {
+    tdef = Object.assign({}, tdef, { speed: tdef.speed * (1 + 0.45 * tool.ench.efficiency) });
+  }
+  return CRAFTLIB.breakCost(def, tdef);
 }
 
 function breakBlock() {
@@ -3261,7 +3292,8 @@ function breakBlock() {
   if (mobHit) {
     const heldDef = (item && item.kind === 'tool') ? TOOL_TYPES[item.id] : null;
     const dmg = (heldDef && (heldDef.tool === 'sword' || heldDef.tool === 'axe')) ? (heldDef.damage || 4) : 1;
-    hurtMob(mobHit, dmg, -Math.sin(yaw), -Math.cos(yaw));
+    // 锋利附魔(R28):近战伤害 +1/级
+    hurtMob(mobHit, dmg + ((item && item.ench && item.ench.sharpness) || 0), -Math.sin(yaw), -Math.cos(yaw));
     swingArm();
     swingHoldItem();
     return;
@@ -3403,6 +3435,7 @@ function placeBlock() {
       return;
     }
     if (hitType === 'crafting_table') { openTablePanel(); return; }
+    if (hitType === 'enchanting_table') { openEnchantPanel(); return; }
     if (hitType === 'tnt') { igniteTNT(tHit.x, tHit.y, tHit.z); return; }
     if (hitType === 'furnace') { openFurnacePanel(tHit.x, tHit.y, tHit.z); return; }
     if (hitType === 'bed') { trySleep(tHit.x, tHit.y, tHit.z); return; }
@@ -3477,8 +3510,8 @@ function useTool(item) {
     swingHoldItem();
     const m = raycastMob(3.5);
     if (m) {
-      hurtMob(m, def.damage || 3, -Math.sin(yaw), -Math.cos(yaw));
-      showToast(`挥砍:${def.name} · 伤害${def.damage} · 命中生物`);
+      hurtMob(m, (def.damage || 3) + ((item.ench && item.ench.sharpness) || 0), -Math.sin(yaw), -Math.cos(yaw));   // 锋利附魔 +1/级(R28)
+      showToast(`挥砍:${def.name} · 伤害${(def.damage || 3) + ((item.ench && item.ench.sharpness) || 0)} · 命中生物`);
       audio.play('break');
       consumeToolDurability(item);   // 经典:命中才损耗耐久,空挥不扣
     }
@@ -3511,7 +3544,13 @@ function useTool(item) {
   }
 }
 
+// 耐久附魔(R28):等级 l → 消耗概率 1/(l+1)(经典近似);返回 true 表示本次免损耗
+function enchUnbreakingSkip(item) {
+  return !!(item && item.ench && item.ench.unbreaking && Math.random() < item.ench.unbreaking / (item.ench.unbreaking + 1));
+}
+
 function consumeToolDurability(item) {
+  if (enchUnbreakingSkip(item)) return;   // 耐久附魔:本次不损耗
   item.durability = Math.max(0, item.durability - 1);
   if (item.durability <= 0) {
     showToast(`${TOOL_TYPES[item.id].name} 坏了!`);
@@ -3523,6 +3562,14 @@ function consumeToolDurability(item) {
 
 const arrows = [];
 let arrowGeo = null, arrowMat = null;
+// 力量附魔等级(扫描快捷栏的弓,R28)
+function bowPowerBonus() {
+  for (let i = 0; i < HOTBAR_SIZE; i++) {
+    const it = hotbar[i];
+    if (it && it.kind === 'tool' && TOOL_TYPES[it.id] && TOOL_TYPES[it.id].tool === 'bow' && it.ench && it.ench.power) return it.ench.power;
+  }
+  return 0;
+}
 function shootArrow() {
   if (!arrowGeo) { arrowGeo = new THREE.BoxGeometry(0.08, 0.08, 0.4); arrowMat = new THREE.MeshLambertMaterial({ color: 0xcaa472 }); }
   const m = new THREE.Mesh(arrowGeo, arrowMat);
@@ -4615,6 +4662,129 @@ function updateMinecarts(dt) {
   }
 }
 
+// ============================================================
+// 经验与附魔(R28):经验球实体(磁吸吸收升级)+ 附魔台面板
+// 升级阈值/升级结算/附魔选项生成在 machines.js 纯函数(可单测)
+// ============================================================
+const xpOrbs = [];
+let xpOrbGeo = null, xpOrbMat = null;
+function spawnXPOrbs(x, y, z, total) {
+  // 拆成若干小球(每球 1-3 点),轻微散布
+  let left = total;
+  while (left > 0) {
+    const v = Math.min(left, 1 + (Math.random() * 3 | 0));
+    left -= v;
+    if (!xpOrbGeo) {
+      xpOrbGeo = new THREE.OctahedronGeometry(0.14);
+      xpOrbMat = new THREE.MeshBasicMaterial({ color: 0x8ef24a });
+    }
+    const mesh = new THREE.Mesh(xpOrbGeo, xpOrbMat);
+    const ox = x + (Math.random() - 0.5) * 1.2, oz = z + (Math.random() - 0.5) * 1.2;
+    mesh.position.set(ox, y + 0.3, oz);
+    scene.add(mesh);
+    xpOrbs.push({ mesh, x: ox, y: y + 0.3, z: oz, value: v, vy: 2 + Math.random() * 2, age: 0 });
+  }
+}
+function clearXPOrbs() {
+  for (const o of xpOrbs) scene.remove(o.mesh);
+  xpOrbs.length = 0;
+}
+function updateXPOrbs(dt) {
+  for (let i = xpOrbs.length - 1; i >= 0; i--) {
+    const o = xpOrbs[i];
+    o.age += dt;
+    const dx = playerPos.x - o.x, dy = (playerPos.y - 0.8) - o.y, dz = playerPos.z - o.z;
+    const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (d < 1.2) {   // 吸收
+      const gained = MACHINES.xpGain(xpState, o.value);
+      if (gained > 0) showToast('⭐ 升级!经验等级 ' + xpState.level);
+      audio.play('place');
+      updateXPBar();
+      markDirtySave();
+      scene.remove(o.mesh);
+      xpOrbs.splice(i, 1);
+      continue;
+    }
+    if (d < 4.5) {   // 磁吸飞向玩家
+      o.x += dx / d * 6 * dt; o.y += dy / d * 6 * dt; o.z += dz / d * 6 * dt;
+    } else {         // 重力 + 落地
+      o.vy -= 18 * dt;
+      let ny = o.y + o.vy * dt;
+      if (isSolidAt(Math.floor(o.x), Math.floor(ny - 0.1), Math.floor(o.z))) { ny = Math.floor(ny - 0.1) + 1.1; o.vy = 0; }
+      o.y = ny;
+    }
+    o.mesh.position.set(o.x, o.y + Math.sin(o.age * 3) * 0.06, o.z);
+    o.mesh.rotation.y += dt * 2.5;
+    if (o.age > 90) { scene.remove(o.mesh); xpOrbs.splice(i, 1); }
+  }
+}
+function updateXPBar() {
+  const fill = document.getElementById('xp-fill');
+  const lv = document.getElementById('xp-level');
+  if (fill) fill.style.width = Math.min(100, xpState.points / MACHINES.xpToNext(xpState.level) * 100) + '%';
+  if (lv) lv.textContent = xpState.level > 0 ? String(xpState.level) : '';
+}
+
+// ---- 附魔台面板(JS 构建的经典灰岩面板) ----
+let enchantPanelEl = null, currentEnchantOptions = null;
+function openEnchantPanel() {
+  if (!enchantPanelEl) {
+    enchantPanelEl = document.createElement('div');
+    enchantPanelEl.id = 'enchant-panel';
+    enchantPanelEl.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:80;background:#c6c6c6;border:4px solid;border-color:#fff #555 #555 #fff;padding:16px 18px;min-width:330px;max-width:90vw;box-shadow:0 8px 30px rgba(0,0,0,.5);font-size:14px;color:#222;';
+    document.body.appendChild(enchantPanelEl);
+  }
+  const item = hotbar[currentSlot];
+  currentEnchantOptions = (item && item.kind === 'tool')
+    ? MACHINES.rollEnchants(TOOL_TYPES[item.id].tool, Math.random)
+    : null;
+  renderEnchantPanel();
+  enchantPanelEl.style.display = '';
+  if (document.pointerLockElement) document.exitPointerLock();
+}
+function closeEnchantPanel() {
+  if (enchantPanelEl) enchantPanelEl.style.display = 'none';
+  tryRelockPointer();
+}
+function renderEnchantPanel() {
+  if (!enchantPanelEl) return;
+  const item = hotbar[currentSlot];
+  let inner = '<div style="font-weight:bold;margin-bottom:10px;font-size:15px;">✨ 附魔台 · 经验等级 <span style="color:#2a7a1a;">' + xpState.level + '</span> (' + xpState.points + '/' + MACHINES.xpToNext(xpState.level) + ')</div>';
+  if (!item || item.kind !== 'tool') {
+    inner += '<div style="color:#555;margin:12px 0;">手持工具 / 武器 / 弓 / 护甲再来(先在快捷栏选中)</div>';
+  } else {
+    const enchStr = item.ench ? ' <span style="color:#7a2aaa;">[' + Object.entries(item.ench).map(([k, v]) => MACHINES.ENCHANT_NAMES[k] + ' ' + 'I'.repeat(v)).join(' · ') + ']</span>' : '';
+    inner += '<div style="margin-bottom:10px;">当前:' + itemName(item) + enchStr + '</div>';
+    for (let i = 0; i < (currentEnchantOptions || []).length; i++) {
+      const o = currentEnchantOptions[i];
+      const afford = xpState.level >= o.cost;
+      inner += '<button data-ei="' + i + '" style="display:block;width:100%;margin:6px 0;padding:8px 10px;background:' + (afford ? '#8b8b8b' : '#9a9a9a') + ';color:' + (afford ? '#fff' : '#777') + ';border:2px solid;border-color:#fff #444 #444 #fff;cursor:' + (afford ? 'pointer' : 'not-allowed') + ';font-size:13px;">✨ ' + MACHINES.ENCHANT_NAMES[o.type] + ' ' + 'I'.repeat(o.level) + ' —— 消耗 ' + o.cost + ' 级经验' + (afford ? '' : '(等级不足)') + '</button>';
+    }
+  }
+  inner += '<button id="ench-close" style="margin-top:10px;padding:6px 20px;background:#6f6f6f;color:#fff;border:2px solid;border-color:#fff #444 #444 #fff;cursor:pointer;">关闭</button>';
+  enchantPanelEl.innerHTML = inner;
+  enchantPanelEl.querySelectorAll('button[data-ei]').forEach(b => {
+    b.onclick = () => {
+      const o = currentEnchantOptions && currentEnchantOptions[+b.dataset.ei];
+      const item2 = hotbar[currentSlot];
+      if (!o || !item2 || item2.kind !== 'tool') return;
+      if (xpState.level < o.cost) { showToast('经验等级不足(需要 ' + o.cost + ' 级)'); return; }
+      xpState.level -= o.cost;
+      item2.ench = item2.ench || {};
+      item2.ench[o.type] = Math.max(item2.ench[o.type] || 0, o.level);
+      refreshHotbarSlot(currentSlot);
+      updateXPBar();
+      markDirtySave();
+      audio.play('place');
+      showToast('✨ 附魔成功:' + MACHINES.ENCHANT_NAMES[o.type] + ' ' + 'I'.repeat(o.level));
+      currentEnchantOptions = MACHINES.rollEnchants(TOOL_TYPES[item2.id].tool, Math.random);
+      renderEnchantPanel();
+    };
+  });
+  const cb = enchantPanelEl.querySelector('#ench-close');
+  if (cb) cb.onclick = closeEnchantPanel;
+}
+
 // 夜间在距玩家 ≥12 格处生成敌对生物(僵尸 65% / 苦力怕 35%);关闭怪物或昼夜循环 = 和平模式
 function trySpawnHostile() {
   if (!settings.hostiles || !settings.dayNightEnabled) return;
@@ -4779,6 +4949,8 @@ function hurtMob(m, dmg, kx, kz, silent) {
     else if (m.type === 'skeleton') dropAt('arrow', 'item', Math.random() < 0.7 ? 2 : 1);
     else if (m.type === 'spider') dropAt('string', 'item', Math.random() < 0.5 ? 2 : 1);
     else if (m.type === 'enderman' && Math.random() < 0.6) dropAt('ender_pearl', 'item', 1);
+    // 经验球(R28):敌对 5(末影人 10)/被动 1-3
+    spawnXPOrbs(p.x, p.y, p.z, MOB_DEFS[m.type].hostile ? (m.type === 'enderman' ? 10 : 5) : 1 + (Math.random() * 3 | 0));
     killMob(m);
     showToast(m.type === 'zombie' ? '🧟 击倒了僵尸' : m.type === 'creeper' ? '💥 击倒了苦力怕' : m.type === 'skeleton' ? '💀 击倒了骷髅' : m.type === 'spider' ? '🕷 击倒了蜘蛛' : m.type === 'enderman' ? '🟣 击倒了末影人' : m.type === 'cow' ? '🐮 击倒了牛' : m.type === 'sheep' ? '🐑 击倒了羊' : '🐷 击倒了猪');
   }
@@ -5242,13 +5414,15 @@ function unequipArmor(slot) {
   } else showToast('快捷栏已满,腾出格子再卸下');
 }
 
-// 战斗受击:每件已装备护甲耐久 -1,耗尽即碎(经典)
+// 战斗受击:每件已装备护甲耐久 -1,耗尽即碎(经典;耐久附魔可免损耗,R28)
 function wearArmorHit() {
   for (const s of ['head', 'chest', 'legs', 'feet']) {
     const it = armorSlots[s];
     if (!it) continue;
-    it.durability = Math.max(0, it.durability - 1);
-    if (it.durability <= 0) { showToast(`${TOOL_TYPES[it.id].name} 坏了!`); armorSlots[s] = null; }
+    if (!enchUnbreakingSkip(it)) {
+      it.durability = Math.max(0, it.durability - 1);
+      if (it.durability <= 0) { showToast(`${TOOL_TYPES[it.id].name} 坏了!`); armorSlots[s] = null; }
+    }
   }
   updateArmorBar();
   markDirtySave();
@@ -5332,6 +5506,9 @@ function respawnPlayer() {
   playerHP = PLAYER_MAX_HP;
   breathTimer = 0;
   hungerState.hunger = 20; hungerState.drain = 0; hungerState.regenT = 0; hungerState.starveT = 0;   // 经典:死亡重置饥饿
+  xpState.level = Math.floor(xpState.level / 2);   // 经典:死亡损失大部分经验(R28 简化折半)
+  xpState.points = Math.floor(xpState.points / 2);
+  updateXPBar();
   updateHPBar(); updateHungerBar();
   // 显示"你死了"遮罩,2 秒后淡出
   const el = document.getElementById('death-overlay');
@@ -5382,7 +5559,7 @@ function updateArrows(dt) {
     }
     if (hitMob) {
       const vl = Math.max(0.001, Math.hypot(a.userData.vel.x, a.userData.vel.z));
-      hurtMob(hitMob, 5, a.userData.vel.x / vl, a.userData.vel.z / vl);
+      hurtMob(hitMob, 5 + bowPowerBonus(), a.userData.vel.x / vl, a.userData.vel.z / vl);   // 力量附魔 +1/级(R28)
       scene.remove(a);
       arrows.splice(i, 1);
       continue;
@@ -5746,6 +5923,7 @@ function animate() {
   if (locked) updateFallingBlocks(dt);             // 沙砾重力(暂停时冻结)
   if (locked) updateTNT(dt);                       // 点燃的 TNT(暂停时冻结)
   if (locked) updateMinecarts(dt);                 // 矿车(暂停时冻结,R26)
+  if (locked) updateXPOrbs(dt);                    // 经验球(R28)
   updateWeather(dt);                               // 天气(晴雨随机调度,暂停也推进)
   updateFurnaces(dt);                              // 熔炉冶炼(经典:暂停也持续燃烧)
   if (locked) updateDroppedItems(dt);              // 掉落物(暂停时冻结;每帧仅一次)
@@ -6006,6 +6184,12 @@ function applySave(rec) {
     }
   }
   spawnPoint = (rec.spawnPoint && Number.isFinite(rec.spawnPoint.x) && Number.isFinite(rec.spawnPoint.y) && Number.isFinite(rec.spawnPoint.z)) ? rec.spawnPoint : null;
+  // 恢复经验(R28)
+  if (rec.xpData && Number.isFinite(rec.xpData.level) && Number.isFinite(rec.xpData.points)) {
+    xpState.level = Math.max(0, Math.floor(rec.xpData.level));
+    xpState.points = Math.max(0, Math.floor(rec.xpData.points));
+  } else { xpState.level = 0; xpState.points = 0; }
+  updateXPBar();
   // 恢复矿车(R26;位置取整到所在铁轨格)
   clearMinecarts();
   if (rec.minecartsData) {
@@ -6232,7 +6416,7 @@ function buildInventoryPanel() {
   addSection(grid, '方块');
   HOTBAR_ORDER.forEach(id => addCell({ kind: 'block', id }));
   // 新增方块也可取用
-  ['water', 'snow', 'gravel', 'door', 'door_iron', 'door_stone', 'door_gold', 'door_diamond', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'bed', 'chest', 'ladder', 'bookshelf', 'torch', 'rail'].forEach(id => addCell({ kind: 'block', id }));
+  ['water', 'snow', 'gravel', 'door', 'door_iron', 'door_stone', 'door_gold', 'door_diamond', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'bed', 'chest', 'ladder', 'bookshelf', 'torch', 'rail', 'enchanting_table'].forEach(id => addCell({ kind: 'block', id }));
   addSection(grid, '材料 · 宝石');
   ITEM_ORDER.forEach(id => addCell({ kind: 'item', id, count: 64 }));
 }
@@ -6351,7 +6535,7 @@ function openTablePanel() {
   if (closeBtn) closeBtn.onclick = closeTablePanel;
   // 目录循环列表:方块 + 材料物品(矿石/圆石/木棍等,按 kind 区分图标)
   const catalog = HOTBAR_ORDER.map(id => ({ kind: 'block', id }))
-    .concat(['water', 'snow', 'gravel', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'sand', 'bed', 'chest', 'ladder', 'bookshelf', 'wool_red', 'wool_white', 'torch', 'rail'].map(id => ({ kind: 'block', id })))
+    .concat(['water', 'snow', 'gravel', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'sand', 'bed', 'chest', 'ladder', 'bookshelf', 'wool_red', 'wool_white', 'torch', 'rail', 'enchanting_table'].map(id => ({ kind: 'block', id })))
     .concat(['leather', 'book'].map(id => ({ kind: 'item', id })))
     .concat(['gem_gold', 'gem_diamond', 'gem_emerald', 'arrow', 'stick', 'coal', 'iron_ingot'].map(id => ({ kind: 'item', id })));
   document.querySelectorAll('#table-grid .inv-cell').forEach((cell, i) => {
@@ -6634,6 +6818,7 @@ function buildSaveRecord() {
     armorSlotsData: ['head', 'chest', 'legs', 'feet'].map(s => armorSlots[s] ? [s, { id: armorSlots[s].id, durability: armorSlots[s].durability }] : [s, null]),
     minecartsData: minecarts.map(c => ({ x: c.cx, y: Math.round(c.y), z: c.cz })),
     mobsData: mobs.map(mm => ({ t: mm.type, x: Math.round(mm.mesh.position.x * 100) / 100, y: Math.round(mm.mesh.position.y * 100) / 100, z: Math.round(mm.mesh.position.z * 100) / 100, hp: mm.hp })),
+    xpData: { level: xpState.level, points: xpState.points },
     doorsData: Array.from(doors.entries()).map(function(e){return [e[0], {x:e[1].x,y:e[1].y,z:e[1].z,type:e[1].type,open:e[1].open,facing:e[1].facing}];}),
     timestamp: Date.now(),
   };

@@ -65,6 +65,8 @@
     { name: '铁轨', pattern: ['iron_ingot', 'iron_ingot', 'iron_ingot', 'iron_ingot', 'stick', 'iron_ingot', null, null, null], result: { kind: 'block', id: 'rail' }, count: 16, shapeless: false },
     // 矿车:5 铁锭 U 形(经典配方 → 1 辆)
     { name: '矿车', pattern: ['iron_ingot', null, 'iron_ingot', 'iron_ingot', 'iron_ingot', 'iron_ingot', null, null, null], result: { kind: 'item', id: 'minecart' }, count: 1, shapeless: false },
+    // 附魔台:2 钻石 + 3 书 + 1 石头(R28 简化配方;经典为黑曜石)
+    { name: '附魔台', pattern: ['gem_diamond', 'book', 'gem_diamond', 'book', 'stone', 'book', null, null, null], result: { kind: 'block', id: 'enchanting_table' }, count: 1, shapeless: false },
     // ---- 工具配方(3×3:3 材料上排 + 2 木棍中列,经典镐形)----
     { name: '木镐', pattern: ['planks', 'planks', 'planks', null, 'stick', null, null, 'stick', null], result: { kind: 'tool', id: 'pickaxe_wood' }, shapeless: false },
     { name: '石镐', pattern: ['cobblestone', 'cobblestone', 'cobblestone', null, 'stick', null, null, 'stick', null], result: { kind: 'tool', id: 'pickaxe_stone' }, shapeless: false },

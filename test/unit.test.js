@@ -15,7 +15,7 @@ const { hash2, hash3, valueNoise2D, valueNoise3D, fbm2D, BIOMES, biomeAt, height
 const { RECIPES, matchRecipe, matchRecipeGrid, breakCost } = require('../craft.js');
 
 // ---- 从 machines.js 模块加载(状态机纯函数:教程/熔炉/天气/存档 schema,R25) ----
-const { TUTORIAL_STEPS, advanceTutorial, furnaceCanSmelt, furnaceTick, weatherNext, cartNextDir, SAVE_SCHEMA_FIELDS, validateSaveRecord } = require('../machines.js');
+const { TUTORIAL_STEPS, advanceTutorial, furnaceCanSmelt, furnaceTick, weatherNext, cartNextDir, xpToNext, xpGain, rollEnchants, SAVE_SCHEMA_FIELDS, validateSaveRecord } = require('../machines.js');
 
 // ---- 从 inventory.js 模块加载(库存/掉落/饥饿/护甲纯函数) ----
 const { STACK_MAX, FOODS, ARMOR_MAX_POINTS, armorReduce, pickupIntoInventory, normalizeHotbar, hungerTick } = require('../inventory.js');
@@ -631,6 +631,50 @@ test('铁轨配方:6 铁锭 + 1 木棍 → 16 节(3×3)', () => {
   const g3 = (ids) => ids.map(x => x === null ? null : { kind: x === 'stick' ? 'item' : 'item', id: x });
   const r = matchRecipeGrid(g3(['iron_ingot', 'iron_ingot', 'iron_ingot', 'iron_ingot', 'stick', 'iron_ingot', null, null, null]), 3, RECIPES);
   assert.ok(r && r.result.id === 'rail' && r.count === 16);
+});
+
+// ===== 经验与附魔(R28) =====
+console.log('\n=== 经验系统(xpToNext/xpGain) ===');
+test('xpToNext 阈值随等级递增', () => {
+  assert.strictEqual(xpToNext(0), 8);
+  assert.strictEqual(xpToNext(1), 12);
+  assert.strictEqual(xpToNext(5), 28);
+});
+test('xpGain 升级结算(单级/多级/不足)', () => {
+  const st = { level: 0, points: 0 };
+  assert.strictEqual(xpGain(st, 5), 0);
+  assert.strictEqual(st.points, 5);
+  assert.strictEqual(xpGain(st, 3), 1);       // 5+3=8 恰好达标 → 升 1 级
+  assert.strictEqual(st.level, 1);
+  assert.strictEqual(st.points, 0);
+  assert.strictEqual(xpGain(st, 30), 2);      // 30:升2级余12→升3级余2 → 共升 2 级到 level 3
+  assert.strictEqual(st.level, 3);
+  assert.strictEqual(st.points, 2);
+});
+
+console.log('\n=== 附魔选项(rollEnchants) ===');
+test('rollEnchants 确定性(注入 rand)且 3 个选项合法', () => {
+  let i = 0;
+  const rand = () => [0.1, 0.9, 0.5, 0.6, 0.2, 0.8][i++ % 6];
+  const a = rollEnchants('sword', rand);
+  i = 0;
+  const b = rollEnchants('sword', rand);
+  assert.deepStrictEqual(a, b);   // 确定性
+  assert.strictEqual(a.length, 3);
+  for (const o of a) {
+    assert.ok(['sharpness', 'unbreaking'].includes(o.type), '剑池外类型: ' + o.type);
+    assert.ok(o.level >= 1 && o.level <= 3);
+    assert.strictEqual(o.cost, o.level);
+  }
+});
+test('rollEnchants 按物品类别取池(镐=效率/耐久)', () => {
+  const opts = rollEnchants('pickaxe', () => 0.99);
+  for (const o of opts) assert.ok(['efficiency', 'unbreaking'].includes(o.type));
+});
+test('附魔台配方:2 钻石 + 3 书 + 1 石头(3×3)', () => {
+  const g3 = (ids) => ids.map(x => x === null ? null : { kind: x === 'stone' ? 'block' : 'item', id: x });
+  const r = matchRecipeGrid(g3(['gem_diamond', 'book', 'gem_diamond', 'book', 'stone', 'book', null, null, null]), 3, RECIPES);
+  assert.ok(r && r.result.id === 'enchanting_table');
 });
 
 console.log('\n=== 总结 ===');

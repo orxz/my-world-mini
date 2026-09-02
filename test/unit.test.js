@@ -9,7 +9,7 @@
 const assert = require('assert');
 
 // ---- 从 worldgen.js 模块加载(单一数据源,不再手抄) ----
-const { hash2, hash3, valueNoise2D, fbm2D, BIOMES, biomeAt, heightAt } = require('../worldgen.js');
+const { hash2, hash3, valueNoise2D, valueNoise3D, fbm2D, BIOMES, biomeAt, heightAt, caveAt } = require('../worldgen.js');
 
 // ---- 从 craft.js 模块加载(合成/破坏计算的单一数据源) ----
 const { RECIPES, matchRecipe, matchRecipeGrid, breakCost } = require('../craft.js');
@@ -465,6 +465,38 @@ test('火把配方:煤炭上 + 木棍下 → 4 支(2×2 背包可合成)', () =>
   const g4 = ['coal', null, 'stick', null].map(x => x === null ? null : { kind: 'item', id: x });
   const r = matchRecipeGrid(g4, 2, RECIPES);
   assert.ok(r && r.result.id === 'torch' && r.count === 4);
+});
+
+// ===== 洞穴生成(R24) =====
+console.log('\n=== 3D 噪声与洞穴(valueNoise3D/caveAt) ===');
+test('valueNoise3D 确定性 + 值域 [0,1] + 平滑(近点差值小)', () => {
+  assert.strictEqual(valueNoise3D(10.5, 20.3, 30.7, 999), valueNoise3D(10.5, 20.3, 30.7, 999));
+  for (let i = 0; i < 200; i++) {
+    const v = valueNoise3D(i * 3.7, i * 1.3, i * 5.1, 42 + i);
+    assert.ok(v >= 0 && v <= 1, '值域越界: ' + v);
+  }
+  const a = valueNoise3D(100.2, 50.2, 80.2, 7), b = valueNoise3D(100.4, 50.2, 80.2, 7);
+  assert.ok(Math.abs(a - b) <= 0.5, '近点不应跳变');
+});
+test('caveAt y 边界:y<2 与 y>38 永不为洞', () => {
+  for (let i = 0; i < 100; i++) {
+    const x = (i * 37) % 500 - 250, z = (i * 91) % 500 - 250;
+    assert.strictEqual(caveAt(x, 1, z, 12345), false);
+    assert.strictEqual(caveAt(x, 39, z, 12345), false);
+  }
+});
+test('caveAt 确定性(同种子同坐标一致;换种子可能不同)', () => {
+  assert.strictEqual(caveAt(100, 12, 200, 777), caveAt(100, 12, 200, 777));
+});
+test('caveAt 存在性与占比:40×15×40 采样有洞且不过密(0.1%~8%)', () => {
+  let count = 0, total = 0;
+  for (let x = 0; x < 40; x++) for (let y = 4; y < 19; y++) for (let z = 0; z < 40; z++) {
+    total++;
+    if (caveAt(x * 3, y, z * 3, 12345)) count++;
+  }
+  const ratio = count / total;
+  assert.ok(count > 0, '完全无洞');
+  assert.ok(ratio > 0.001 && ratio < 0.08, '占比异常: ' + (ratio * 100).toFixed(2) + '%');
 });
 
 console.log('\n=== 总结 ===');

@@ -87,19 +87,56 @@
     return Math.max(2, Math.min(44, Math.floor(h)));
   }
 
+  // 平滑值噪声(三线性插值;R24 洞穴生成用)
+  function valueNoise3D(x, y, z, seed) {
+    const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
+    const xf = x - xi, yf = y - yi, zf = z - zi;
+    const sx = xf * xf * (3 - 2 * xf);
+    const sy = yf * yf * (3 - 2 * yf);
+    const sz = zf * zf * (3 - 2 * zf);
+    const c000 = hash3(xi, yi, zi, seed),         c100 = hash3(xi + 1, yi, zi, seed);
+    const c010 = hash3(xi, yi + 1, zi, seed),     c110 = hash3(xi + 1, yi + 1, zi, seed);
+    const c001 = hash3(xi, yi, zi + 1, seed),     c101 = hash3(xi + 1, yi, zi + 1, seed);
+    const c011 = hash3(xi, yi + 1, zi + 1, seed), c111 = hash3(xi + 1, yi + 1, zi + 1, seed);
+    const x00 = c000 + (c100 - c000) * sx;
+    const x10 = c010 + (c110 - c010) * sx;
+    const x01 = c001 + (c101 - c001) * sx;
+    const x11 = c011 + (c111 - c011) * sx;
+    const y0 = x00 + (x10 - x00) * sy;
+    const y1 = x01 + (x11 - x01) * sy;
+    return y0 + (y1 - y0) * sz;
+  }
+
+  // 洞穴判定(R24):两条脊状噪声交集 → 蜿蜒隧道(意大利面洞);深处奶酪大空腔
+  // y 限 2..38(不碰基岩与浅表);确定性(同种子同坐标永远一致)
+  function caveAt(wx, y, wz, seed) {
+    if (y < 2 || y > 38) return false;
+    const n1 = valueNoise3D(wx * 0.055, y * 0.09, wz * 0.055, seed + 4451);
+    if (Math.abs(n1 - 0.5) >= 0.043) return false;   // 早退:大多数格子只算一次噪声
+    const n2 = valueNoise3D(wx * 0.055, y * 0.09, wz * 0.055, seed + 8892);
+    if (Math.abs(n2 - 0.5) < 0.047) return true;
+    if (y < 20) {
+      const n3 = valueNoise3D(wx * 0.042, y * 0.07, wz * 0.042, seed + 9313);
+      if (n3 > 0.805) return true;
+    }
+    return false;
+  }
+
   // 导出(Node 环境)
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { hash2, hash3, valueNoise2D, fbm2D, BIOMES, biomeAt, heightAt };
+    module.exports = { hash2, hash3, valueNoise2D, valueNoise3D, fbm2D, BIOMES, biomeAt, heightAt, caveAt };
   }
   // 浏览器:挂到全局
-  global.WORLDGEN = { hash2, hash3, valueNoise2D, fbm2D, BIOMES, biomeAt, heightAt };
+  global.WORLDGEN = { hash2, hash3, valueNoise2D, valueNoise3D, fbm2D, BIOMES, biomeAt, heightAt, caveAt };
   // 同时保持全局函数名(game.js 直接调用)
   global.hash2 = hash2;
   global.hash3 = hash3;
   global.valueNoise2D = valueNoise2D;
+  global.valueNoise3D = valueNoise3D;
   global.fbm2D = fbm2D;
   global.BIOMES = BIOMES;
   global.biomeAt = biomeAt;
   global.heightAt = heightAt;
+  global.caveAt = caveAt;
 
 })(typeof window !== 'undefined' ? window : globalThis);

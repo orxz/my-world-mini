@@ -20,10 +20,12 @@ const WORLDGEN_GLOBALS = {
   hash2: 'readonly',
   hash3: 'readonly',
   valueNoise2D: 'readonly',
+  valueNoise3D: 'readonly',
   fbm2D: 'readonly',
   BIOMES: 'readonly',
   biomeAt: 'readonly',
   heightAt: 'readonly',
+  caveAt: 'readonly',
 };
 
 // craft.js 在浏览器以 <script> 加载后挂到全局的命名空间(game.js 直接调用)

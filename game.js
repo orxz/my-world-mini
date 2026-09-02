@@ -580,10 +580,12 @@ function buildAtlas() {
   // emissive = 纹理色 × 面烘焙色 × 光级曲线 × uTorchGlow(暖色偏置)
   matSolidChunk.onBeforeCompile = (shader) => {
     shader.uniforms.uTorchGlow = torchGlowUniform;
-    shader.vertexShader = 'attribute float aTorch;\nvarying float vTorch;\n' + shader.vertexShader
-      .replace('#include <color_vertex>', '#include <color_vertex>\n\tvTorch = aTorch;');
-    shader.fragmentShader = 'uniform float uTorchGlow;\nvarying float vTorch;\n' + shader.fragmentShader
-      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n\ttotalEmissiveRadiance += diffuseColor.rgb * (vTorch * uTorchGlow) * vec3(1.0, 0.92, 0.78);');
+    shader.vertexShader = 'attribute float aTorch;\nattribute float aSky;\nvarying float vTorch;\nvarying float vSky;\n' + shader.vertexShader
+      .replace('#include <color_vertex>', '#include <color_vertex>\n\tvTorch = aTorch;\n\tvSky = aSky;');
+    // 火光 emissive:diffuseColor 已含天光遮蔽(vColor = 面色 × 天光),火把光不应被遮蔽 ——
+    // 除回 vSky(下限 0.34 防爆)补偿;地表 vSky=1 时与原行为完全一致
+    shader.fragmentShader = 'uniform float uTorchGlow;\nvarying float vTorch;\nvarying float vSky;\n' + shader.fragmentShader
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n\ttotalEmissiveRadiance += diffuseColor.rgb * (vTorch * uTorchGlow) * vec3(1.0, 0.92, 0.78) * (1.0 / max(vSky, 0.34));');
   };
   matSolidChunk.customProgramCacheKey = () => 'torchglow';
   // 水用 MeshBasicMaterial(不受光照影响,显示纯清水蓝;Lambert 受法线/光照会压暗变灰)
@@ -693,6 +695,19 @@ function generateChunkData(cx, cz) {
         if (r < 0.012) data[idx2] = BLOCK_ID.coal_ore;
         else if (r < 0.019) data[idx2] = BLOCK_ID.iron_ore;
         else if (r < 0.022 && y < 12) data[idx2] = BLOCK_ID.diamond_ore;
+      }
+
+      // 洞穴挖空(R24,经典):3D 噪声隧道 + 深处空腔。保护:
+      //  - 出生广场 |x|,|z| ≤ 30 一律不挖(重生区地下完整)
+      //  - 陆地保留地表 2 格壳(防树悬空/顶板塌口),海底保留 3 格壳(防水漏进洞)
+      if (wx < -30 || wx > 30 || wz < -30 || wz > 30) {
+        const carveTop = (height < SEA_LEVEL) ? height - 3 : height - 2;
+        for (let y = 2; y <= Math.min(carveTop, 38); y++) {
+          const idx2 = chunkIdx(lx, y, lz);
+          const cid = data[idx2];
+          if (cid === 0 || cid === WATER_ID) continue;
+          if (caveAt(wx, y, wz, worldSeed)) data[idx2] = 0;
+        }
       }
     }
   }
@@ -1000,8 +1015,36 @@ function buildChunkMesh(ch) {
   const data = ch.data;
   const positions = [], normals = [], uvs = [], indices = [], colors = [];
   const torch = [];   // 顶点火把光级强度(R22 光照;无光源区块全 0)
+  const sky = [];     // 顶点天光遮蔽系数(R24:地下/洞内变暗;0.15 下限)
   const wPositions = [], wNormals = [], wUvs = [], wIndices = []; // 水面/透明
   const light = getLightGrid(ch.cx, ch.cz);   // 光照网格(无光源时为 null,零采样开销)
+  // 天光遮蔽(R24):每列首个挡光方块高度(列顶);面朝向格低于列顶越深越暗 ——
+  // 洞穴天然黑暗;火把自发光经补偿(见材质注入)不受遮蔽,火把照常点亮洞内
+  const topY = new Int16Array(CHUNK_SIZE * CHUNK_SIZE);
+  for (let tlx = 0; tlx < CHUNK_SIZE; tlx++) for (let tlz = 0; tlz < CHUNK_SIZE; tlz++) {
+    let t = -1;
+    for (let yy = WORLD_HEIGHT - 1; yy >= 0; yy--) {
+      const id2 = data[chunkIdx(tlx, yy, tlz)];
+      if (id2 !== 0 && LIGHT_BLOCK_BY_ID[id2]) { t = yy; break; }
+    }
+    topY[tlx * CHUNK_SIZE + tlz] = t;
+  }
+  const borderMemo = new Map();   // 边界列顶缓存(跨区块面少量采样)
+  const colTop = (ax, az) => {
+    const bx = ax - ox, bz = az - oz;
+    if (bx >= 0 && bx < CHUNK_SIZE && bz >= 0 && bz < CHUNK_SIZE) return topY[bx * CHUNK_SIZE + bz];
+    const k = ax + ',' + az;
+    let t = borderMemo.get(k);
+    if (t === undefined) {
+      t = -1;
+      for (let yy = WORLD_HEIGHT - 1; yy >= 0; yy--) {
+        const id2 = getBlockId(ax, yy, az);
+        if (id2 !== 0 && LIGHT_BLOCK_BY_ID[id2]) { t = yy; break; }
+      }
+      borderMemo.set(k, t);
+    }
+    return t;
+  };
 
   for (let y = 0; y < WORLD_HEIGHT; y++) {
     for (let lz = 0; lz < CHUNK_SIZE; lz++) {
@@ -1050,23 +1093,28 @@ function buildChunkMesh(ch) {
           const tgtI = isWater ? wIndices : indices;
           // 烘焙顶点色(按面方向,非水才加)
           const shade = FACE_SHADE[f];
-          // 火把光级:采样面朝向的相邻格(空气/透明格)的光值(R22 光照)
-          let torchV = 0;
-          if (light && !isWater) {
-            const ax = wx + F.n[0], ay = y + F.n[1], az = wz + F.n[2];
-            const gx = ax - light.gx0, gz2 = az - light.gz0;
-            if (gx >= 0 && gx < light.W && gz2 >= 0 && gz2 < light.W && ay >= 0 && ay < WORLD_HEIGHT) {
-              torchV = LIGHT_CURVE[light.grid[((ay * light.W) + gz2) * light.W + gx]];
+          // 面朝向的相邻格(空气/透明):火把光级(R22)与天光遮蔽(R24)共用采样
+          const ax = wx + F.n[0], ay = y + F.n[1], az = wz + F.n[2];
+          let torchV = 0, skyV = 1;
+          if (!isWater) {
+            if (light) {
+              const gx = ax - light.gx0, gz2 = az - light.gz0;
+              if (gx >= 0 && gx < light.W && gz2 >= 0 && gz2 < light.W && ay >= 0 && ay < WORLD_HEIGHT) {
+                torchV = LIGHT_CURVE[light.grid[((ay * light.W) + gz2) * light.W + gx]];
+              }
             }
+            const depth = colTop(ax, az) - ay;
+            if (depth > 0) skyV = Math.max(0.15, 1 - depth * 0.22);
           }
+          const col = shade * skyV;
           const start = tgtP.length / 3;
           for (let k = 0; k < 4; k++) {
             tgtP.push(wx + base[k][0], y + base[k][1], wz + base[k][2]);
             tgtN.push(F.n[0], F.n[1], F.n[2]);
             tgtU.push(faceUV[k * 2], faceUV[k * 2 + 1]);
-            if (!isWater) colors.push(shade, shade, shade);
+            if (!isWater) colors.push(col, col, col);
           }
-          if (!isWater) torch.push(torchV, torchV, torchV, torchV);
+          if (!isWater) { torch.push(torchV, torchV, torchV, torchV); sky.push(skyV, skyV, skyV, skyV); }
           tgtI.push(start, start + 1, start + 2, start, start + 2, start + 3);
         }
       }
@@ -1083,19 +1131,20 @@ function buildChunkMesh(ch) {
   dirtyChunks.delete(ch);
   ch.hasMesh = false;
 
-  const buildGeo = (P, N, U, I, C, T) => {
+  const buildGeo = (P, N, U, I, C, T, S) => {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
     g.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
     g.setAttribute('uv', new THREE.Float32BufferAttribute(U, 2));
     if (C) g.setAttribute('color', new THREE.Float32BufferAttribute(C, 3));
     if (T) g.setAttribute('aTorch', new THREE.Float32BufferAttribute(T, 1));   // R22 火把光照
+    if (S) g.setAttribute('aSky', new THREE.Float32BufferAttribute(S, 1));     // R24 天光遮蔽
     g.setIndex(I);
     return g;
   };
 
   if (positions.length) {
-    const m = new THREE.Mesh(buildGeo(positions, normals, uvs, indices, colors, torch), matSolidChunk);
+    const m = new THREE.Mesh(buildGeo(positions, normals, uvs, indices, colors, torch, sky), matSolidChunk);
     m.userData.isChunk = true;
     m.userData.cx = ch.cx; m.userData.cz = ch.cz;
     scene.add(m);

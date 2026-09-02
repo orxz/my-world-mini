@@ -15,7 +15,7 @@ const { hash2, hash3, valueNoise2D, valueNoise3D, fbm2D, BIOMES, biomeAt, height
 const { RECIPES, matchRecipe, matchRecipeGrid, breakCost } = require('../craft.js');
 
 // ---- 从 machines.js 模块加载(状态机纯函数:教程/熔炉/天气/存档 schema,R25) ----
-const { TUTORIAL_STEPS, advanceTutorial, furnaceCanSmelt, furnaceTick, weatherNext, SAVE_SCHEMA_FIELDS, validateSaveRecord } = require('../machines.js');
+const { TUTORIAL_STEPS, advanceTutorial, furnaceCanSmelt, furnaceTick, weatherNext, cartNextDir, SAVE_SCHEMA_FIELDS, validateSaveRecord } = require('../machines.js');
 
 // ---- 从 inventory.js 模块加载(库存/掉落/饥饿/护甲纯函数) ----
 const { STACK_MAX, FOODS, ARMOR_MAX_POINTS, armorReduce, pickupIntoInventory, normalizeHotbar, hungerTick } = require('../inventory.js');
@@ -602,6 +602,34 @@ test('validateSaveRecord 检出缺失字段(防 R16 类漂移)', () => {
   assert.ok(miss.includes('dayTime'));
   assert.ok(miss.includes('furnacesData'));
   assert.ok(miss.includes('plazaBuilt'));
+});
+
+// ===== 矿车与铁轨(R26) =====
+console.log('\n=== 矿车轨道寻路(cartNextDir) ===');
+test('cartNextDir 优先直行', () => {
+  assert.deepStrictEqual(cartNextDir(true, true, true, true, 1, 0), [1, 0]);
+  assert.deepStrictEqual(cartNextDir(true, true, true, true, 0, -1), [0, -1]);
+});
+test('cartNextDir 直行不通转向非回头方向(L 弯)', () => {
+  assert.deepStrictEqual(cartNextDir(false, true, true, false, 1, 0), [0, 1]);   // 前方断轨:排除回头 -x → 转 +z
+  assert.deepStrictEqual(cartNextDir(true, false, false, true, 0, 1), [1, 0]);   // 前方断轨:排除回头 -z → 转 +x
+});
+test('cartNextDir 仅剩回头向才折返(死端弹回)', () => {
+  assert.deepStrictEqual(cartNextDir(false, true, false, false, 1, 0), [-1, 0]); // 只有来向可走 → 折返
+});
+test('cartNextDir 死胡同返回 null(停住)', () => {
+  assert.strictEqual(cartNextDir(false, false, false, false, 1, 0), null);
+  assert.strictEqual(cartNextDir(false, false, false, false, 0, 0), null);
+});
+test('矿车配方:5 铁锭 U 形 → 1 矿车(3×3)', () => {
+  const g3 = (ids) => ids.map(x => x === null ? null : { kind: 'item', id: x });
+  const r = matchRecipeGrid(g3(['iron_ingot', null, 'iron_ingot', 'iron_ingot', 'iron_ingot', 'iron_ingot', null, null, null]), 3, RECIPES);
+  assert.ok(r && r.result.id === 'minecart' && r.count === 1);
+});
+test('铁轨配方:6 铁锭 + 1 木棍 → 16 节(3×3)', () => {
+  const g3 = (ids) => ids.map(x => x === null ? null : { kind: x === 'stick' ? 'item' : 'item', id: x });
+  const r = matchRecipeGrid(g3(['iron_ingot', 'iron_ingot', 'iron_ingot', 'iron_ingot', 'stick', 'iron_ingot', null, null, null]), 3, RECIPES);
+  assert.ok(r && r.result.id === 'rail' && r.count === 16);
 });
 
 console.log('\n=== 总结 ===');

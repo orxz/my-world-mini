@@ -6,6 +6,11 @@
 ## [Unreleased]
 
 ### 新增
+- **矿车与铁轨(R26)**:铁轨方块(6 铁+木棍→16 节,非固体贴地、需固体支撑)
+  + 矿车物品(5 铁 U 形);寻路走 machines.cartNextDir 纯函数(优先直行/
+  弯道自动转/死头弹回,单测覆盖);惯性物理(摩擦衰减)、乘坐自动行驶
+  4.5 格/秒(空格下车带惯性)、左键助推/静止回收;出轨坠落;minecartsData
+  随存档持久化
 - **治理轮(R25):状态机提取 + 存档瘦身** —— 新增 machines.js 纯函数模块(教程
   TUTORIAL_STEPS/advanceTutorial、熔炉 SMELT/FUELS/furnaceTick、天气
   weatherNext、存档 schema SAVE_SCHEMA_FIELDS/validateSaveRecord),game.js

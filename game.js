@@ -43,12 +43,13 @@ const BLOCK_TYPES = {
   chest:        { name: '箱子',   top: '#a0763a', side: '#96682e', bottom: '#8a5f28', solid: true, tool: 'axe', hardness: 1.8 },
   ladder:       { name: '梯子',   top: '#9a6b3f', side: '#9a6b3f', bottom: '#9a6b3f', solid: false, tool: 'axe', hardness: 0.5 },
   torch:        { name: '火把',   top: '#ffd86b', side: '#ffd86b', bottom: '#8a6430', solid: false, tool: 'any', hardness: 0.05, light: 14 },
+  rail:         { name: '铁轨',   top: '#b8b8c0', side: '#b8b8c0', bottom: '#b8b8c0', solid: false, tool: 'pickaxe', hardness: 0.5 },
   bookshelf:    { name: '书架',   top: '#a0763a', side: '#96682e', bottom: '#8a5f28', solid: true, tool: 'axe', hardness: 1.5 },
 };
 const HOTBAR_ORDER = ['grass', 'dirt', 'stone', 'wood', 'leaves', 'sand', 'planks', 'brick'];
 
 // 方块数字 id(用于紧凑的 Uint8Array 区块存储)
-const BLOCK_ID = { air: 0, grass: 1, dirt: 2, stone: 3, wood: 4, leaves: 5, sand: 6, planks: 7, brick: 8, water: 9, snow: 10, gravel: 11, wool_red: 12, wool_yellow: 13, wool_white: 14, wool_black: 15, door: 16, door_iron: 17, door_stone: 18, door_gold: 19, door_diamond: 20, crafting_table: 21, cobblestone: 22, coal_ore: 23, iron_ore: 24, diamond_ore: 25, tnt: 26, furnace: 27, glass: 28, bed: 29, chest: 30, ladder: 31, bookshelf: 32, torch: 33 };
+const BLOCK_ID = { air: 0, grass: 1, dirt: 2, stone: 3, wood: 4, leaves: 5, sand: 6, planks: 7, brick: 8, water: 9, snow: 10, gravel: 11, wool_red: 12, wool_yellow: 13, wool_white: 14, wool_black: 15, door: 16, door_iron: 17, door_stone: 18, door_gold: 19, door_diamond: 20, crafting_table: 21, cobblestone: 22, coal_ore: 23, iron_ore: 24, diamond_ore: 25, tnt: 26, furnace: 27, glass: 28, bed: 29, chest: 30, ladder: 31, bookshelf: 32, torch: 33, rail: 34 };
 const ID_TO_BLOCK = Object.keys(BLOCK_ID);
 
 // ============================================================
@@ -125,8 +126,9 @@ const ITEM_TYPES = {
   mutton:      { name: '羊肉',   color: '#d07868', shape: 'meat' },
   leather:     { name: '皮革',   color: '#a8784a', shape: 'ingot' },
   book:        { name: '书',     color: '#b03030', shape: 'book' },
+  minecart:    { name: '矿车',   color: '#b8b8c0', shape: 'cart' },
 };
-const ITEM_ORDER = ['gem_diamond','gem_gold','gem_emerald','arrow','porkchop','cooked_porkchop','beef','steak','mutton','apple','stick','coal','iron_ingot','leather','book'];
+const ITEM_ORDER = ['gem_diamond','gem_gold','gem_emerald','arrow','porkchop','cooked_porkchop','beef','steak','mutton','apple','stick','coal','iron_ingot','leather','book','minecart'];
 // 食物表与堆叠上限来自纯函数模块 inventory.js(INVLIB)
 const FOODS = INVLIB.FOODS;
 
@@ -431,6 +433,26 @@ function drawBlockFace(ctx, type, face, s, seedRand) {
       ctx.fillRect(Math.floor(s * 0.28), Math.floor(s * 0.62), Math.floor(s * 0.44), Math.floor(s * 0.14));
       ctx.fillStyle = '#3a3a3a';
       ctx.fillRect(Math.floor(s * 0.3), Math.floor(s * 0.2), Math.floor(s * 0.4), Math.floor(s * 0.12));
+      break;
+    }
+    case 'rail': {
+      // 铁轨(R26):顶/底面 = 俯视轨道(双钢轨 + 横向枕木);侧面 = 仅底部薄轨线(贴地,透明挖空)
+      ctx.clearRect(0, 0, s, s);
+      if (face === 'top' || face === 'bottom') {
+        ctx.fillStyle = '#6e4f2a';
+        for (let i = 0; i < 4; i++) ctx.fillRect(0, Math.floor(s * (0.1 + i * 0.24)), s, Math.max(1, Math.floor(s * 0.1)));
+        ctx.fillStyle = '#b8b8c0';
+        ctx.fillRect(Math.floor(s * 0.3), 0, Math.max(1, Math.floor(s * 0.08)), s);
+        ctx.fillRect(Math.floor(s * 0.62), 0, Math.max(1, Math.floor(s * 0.08)), s);
+        ctx.fillStyle = 'rgba(255,255,255,0.4)';
+        ctx.fillRect(Math.floor(s * 0.3), 0, Math.max(1, Math.floor(s * 0.03)), s);
+      } else {
+        ctx.fillStyle = '#b8b8c0';
+        ctx.fillRect(0, s - Math.max(1, Math.floor(s * 0.1)), s, Math.max(1, Math.floor(s * 0.1)));
+        ctx.fillStyle = '#6e4f2a';
+        ctx.fillRect(Math.floor(s * 0.18), s - Math.max(1, Math.floor(s * 0.08)), Math.floor(s * 0.2), Math.max(1, Math.floor(s * 0.06)));
+        ctx.fillRect(Math.floor(s * 0.62), s - Math.max(1, Math.floor(s * 0.08)), Math.floor(s * 0.2), Math.max(1, Math.floor(s * 0.06)));
+      }
       break;
     }
     case 'torch': {
@@ -1741,6 +1763,7 @@ function buildMaterialMesh(itemId) {
   const mat = new THREE.MeshLambertMaterial({ color: def.color });
   if (def.shape === 'gem') { g.add(new THREE.Mesh(new THREE.OctahedronGeometry(0.14), mat)); }
   else if (def.shape === 'ingot') { g.add(new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.08, 0.14), mat)); }
+  else if (def.shape === 'cart') { const b = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.16, 0.2), mat); g.add(b); g.rotation.y = 0.3; }
   else { g.add(new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.3), mat)); }
   g.rotation.set(0.3, 0.6, 0.2);
   g.position.set(0, -0.05, 0);
@@ -2307,6 +2330,7 @@ function clearWorld() {
   clearTNT();            // 清点燃的 TNT
   clearFurnaces();       // 清熔炉状态
   clearChests();         // 清箱子内容
+  clearMinecarts();      // 清矿车实体(R26)
   spawnPoint = null;     // 重生点回出生广场(读档会按存档恢复)
   tableOpen = false;
   for (let i = 0; i < 9; i++) tableGrid[i] = null;
@@ -2574,6 +2598,20 @@ function drawMaterialIcon(ctx, itemId, size) {
     ctx.closePath(); ctx.fill(); ctx.stroke();
     ctx.fillStyle = 'rgba(255,255,255,0.35)';
     ctx.fillRect(-size * 0.18, -size * 0.12, size * 0.36, size * 0.06);
+  } else if (def.shape === 'cart') {
+    // 矿车:灰斗 + 深口沿 + 两个黑轮
+    ctx.fillStyle = def.color;
+    ctx.fillRect(-size * 0.3, -size * 0.1, size * 0.6, size * 0.36);
+    ctx.strokeRect(-size * 0.3, -size * 0.1, size * 0.6, size * 0.36);
+    ctx.fillStyle = '#3a3a42';
+    ctx.fillRect(-size * 0.34, -size * 0.2, size * 0.68, size * 0.1);
+    ctx.fillStyle = '#232328';
+    ctx.beginPath();
+    ctx.arc(-size * 0.18, size * 0.32, size * 0.09, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath();
+    ctx.arc(size * 0.18, size * 0.32, size * 0.09, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.fillRect(-size * 0.22, -size * 0.06, size * 0.16, size * 0.2);
   } else if (def.shape === 'stick') {
     // 木棍:斜放棕色小棍(无箭头)
     ctx.strokeStyle = def.color; ctx.lineWidth = size * 0.09; ctx.lineCap = 'round';
@@ -3226,6 +3264,9 @@ function breakBlock() {
     swingHoldItem();
     return;
   }
+  // 矿车(R26):左键击打 —— 移动中顺向助推,静止回收掉落
+  const lookCart = raycastCart(3.5);
+  if (lookCart) { punchCart(lookCart); return; }
   // 门:左键=移除门(任何手持,和破坏方块一致);右键=开关门
   const lookDoor = raycastDoor();
   if (lookDoor) {
@@ -3331,6 +3372,15 @@ function placeBlock() {
   const lookDoor = raycastDoor();
   const holdingDoor = selectedType && selectedType.indexOf('door') === 0;
   if (lookDoor && !holdingDoor) { toggleDoor(lookDoor.x, lookDoor.y, lookDoor.z); return; }
+  // 矿车(R26):右键乘坐(手持矿车点铁轨放车,走下方交互分发)
+  {
+    const item0 = hotbar[currentSlot];
+    const lookCart = raycastCart(3.5);
+    if (lookCart && !(item0 && item0.kind === 'item' && item0.id === 'minecart')) {
+      mountCart(lookCart);
+      return;
+    }
+  }
   const item = hotbar[currentSlot];
   if (item && item.kind === 'tool') { useTool(item); return; }
   // 交互方块(右键):合成台 / TNT / 熔炉 / 床 / 箱子 —— 单次射线统一分发
@@ -3338,6 +3388,18 @@ function placeBlock() {
   const tHit = raycastTarget();
   if (tHit) {
     const hitType = getBlock(tHit.x, tHit.y, tHit.z);
+    if (item && item.kind === 'item' && item.id === 'minecart') {
+      // 手持矿车右键:铁轨非固体射线穿不中,改看命中实心块的放置位(格+法线)是否为铁轨
+      const rx = tHit.x + Math.round(tHit.normal.x), ry = tHit.y + Math.round(tHit.normal.y), rz = tHit.z + Math.round(tHit.normal.z);
+      if (getBlock(rx, ry, rz) === 'rail') {
+        spawnMinecart(rx, ry, rz);
+        item.count = (item.count || 1) - 1;
+        if (item.count <= 0) hotbar[currentSlot] = null;
+        buildHotbar();
+        showToast('放下矿车(右键乘坐 · 左键击打助推/回收)');
+      } else showToast('矿车要放在铁轨上');
+      return;
+    }
     if (hitType === 'crafting_table') { openTablePanel(); return; }
     if (hitType === 'tnt') { igniteTNT(tHit.x, tHit.y, tHit.z); return; }
     if (hitType === 'furnace') { openFurnacePanel(tHit.x, tHit.y, tHit.z); return; }
@@ -3375,6 +3437,10 @@ function placeBlock() {
   // 火把:需放在固体方块上面(经典附着;R22 先做立式火把)
   if (selectedType === 'torch' && !isSolidAt(nx, ny - 1, nz)) {
     showToast('火把需要放在固体方块上面'); return;
+  }
+  // 铁轨:需放在固体方块上面(R26;平地铁轨,坡道暂不支持)
+  if (selectedType === 'rail' && !isSolidAt(nx, ny - 1, nz)) {
+    showToast('铁轨需要放在固体方块上面'); return;
   }
   if (selectedType !== 'ladder' && overlapsPlayer(nx, ny, nz)) { showToast('挡住自己了,换个方向'); return; }
   if (selectedType && selectedType.indexOf('door') === 0) {
@@ -4247,6 +4313,156 @@ function explodeAt(cx, cy, cz, radius, maxDamage) {
   for (const ch of dirtyChunks) buildChunkMesh(ch);   // 弹坑不等分帧预算,立即重建
 }
 
+// ============================================================
+// 矿车系统(R26):铁轨上的可乘坐/可推动载具实体
+// 寻路走 MACHINES.cartNextDir(纯函数可单测):优先直行、到弯自动转、到头停住
+// 左键击打:移动中=顺向助推,静止=回收掉落;右键=乘坐(空格下车)
+// 轨道被拆 → 出轨坠落落地;矿车随存档持久化(minecartsData)
+// ============================================================
+const minecarts = [];
+let ridingCart = null;
+
+function isRailAt(x, y, z) { return getBlock(x, y, z) === 'rail'; }
+
+function buildCartMesh() {
+  const g = new THREE.Group();
+  const matBody = new THREE.MeshLambertMaterial({ color: 0xb8b8c0 });
+  const matDark = new THREE.MeshLambertMaterial({ color: 0x5a5a62 });
+  const base = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.08, 0.56), matBody);
+  base.position.y = 0.04;
+  g.add(base);
+  const wall = (w, d, x, z) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, 0.26, d), matBody);
+    m.position.set(x, 0.2, z);
+    g.add(m);
+  };
+  wall(0.82, 0.06, 0, -0.25); wall(0.82, 0.06, 0, 0.25);
+  wall(0.06, 0.44, -0.38, 0); wall(0.06, 0.44, 0.38, 0);
+  const rim = new THREE.Mesh(new THREE.BoxGeometry(0.88, 0.05, 0.62), matDark);
+  rim.position.y = 0.34;
+  g.add(rim);
+  return g;
+}
+
+function spawnMinecart(cx, cy, cz) {
+  const c = { cx, cz, y: cy, x: cx + 0.5, z: cz + 0.5, dx: 0, dz: 0, t: 0, speed: 0, vy: 0, mesh: buildCartMesh() };
+  c.mesh.position.set(c.x, cy + 0.06, c.z);
+  scene.add(c.mesh);
+  minecarts.push(c);
+  markDirtySave();
+  return c;
+}
+
+function removeMinecart(c) {
+  const i = minecarts.indexOf(c);
+  if (i >= 0) minecarts.splice(i, 1);
+  if (ridingCart === c) ridingCart = null;
+  scene.remove(c.mesh);
+}
+
+function clearMinecarts() {
+  for (const c of minecarts) scene.remove(c.mesh);
+  minecarts.length = 0;
+  ridingCart = null;
+}
+
+// 射线拾取矿车(与 raycastMob 同款视线-半径判定)
+function raycastCart(range) {
+  const dirx = -Math.sin(yaw) * Math.cos(pitch), diry = Math.sin(pitch), dirz = -Math.cos(yaw) * Math.cos(pitch);
+  const ex = playerPos.x, ey = playerPos.y, ez = playerPos.z;
+  let best = null, bestD = range;
+  for (const c of minecarts) {
+    const dx = c.x - ex, dy = c.y + 0.25 - ey, dz = c.z - ez;
+    const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (d > range + 1) continue;
+    const dot = dx * dirx + dy * diry + dz * dirz;
+    if (dot <= 0 || dot > range) continue;
+    const px = dx - dirx * dot, py = dy - diry * dot, pz = dz - dirz * dot;
+    if (px * px + py * py + pz * pz < 0.5 * 0.5 && d < bestD) { bestD = d; best = c; }
+  }
+  return best;
+}
+
+function mountCart(c) {
+  ridingCart = c;
+  c.speed = Math.max(c.speed, 4.5);
+  if (c.dx === 0 && c.dz === 0) {
+    const cy = Math.round(c.y);
+    const nd = MACHINES.cartNextDir(isRailAt(c.cx + 1, cy, c.cz), isRailAt(c.cx - 1, cy, c.cz), isRailAt(c.cx, cy, c.cz + 1), isRailAt(c.cx, cy, c.cz - 1), 0, 0);
+    if (nd) { c.dx = nd[0]; c.dz = nd[1]; }
+  }
+  showToast('乘坐矿车(空格下车)');
+}
+
+function dismountCart() {
+  if (!ridingCart) return;
+  const c = ridingCart;
+  ridingCart = null;
+  c.speed = Math.min(c.speed, 2.5);   // 下车带一点惯性
+  // 玩家挪到车旁,避免下一帧又触发乘坐
+  playerPos.set(c.x + 0.9, c.y + 1.2, c.z);
+  velocity.set(0, 0, 0);
+  showToast('下车');
+}
+
+function punchCart(c) {
+  swingArm(); swingHoldItem(); audio.play('place');
+  if (c === ridingCart) { dismountCart(); return; }
+  if (c.speed < 0.3) {
+    // 静止矿车:击打回收(经典:打矿车掉矿车)
+    removeMinecart(c);
+    spawnDroppedItem(c.x, c.y + 0.3, c.z, 'minecart', 1, 'item');
+    showToast('回收矿车'); markDirtySave();
+    return;
+  }
+  c.speed = Math.min(c.speed + 1.5, 6);   // 移动中击打 = 顺向助推
+  showToast('推动矿车');
+}
+
+function updateMinecarts(dt) {
+  for (const c of minecarts) {
+    const cy = Math.round(c.y);
+    if (!isRailAt(c.cx, cy, c.cz)) {
+      // 出轨:重力坠落,落到实体上停住(不水平移动)
+      c.vy -= 22 * dt;
+      c.y += c.vy * dt;
+      const below = Math.floor(c.y - 0.01);
+      if (below <= 0 || isSolidAt(c.cx, below, c.cz)) { c.y = below + 1; c.vy = 0; c.speed = 0; c.dx = c.dz = 0; }
+      c.mesh.position.set(c.x, c.y + 0.06, c.z);
+      if (c === ridingCart) playerPos.set(c.x, c.y + 1.2, c.z);
+      continue;
+    }
+    // 乘坐自动驱动 / 推动惯性衰减
+    if (c === ridingCart) c.speed = Math.max(c.speed, 4.5);
+    else c.speed = Math.max(0, c.speed - (0.45 * c.speed + 0.08) * dt);
+    if (c.speed > 0.02) {
+      let rem = c.speed * dt, guard = 0;
+      while (rem > 1e-5 && guard++ < 6) {
+        if (c.dx === 0 && c.dz === 0) {
+          const nd = MACHINES.cartNextDir(isRailAt(c.cx + 1, cy, c.cz), isRailAt(c.cx - 1, cy, c.cz), isRailAt(c.cx, cy, c.cz + 1), isRailAt(c.cx, cy, c.cz - 1), 0, 0);
+          if (!nd) { c.speed = 0; break; }
+          c.dx = nd[0]; c.dz = nd[1];
+        }
+        const step = Math.min(rem, 1 - c.t);
+        c.t += step; rem -= step;
+        if (c.t >= 1 - 1e-9) {
+          c.cx += c.dx; c.cz += c.dz; c.t = 0;
+          const nd = MACHINES.cartNextDir(isRailAt(c.cx + 1, cy, c.cz), isRailAt(c.cx - 1, cy, c.cz), isRailAt(c.cx, cy, c.cz + 1), isRailAt(c.cx, cy, c.cz - 1), c.dx, c.dz);
+          if (!nd) { c.speed = 0; c.dx = c.dz = 0; break; }   // 到头停在格心
+          c.dx = nd[0]; c.dz = nd[1];
+        }
+      }
+      markDirtySave();
+    }
+    c.x = c.cx + 0.5 + c.dx * c.t;
+    c.z = c.cz + 0.5 + c.dz * c.t;
+    c.y = cy;
+    c.mesh.position.set(c.x, cy + 0.06, c.z);
+    c.mesh.rotation.y = c.dx !== 0 ? Math.PI / 2 : 0;
+    if (c === ridingCart) { playerPos.set(c.x, cy + 1.2, c.z); velocity.set(0, 0, 0); }
+  }
+}
+
 // 夜间在距玩家 ≥12 格处生成敌对生物(僵尸 65% / 苦力怕 35%);关闭怪物或昼夜循环 = 和平模式
 function trySpawnHostile() {
   if (!settings.hostiles || !settings.dayNightEnabled) return;
@@ -5087,6 +5303,11 @@ function inWater() {
 let lastStepTime = 0, lastJumpTime = 0, lastWaterTime = 0, wasInWater = false;
 
 function updatePlayer(dt, prevVy) {
+  // 乘坐矿车(R26):位置由矿车驱动,玩家物理挂起;空格下车
+  if (ridingCart) {
+    if (keys['Space']) dismountCart();
+    return;
+  }
   const forward = _fwd.set(-Math.sin(yaw), 0, -Math.cos(yaw));
   const right = _right.set(Math.cos(yaw), 0, -Math.sin(yaw));
   if (cameraMode === 2) { forward.negate(); }
@@ -5364,6 +5585,7 @@ function animate() {
   if (locked) updatePlayer(dt, prevVy);
   if (locked) updateFallingBlocks(dt);             // 沙砾重力(暂停时冻结)
   if (locked) updateTNT(dt);                       // 点燃的 TNT(暂停时冻结)
+  if (locked) updateMinecarts(dt);                 // 矿车(暂停时冻结,R26)
   updateWeather(dt);                               // 天气(晴雨随机调度,暂停也推进)
   updateFurnaces(dt);                              // 熔炉冶炼(经典:暂停也持续燃烧)
   if (locked) updateDroppedItems(dt);              // 掉落物(暂停时冻结;每帧仅一次)
@@ -5624,6 +5846,13 @@ function applySave(rec) {
     }
   }
   spawnPoint = (rec.spawnPoint && Number.isFinite(rec.spawnPoint.x) && Number.isFinite(rec.spawnPoint.y) && Number.isFinite(rec.spawnPoint.z)) ? rec.spawnPoint : null;
+  // 恢复矿车(R26;位置取整到所在铁轨格)
+  clearMinecarts();
+  if (rec.minecartsData) {
+    for (const mc of rec.minecartsData) {
+      if (Number.isFinite(mc.x) && Number.isFinite(mc.y) && Number.isFinite(mc.z)) spawnMinecart(mc.x, mc.y, mc.z);
+    }
+  }
   // 恢复护甲装备(4 部位;脏数据防御:非法 id/部位回 null)
   for (const s of ['head', 'chest', 'legs', 'feet']) {
     const a = rec.armorSlotsData ? rec.armorSlotsData.find(e => e && e[0] === s) : null;
@@ -5833,7 +6062,7 @@ function buildInventoryPanel() {
   addSection(grid, '方块');
   HOTBAR_ORDER.forEach(id => addCell({ kind: 'block', id }));
   // 新增方块也可取用
-  ['water', 'snow', 'gravel', 'door', 'door_iron', 'door_stone', 'door_gold', 'door_diamond', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'bed', 'chest', 'ladder', 'bookshelf', 'torch'].forEach(id => addCell({ kind: 'block', id }));
+  ['water', 'snow', 'gravel', 'door', 'door_iron', 'door_stone', 'door_gold', 'door_diamond', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'bed', 'chest', 'ladder', 'bookshelf', 'torch', 'rail'].forEach(id => addCell({ kind: 'block', id }));
   addSection(grid, '材料 · 宝石');
   ITEM_ORDER.forEach(id => addCell({ kind: 'item', id, count: 64 }));
 }
@@ -5952,7 +6181,7 @@ function openTablePanel() {
   if (closeBtn) closeBtn.onclick = closeTablePanel;
   // 目录循环列表:方块 + 材料物品(矿石/圆石/木棍等,按 kind 区分图标)
   const catalog = HOTBAR_ORDER.map(id => ({ kind: 'block', id }))
-    .concat(['water', 'snow', 'gravel', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'sand', 'bed', 'chest', 'ladder', 'bookshelf', 'wool_red', 'wool_white', 'torch'].map(id => ({ kind: 'block', id })))
+    .concat(['water', 'snow', 'gravel', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'sand', 'bed', 'chest', 'ladder', 'bookshelf', 'wool_red', 'wool_white', 'torch', 'rail'].map(id => ({ kind: 'block', id })))
     .concat(['leather', 'book'].map(id => ({ kind: 'item', id })))
     .concat(['gem_gold', 'gem_diamond', 'gem_emerald', 'arrow', 'stick', 'coal', 'iron_ingot'].map(id => ({ kind: 'item', id })));
   document.querySelectorAll('#table-grid .inv-cell').forEach((cell, i) => {
@@ -6233,6 +6462,7 @@ function buildSaveRecord() {
     chestsData: Array.from(chests.values()).map(c => ({ x: c.x, y: c.y, z: c.z, slots: c.slots })),
     spawnPoint,
     armorSlotsData: ['head', 'chest', 'legs', 'feet'].map(s => armorSlots[s] ? [s, { id: armorSlots[s].id, durability: armorSlots[s].durability }] : [s, null]),
+    minecartsData: minecarts.map(c => ({ x: c.cx, y: Math.round(c.y), z: c.cz })),
     doorsData: Array.from(doors.entries()).map(function(e){return [e[0], {x:e[1].x,y:e[1].y,z:e[1].z,type:e[1].type,open:e[1].open,facing:e[1].facing}];}),
     timestamp: Date.now(),
   };

@@ -98,12 +98,28 @@
     return { weather: 'clear', timer: 120 + rand() * 120, changed: true };
   }
 
+  // ---- 矿车轨道寻路(R26):给定四向邻居是否有轨与当前方向,决定下一格方向 ----
+  // 优先直行;不能直行则转向任一「非回头」连接向(经典弯道);仅剩回头向才折返;
+  // 无连接返回 null(到头停住)
+  function cartNextDir(hasXPos, hasXNeg, hasZPos, hasZNeg, dx, dz) {
+    if (dx !== 0 && ((dx > 0 && hasXPos) || (dx < 0 && hasXNeg))) return [dx, 0];
+    if (dz !== 0 && ((dz > 0 && hasZPos) || (dz < 0 && hasZNeg))) return [0, dz];
+    const opts = [];
+    if (hasXPos) opts.push([1, 0]);
+    if (hasXNeg) opts.push([-1, 0]);
+    if (hasZPos) opts.push([0, 1]);
+    if (hasZNeg) opts.push([0, -1]);
+    if (!opts.length) return null;
+    const ahead = opts.filter(o => !(dx !== 0 && o[0] === -dx) && !(dz !== 0 && o[1] === -dz));
+    return (ahead.length ? ahead : opts)[0];
+  }
+
   // ---- 存档 schema(R16 Critical 防漂移:字段清单单一来源) ----
   const SAVE_SCHEMA_FIELDS = [
     'seed', 'dayTime', 'playerPos', 'yaw', 'pitch', 'cameraMode', 'isFlying',
     'playerHP', 'playerHunger', 'hotbar', 'currentSlot', 'modifications',
     'cropTimersData', 'furnacesData', 'chestsData', 'spawnPoint',
-    'armorSlotsData', 'doorsData', 'plazaBuilt', 'timestamp',
+    'armorSlotsData', 'doorsData', 'minecartsData', 'plazaBuilt', 'timestamp',
   ];
   // 返回缺失字段名数组(空数组 = 完整)
   function validateSaveRecord(rec) {
@@ -112,12 +128,12 @@
 
   // 导出(Node 环境)
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { TUTORIAL_STEPS, advanceTutorial, COOK_TIME, SMELT, FUELS, furnaceCanSmelt, furnaceTick, weatherNext, SAVE_SCHEMA_FIELDS, validateSaveRecord };
+    module.exports = { TUTORIAL_STEPS, advanceTutorial, COOK_TIME, SMELT, FUELS, furnaceCanSmelt, furnaceTick, weatherNext, cartNextDir, SAVE_SCHEMA_FIELDS, validateSaveRecord };
   }
   // 浏览器:挂到全局
   global.MACHINES = {
     TUTORIAL_STEPS, advanceTutorial, COOK_TIME, SMELT, FUELS, furnaceCanSmelt, furnaceTick,
-    weatherNext, SAVE_SCHEMA_FIELDS, validateSaveRecord,
+    weatherNext, cartNextDir, SAVE_SCHEMA_FIELDS, validateSaveRecord,
   };
 
 })(typeof window !== 'undefined' ? window : globalThis);

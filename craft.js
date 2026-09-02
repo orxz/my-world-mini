@@ -61,6 +61,10 @@
     { name: '书架', pattern: ['planks', 'planks', 'planks', 'book', 'book', 'book', 'planks', 'planks', 'planks'], result: { kind: 'block', id: 'bookshelf' }, count: 1, shapeless: false },
     // 火把:煤炭上 + 木棍下(经典配方 → 4 支;光源,R22)
     { name: '火把', pattern: ['coal', null, 'stick', null], result: { kind: 'block', id: 'torch' }, count: 4, shapeless: false },
+    // 铁轨:6 铁锭 + 1 木棍(经典配方 → 16 节)
+    { name: '铁轨', pattern: ['iron_ingot', 'iron_ingot', 'iron_ingot', 'iron_ingot', 'stick', 'iron_ingot', null, null, null], result: { kind: 'block', id: 'rail' }, count: 16, shapeless: false },
+    // 矿车:5 铁锭 U 形(经典配方 → 1 辆)
+    { name: '矿车', pattern: ['iron_ingot', null, 'iron_ingot', 'iron_ingot', 'iron_ingot', 'iron_ingot', null, null, null], result: { kind: 'item', id: 'minecart' }, count: 1, shapeless: false },
     // ---- 工具配方(3×3:3 材料上排 + 2 木棍中列,经典镐形)----
     { name: '木镐', pattern: ['planks', 'planks', 'planks', null, 'stick', null, null, 'stick', null], result: { kind: 'tool', id: 'pickaxe_wood' }, shapeless: false },
     { name: '石镐', pattern: ['cobblestone', 'cobblestone', 'cobblestone', null, 'stick', null, null, 'stick', null], result: { kind: 'tool', id: 'pickaxe_stone' }, shapeless: false },

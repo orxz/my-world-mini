@@ -23,20 +23,22 @@
 └───────────────┬─────────────────────────────────────────┘
                 │ <script src> 直引 + onclick 回调
 ┌───────────────▼─────────────────────────────────────────┐
-│  game.js  ── 游戏引擎(20 个模块,~6000 行)             │  引擎层
+│  game.js  ── 游戏引擎(20 个模块,~7200 行)             │  引擎层
 │   渲染 / 物理 / 输入 / 物品 / 视角 / 存档 / 音效 / UI   │
 └───────────────┬─────────────────────────────────────────┘
                 │ 函数调用(hash2/fbm2D/biomeAt/heightAt + CRAFTLIB)
 ┌───────────────▼─────────────────────────────────────────┐
-│  worldgen + craft + inventory ── 纯函数层(无 DOM/Three) │  纯函数层
-│   worldgen: 哈希 / 值噪声 / fbm / 群系 / 高度           │
-│   craft:    RECIPES / matchRecipe / breakCost           │
-│   ← 均可单测                                            │
-└─────────────────────────────────────────────────────────┘
+│  worldgen + craft + inventory + machines ─ 纯函数层(无 DOM/Three)│
+│   worldgen:  哈希 / 值噪声 / fbm / 群系 / 高度 / 洞穴 / 村庄小屋 │
+│   craft:     RECIPES / matchRecipe / breakCost                  │
+│   inventory: 拾取堆叠 / 饥饿 / 护甲减伤                         │
+│   machines:  教程 / 熔炉 / 天气 / 矿车寻路 / 经验 / 附魔 / 存档schema │
+│   ← 均可单测                                                    │
+└─────────────────────────────────────────────────────────────────┘
                 ▲
 ┌───────────────┴─────────────────────────────────────────┐
-│  test/unit.test.js  ── Node 单元测试(69 项)           │  测试
-│    require('../worldgen.js') + require('../craft.js') + require('../inventory.js')   │
+│  test/unit.test.js  ── Node 单元测试(115 项)          │  测试
+│    require(worldgen + craft + inventory + machines)    │
 └─────────────────────────────────────────────────────────┘
 
 three.min.js  ── Three.js r160(第三方渲染库,内置,离线)
@@ -75,8 +77,17 @@ three.min.js  ── Three.js r160(第三方渲染库,内置,离线)
 | 20 | 启动 | 入口:DOM 就绪 → `init` → 主循环 |
 
 > 另有:**天空系统**(`createSky`/`updateSky`,渐变天穹+星空+日月光晕,挂第七部分)、
-> **生物系统**(`spawnMob`/`updateMobs`/`hurtMob`/`raycastMob`:猪=被动游荡;
-> 僵尸=夜间生成、追击近战、白天燃烧;苦力怕=引信爆炸 `explodeAt`,挂掉落物系统后)、
+> **生物系统**(`spawnMob`/`updateMobs`/`hurtMob`/`raycastMob`:被动 猪/牛/羊 游荡+
+> 小麦喂食繁殖(求爱红心→幼崽 0.55 缩放 60s 长大);敌对 僵尸/苦力怕/骷髅/蜘蛛/
+> 末影人(中立,被注视/受击激怒+瞬移);全部生物随存档 mobsData 持久化;
+> 击杀掉经验球 `updateXPOrbs` 磁吸吸收升级,附魔台 `openEnchantPanel` 消耗等级)、
+> **逐方块光照**(火把 BFS 光级 14 跨区块传播,`rebuildLightGrid`+顶点 aTorch/
+> aSky 属性,材质着色器注入自发光;村庄火把 villageTorches 同为光源)、
+> **矿车系统**(`spawnMinecart`/`updateMinecarts`/`MACHINES.cartNextDir` 寻路:
+> 直行>弯道转向>死头弹回;乘坐/助推/出轨坠落,minecartsData 存档)、
+> **钓鱼系统**(`startFishing`/`updateFishing`:甩竿-咬钩窗口-收鱼)、
+> **村庄小屋**(worldgen `villageInCell`/`hutBlockAt` 纯函数,generateChunkData
+> 生成侧写入,零存档 diff;小屋 ±4 不种树)、
 > **沙砾重力**(`updateFallingBlocks`/`startFallingBlock`,setBlock 写入支撑检查队列,
 > 失去支撑化为下落实体,落地还原为方块)、
 > **破坏裂纹覆盖层**(`createCrackOverlay`,4 阶段程序化裂纹纹理,随破坏进度切换)。
@@ -137,12 +148,19 @@ raycastTarget():
 ### 4.4 存档/读档(IndexedDB)
 
 ```
-存档记录 = { id, name, seed, playerPos, yaw, pitch, cameraMode, isFlying,
-             hotbar, currentSlot, modifications: [[key, type|null], ...], timestamp }
+存档记录 = { id, name, seed, dayTime, playerPos, yaw, pitch, cameraMode, isFlying,
+             playerHP, playerHunger, hotbar, currentSlot,
+             modifications: [[key, type|null], ...],      // 广场已知 diff 已瘦身过滤(R25)
+             cropTimersData, furnacesData, chestsData, doorsData,
+             armorSlotsData, minecartsData, mobsData, xpData, plazaBuilt, timestamp }
 ```
 
-- **只存种子 + 玩家改动 diff**(非全量方块)→ 容量小、加载快
-- 读档:恢复 seed + modifications + 玩家状态 → `clearWorld` → 重新生成中心区块(自动应用 diff)
+- **字段单一来源**:machines.js `SAVE_SCHEMA_FIELDS`(20 字段)+ `validateSaveRecord`,
+  applySave 对旧档缺失字段 console.warn(防 R16 类字段漂移)
+- **只存种子 + 玩家改动 diff**(非全量方块;出生广场 5.2 万条已知 diff 不落盘,
+  读档先重建广场再覆盖用户 diff)→ 新档约 1KB
+- 读档:恢复 seed + modifications + 玩家/生物/矿车/熔炉/箱子/经验状态 →
+  `clearWorld` → 重新生成中心区块(自动应用 diff)
 - 自动保存:有当前存档时,30 秒 + 暂停 + 改动防抖
 - 多存档:IndexedDB 自增 id,每个存档独立
 

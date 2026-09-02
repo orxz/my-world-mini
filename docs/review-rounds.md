@@ -31,6 +31,24 @@
 
 ## 轮次记录
 
+### R30 治理轮 ✅ 已验证(进度 30/50)
+中期评估(code-reviewer)遗留的 4 个 Minor 全部修复:
+- **M1 教程卡增量渲染**:同一步内 tutEvent 只更新 .tut-progress 文本与
+  .tut-bar-fill 宽度(DOM 节点复用),跨步/描述变化才整卡重建;
+  _tutRenderedStep/_tutRenderedDesc + el.dataset.built 标记,
+  start/endTutorial 重置
+- **M2 资源释放补全**:removeMob 遍历时释放 material.map(Creeper 脸
+  CanvasTexture 等);removeMinecart 补全几何体+材质+纹理释放
+- **M3 暂停冻结昼夜**:updateDayNight 时间推进以「暂停菜单可见」门控
+  (指针锁判定对触屏无效,菜单可见性语义精确);光照/雾色计算照常
+- **M7 FPS/坐标 DOM**:懒缓存 _fpsEl/_posEl + 判空(元素缺失不再抛错,
+  免每帧 getElementById)
+- 实测:M1 进度更新前后 .tut-title/.tut-progress 为同一 DOM 节点、文本
+  「4.0 / 8 格」、条宽 50%,跨步正常整卡重建;M2 60 只苦力怕生成→清除
+  renderer.info.memory.textures 恒为 3(无泄漏);M3 菜单关→dayTime 推进/
+  开→冻结/关→恢复;M7 元素删除后无报错(console 0 error);
+  单测 113/113、lint 0/0
+
 ### R29 钓鱼繁殖轮 ✅ 已验证(进度 29/50)
 - **钓鱼**:钓鱼竿(新 tool 类 'rod',3 木棍+2 蛛丝经典配方;图标/手持模型);
   右键甩竿(findWaterAlongView 沿视线 8 格找水,浮标球落水面)→ 2-5s 咬钩

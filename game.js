@@ -1987,6 +1987,7 @@ const tutorial = {
   step: 0,
   progress: {},   // 各检测类型的累计量
 };
+let _tutRenderedStep = -1, _tutRenderedDesc = '';   // M1:同步增量渲染的标记
 
 function tutorialStep() { return TUTORIAL_STEPS[tutorial.step]; }
 
@@ -2011,7 +2012,20 @@ function renderTutorialCard() {
   const el = document.getElementById('tutorial-card');
   if (!el || !tutorial.active) return;
   const s = tutorialStep();
-  if (!s) { endTutorial(); return; }   // 走完完成卡后正常结束(否则 active 永真,教程守卫会永久压制刷怪)
+  if (!s) { endTutorial(); return; }
+  // M1:同一步内仅进度变化 → 只更新进度文本与条宽,不整卡 innerHTML 重建
+  // (move/look 步每帧上报,整卡重建会造成 DOM churn + 进度条动画重启抖动)
+  const descHtml = tutorialDesc(s);
+  if (tutorial.step === _tutRenderedStep && descHtml === _tutRenderedDesc && el.dataset.built === '1') {
+    if (s.goal) {
+      const progEl = el.querySelector('.tut-progress');
+      const fillEl = el.querySelector('.tut-bar-fill');
+      if (progEl) progEl.textContent = tutorialProgressText(s.goal);
+      const pct = Math.min(100, Math.round((tutorial.progress[s.goal.type] || 0) / s.goal.n * 100));
+      if (fillEl) fillEl.style.width = pct + '%';
+    }
+    return;
+  }
   el.classList.remove('hidden');
   const goal = s.goal;
   let prog = '', bar = '';
@@ -2029,6 +2043,9 @@ function renderTutorialCard() {
   if (nextBtn) nextBtn.onclick = () => { tutorial.step++; renderTutorialCard(); };
   const skipBtn = document.getElementById('tut-skip');
   if (skipBtn) skipBtn.onclick = endTutorial;
+  _tutRenderedStep = tutorial.step;
+  _tutRenderedDesc = descHtml;
+  el.dataset.built = '1';
 }
 
 function startTutorial(force) {
@@ -2040,13 +2057,15 @@ function startTutorial(force) {
   tutorial.step = 0;
   tutorial.progress = { move: 0, look: 0, break: 0, pickup: 0, place: 0, slot: 0, inventory: 0 };
   delete tutorial._lx; delete tutorial._lz;   // 重开时清除上次的位移基准
+  _tutRenderedStep = -1; _tutRenderedDesc = '';
   renderTutorialCard();
 }
 
 function endTutorial() {
   tutorial.active = false;
   const el = document.getElementById('tutorial-card');
-  if (el) el.classList.add('hidden');
+  if (el) { el.classList.add('hidden'); el.dataset.built = ''; }
+  _tutRenderedStep = -1; _tutRenderedDesc = '';
   try { localStorage.setItem('myword_tutorial_done', '1'); } catch (e) {}
 }
 
@@ -4294,9 +4313,10 @@ function removeMob(i) {
   m.mesh.traverse(function(o) {
     if (o.isMesh) {
       if (o.geometry) o.geometry.dispose();
-      // 材质可能是单材质或多材质数组(苦力怕头 6 面)
-      if (Array.isArray(o.material)) { for (let k = 0; k < o.material.length; k++) o.material[k].dispose(); }
-      else if (o.material) o.material.dispose();
+      // 材质可能是单材质或多材质数组(苦力怕头 6 面);纹理(Creeper 脸等)一并释放(M2)
+      const dispMat = (mt) => { if (mt.map) mt.map.dispose(); mt.dispose(); };
+      if (Array.isArray(o.material)) { for (let k = 0; k < o.material.length; k++) dispMat(o.material[k]); }
+      else if (o.material) dispMat(o.material);
     }
   });
   scene.remove(m.mesh);
@@ -4607,6 +4627,13 @@ function removeMinecart(c) {
   if (i >= 0) minecarts.splice(i, 1);
   if (ridingCart === c) ridingCart = null;
   scene.remove(c.mesh);
+  c.mesh.traverse(o => {   // 资源释放(M2 同款)
+    if (o.isMesh) {
+      if (o.geometry) o.geometry.dispose();
+      if (Array.isArray(o.material)) { for (const mt of o.material) { if (mt.map) mt.map.dispose(); mt.dispose(); } }
+      else if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); }
+    }
+  });
 }
 
 function clearMinecarts() {
@@ -5954,7 +5981,7 @@ let wasOnGround = false;   // 落地边沿检测
 // 第十六部分:渲染循环(增加区块更新 + 雾色随水位变化)
 // ============================================================
 let lastTime = performance.now();
-let fpsAcc = 0, fpsFrames = 0, fpsTimer = 0;
+let fpsAcc = 0, fpsFrames = 0, fpsTimer = 0, _fpsEl = null, _posEl = null;
 let bobPhase = 0, bobAmp = 0;   // 第一人称行走视角摆动
 // 交互:按住左键/长按挖矿按钮 连续挖掘(经典 MC 手感)
 let mouseHeld = false;
@@ -5977,8 +6004,11 @@ function updateDayNight(dt, waterNow) {
   // waterNow: 本帧是否在水中(由 animate 计算一次传入,避免每帧多次 getBlock;
   // 缺省时自行计算,便于独立调用/测试)
   if (waterNow === undefined) waterNow = inWater();
-  // 昼夜循环:受设置控制(可关闭/调速度)
-  if (settings.dayNightEnabled) {
+  // 昼夜循环:受设置控制(可关闭/调速度);暂停菜单打开时冻结推进(M3,
+  // 「已暂停」语义;触屏无指针锁,故以菜单可见性为准),光照/雾色计算照常
+  const _pm = document.getElementById('pause-menu');
+  const _paused = _pm && !_pm.classList.contains('hidden');
+  if (settings.dayNightEnabled && !_paused) {
     dayTime += dt / (settings.dayCycleSpeed || 120);  // 速度可调(秒/周期)
     if (dayTime >= 1) dayTime -= 1;
   }
@@ -6209,8 +6239,10 @@ function animate() {
   if (fpsTimer >= 0.5) {
     fpsAcc = Math.round(fpsFrames / fpsTimer);
     fpsFrames = 0; fpsTimer = 0;
-    document.getElementById('fps').textContent = fpsAcc;
-    document.getElementById('pos').textContent =
+    // M7:DOM 元素懒缓存 + 判空(缺失不抛错,不必每帧 getElementById)
+    if (!_fpsEl) { _fpsEl = document.getElementById('fps'); _posEl = document.getElementById('pos'); }
+    if (_fpsEl) _fpsEl.textContent = fpsAcc;
+    if (_posEl) _posEl.textContent =
       `${playerPos.x.toFixed(1)}, ${playerPos.y.toFixed(1)}, ${playerPos.z.toFixed(1)}`;
     const pcx = Math.floor(playerPos.x / CHUNK_SIZE);
     const pcz = Math.floor(playerPos.z / CHUNK_SIZE);

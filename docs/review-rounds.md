@@ -31,6 +31,20 @@
 
 ## 轮次记录
 
+### R32 生产验收②:移动端全流程 ✅ PASS(进度 32/50)
+Playwright hasTouch 上下文 + 375×667 手机视口实机验证:
+- **触屏摇杆移动**:touchstart/touchmove 推杆 → __touchMove (0,-0.75),
+  updatePlayer 40 帧位移 >0.5 格 ✓
+- **视角拖动 + 教程触屏推进**:拖动 600px → yaw 大幅转动 + 教程 look 步
+  累计 3.25 弧度(阈值 2.5)自动进下一步(R23 修复验证)✓
+- **长按「挖」连挖**:touchstart 置 touchBreakHeld → rAF 每 0.22s 自动
+  breakBlock —— **抓到真 bug:连挖门控 `locked &&` 在触屏设备恒假(无指针
+  锁),移动端连挖自 R18 起是死代码**;修复为 `(locked && mouseHeld) ||
+  touchBreakHeld` 后实测 0.3s 挖 3 块、工具耐久 6 次消耗 ✓
+- **「放」按钮**:touchstart → placeBlock,modifications +1、手持数 -1 ✓
+- **背包面板点选**:目录 cell 点击发放物品 ✓;375px 视口热栏 9 格完整
+  不溢出(R8 适配验证)✓;FPS 120、0 页面错误 ✓
+
 ### R32 生产验收①:性能长测 ✅ PASS(进度 32/50)
 Playwright 长会话压测(等效 **506 秒游戏时间** + 105 秒真实 rAF 浸泡):
 - **六阶段高压**:①实体 10 轮×12 只八类生物生成/20s 模拟/全清(142ms 墙钟)

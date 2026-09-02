@@ -6242,7 +6242,8 @@ function animate() {
   }
 
   // 交互:按住左键(或长按移动端挖矿键)连续挖掘 —— 每 0.22 秒自动追加一次破坏点击
-  if (locked && (mouseHeld || touchBreakHeld)) {
+  // 触屏不锁指针:touchBreakHeld 是明确的按键意图,不受 locked 门控(R32② 修复)
+  if ((locked && mouseHeld) || touchBreakHeld) {
     autoMineTimer -= dt;
     if (autoMineTimer <= 0) { autoMineTimer = 0.22; breakBlock(); }
   } else {

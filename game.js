@@ -688,6 +688,9 @@ const plazaBlocks = new Map();
 let worldPlazaBuilt = false;
 // 待重建 mesh 的区块集合(替代每帧扫描 chunks + 分配数组 + 排序)
 const dirtyChunks = new Set();
+// 村庄小屋的生成侧火把(R31):chunkKey -> [[x,y,z],...];随区块生成登记,
+// 不进 modifications(零存档成本),作为光照引擎的额外光源
+const villageTorches = new Map();
 
 function chunkKey(cx, cz) { return `${cx},${cz}`; }
 function blockKey(x, y, z) { return `${x},${y},${z}`; }
@@ -761,6 +764,53 @@ function generateChunkData(cx, cz) {
           if (cid === 0 || cid === WATER_ID) continue;
           if (caveAt(wx, y, wz, worldSeed)) data[idx2] = 0;
         }
+      }
+    }
+  }
+
+  // 村庄小屋(R31):确定性生成侧结构(不进 modifications,零存档成本);
+  // 检查与本区块相交的村格(±1 格余量),逐格写入小屋与门前农田
+  {
+    const vc0 = Math.floor(ox / 48) - 1, vc1 = Math.floor((ox + 15) / 48) + 1;
+    const wz0 = Math.floor(oz / 48) - 1, wz1 = Math.floor((oz + 15) / 48) + 1;
+    for (let vcx = vc0; vcx <= vc1; vcx++) for (let vcz = wz0; vcz <= wz1; vcz++) {
+      const hut = villageInCell(vcx, vcz, worldSeed);
+      if (!hut) continue;
+      const hx0 = hut.cx - 2, hz0 = hut.cz - 2;
+      for (let lx = 0; lx < 5; lx++) for (let lz = 0; lz < 5; lz++) {
+        const wx2 = hx0 + lx, wz2 = hz0 + lz;
+        const bx = wx2 - ox, bz = wz2 - oz;
+        if (bx < 0 || bx > 15 || bz < 0 || bz > 15) continue;
+        for (let rel = 0; rel <= 5; rel++) {
+          const y = hut.base + rel;
+          if (y < 1 || y >= WORLD_HEIGHT) continue;
+          const t = hutBlockAt(lx, lz, rel);
+          const idx3 = chunkIdx(bx, y, bz);
+          if (t) {
+            data[idx3] = BLOCK_ID[t];
+            if (t === 'torch') {
+              let arr = villageTorches.get(chunkKey(cx, cz));
+              if (!arr) { arr = []; villageTorches.set(chunkKey(cx, cz), arr); }
+              if (!arr.some(e => e[0] === wx2 && e[1] === y && e[2] === wz2)) arr.push([wx2, y, wz2]);
+            }
+          } else if (rel >= 2 && rel <= 4) {
+            data[idx3] = 0;   // 室内/门洞保证为空
+          }
+        }
+      }
+      // 门前农田:3×2 泥土 + 1 格水(替换地表)
+      for (let fx = hut.cx - 1; fx <= hut.cx + 1; fx++) for (let fz = hut.cz - 4; fz <= hut.cz - 3; fz++) {
+        const bx = fx - ox, bz = fz - oz;
+        if (bx < 0 || bx > 15 || bz < 0 || bz > 15) continue;
+        const mtnF = fbm2D(fx * 0.008, fz * 0.008, worldSeed + 555, 4);
+        const gh = heightAt(fx, fz, worldSeed, biomeAt(fx, fz, worldSeed, mtnF), mtnF);
+        if (gh >= 1 && gh < WORLD_HEIGHT - 1) data[chunkIdx(bx, gh, bz)] = BLOCK_ID.dirt;
+      }
+      const bxw = hut.cx + 2 - ox, bzw = hut.cz - 4 - oz;
+      if (bxw >= 0 && bxw <= 15 && bzw >= 0 && bzw <= 15) {
+        const mtnW = fbm2D((hut.cx + 2) * 0.008, (hut.cz - 4) * 0.008, worldSeed + 555, 4);
+        const gh2 = heightAt(hut.cx + 2, hut.cz - 4, worldSeed, biomeAt(hut.cx + 2, hut.cz - 4, worldSeed, mtnW), mtnW);
+        if (gh2 >= 1 && gh2 < WORLD_HEIGHT - 1) data[chunkIdx(bxw, gh2, bzw)] = BLOCK_ID.water;
       }
     }
   }
@@ -873,6 +923,9 @@ function growTreesInChunk(cx, cz) {
       if (b.treeChance <= 0) continue;
       const height = heightAt(wx, wz, worldSeed, biome);
       if (height <= SEA_LEVEL) continue;
+      // 村庄小屋附近不种树(R31):树冠(半径 ~2)不伸进屋体/挡门洞
+      const hut = villageInCell(Math.floor(wx / 48), Math.floor(wz / 48), worldSeed);
+      if (hut && Math.abs(wx - hut.cx) <= 4 && Math.abs(wz - hut.cz) <= 4) continue;
       if (r < b.treeChance) plantTreeAt(wx, height, wz);
     }
   }
@@ -995,16 +1048,20 @@ function rebuildLightGrid(cx, cz) {
   const W = CHUNK_SIZE + 2 * LIGHT_MARGIN;
   const gx0 = cx * CHUNK_SIZE - LIGHT_MARGIN, gz0 = cz * CHUNK_SIZE - LIGHT_MARGIN;
   // 收集相邻 3×3 区块内的火把(光级 14 < 区块边长 16,更远的不可能照到本区块)
+  // 来源:玩家放置(modsByChunk)+ 村庄小屋生成侧(villageTorches,R31)
   const sources = [];
   for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
     const bucket = modsByChunk.get(chunkKey(cx + dx, cz + dz));
-    if (!bucket) continue;
-    for (const [cidx, type] of bucket) {
-      if (type !== 'torch') continue;
-      const y = (cidx / (CHUNK_SIZE * CHUNK_SIZE)) | 0, rem = cidx % (CHUNK_SIZE * CHUNK_SIZE);
-      const lz = (rem / CHUNK_SIZE) | 0, lx = rem % CHUNK_SIZE;
-      sources.push((cx + dx) * CHUNK_SIZE + lx, y, (cz + dz) * CHUNK_SIZE + lz);
+    if (bucket) {
+      for (const [cidx, type] of bucket) {
+        if (type !== 'torch') continue;
+        const y = (cidx / (CHUNK_SIZE * CHUNK_SIZE)) | 0, rem = cidx % (CHUNK_SIZE * CHUNK_SIZE);
+        const lz = (rem / CHUNK_SIZE) | 0, lx = rem % CHUNK_SIZE;
+        sources.push((cx + dx) * CHUNK_SIZE + lx, y, (cz + dz) * CHUNK_SIZE + lz);
+      }
     }
+    const vt = villageTorches.get(chunkKey(cx + dx, cz + dz));
+    if (vt) for (const tp of vt) sources.push(tp[0], tp[1], tp[2]);
   }
   if (!sources.length) return null;
   const grid = new Uint8Array(W * WORLD_HEIGHT * W);
@@ -2381,6 +2438,7 @@ function clearWorld() {
   dirtyChunks.clear();
   plazaBlocks.clear();          // 广场已知 diff 随世界重置(重建时重新登记)
   worldPlazaBuilt = false;
+  villageTorches.clear();       // 村庄火把随区块生成重新登记(R31)
   for (const a of arrows) scene.remove(a);
   arrows.length = 0;
   clearDroppedItems();   // 清掉落物,避免旧世界残留

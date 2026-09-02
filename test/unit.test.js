@@ -9,7 +9,7 @@
 const assert = require('assert');
 
 // ---- 从 worldgen.js 模块加载(单一数据源,不再手抄) ----
-const { hash2, hash3, valueNoise2D, valueNoise3D, fbm2D, BIOMES, biomeAt, heightAt, caveAt } = require('../worldgen.js');
+const { hash2, hash3, valueNoise2D, valueNoise3D, fbm2D, BIOMES, biomeAt, heightAt, caveAt, villageInCell, hutBlockAt } = require('../worldgen.js');
 
 // ---- 从 craft.js 模块加载(合成/破坏计算的单一数据源) ----
 const { RECIPES, matchRecipe, matchRecipeGrid, breakCost } = require('../craft.js');
@@ -686,6 +686,39 @@ test('面包配方:3 小麦一排(R29);2×2 放不下', () => {
   const g3 = (ids) => ids.map(x => x === null ? null : { kind: 'item', id: x });
   const r = matchRecipeGrid(g3(['wheat', 'wheat', 'wheat', null, null, null, null, null, null]), 3, RECIPES);
   assert.ok(r && r.result.id === 'bread' && r.count === 1);
+});
+
+// ===== 村庄小屋(R31) =====
+console.log('\n=== 村庄小屋(villageInCell/hutBlockAt) ===');
+test('villageInCell 确定性 + 保护区(0,0 格被广场排除)', () => {
+  for (let x = -3; x <= 3; x++) for (let z = -3; z <= 3; z++) {
+    const a = villageInCell(x, z, 12345);
+    assert.deepStrictEqual(a, villageInCell(x, z, 12345));   // 确定性
+    if (a) {
+      assert.ok(Math.abs(a.cx) >= 40 || Math.abs(a.cz) >= 40, '小屋不应在广场保护区内');
+      assert.ok(a.base >= 15);
+    }
+  }
+  // 49 格全无小屋的概率极低((1-0.34)^49),断言存在性用大范围
+  let found = 0;
+  for (let x = -20; x <= 20; x++) for (let z = -20; z <= 20; z++) if (villageInCell(x, z, 12345)) found++;
+  assert.ok(found > 20, '7×7 格抽样应存在多个小屋,实际 ' + found);
+});
+test('hutBlockAt 布局:地基/地板/墙/门洞/窗/火把/箱子/屋顶', () => {
+  assert.strictEqual(hutBlockAt(0, 0, 0), 'planks');      // 地基周圈
+  assert.strictEqual(hutBlockAt(2, 2, 0), null);          // 地基中空
+  assert.strictEqual(hutBlockAt(2, 2, 1), 'planks');      // 地板整层
+  assert.strictEqual(hutBlockAt(2, 0, 2), null);          // 门洞(前面板 2 格高)
+  assert.strictEqual(hutBlockAt(2, 0, 3), null);
+  assert.strictEqual(hutBlockAt(2, 0, 4), 'planks');      // 门楣
+  assert.strictEqual(hutBlockAt(0, 2, 3), 'glass');       // 侧窗
+  assert.strictEqual(hutBlockAt(4, 2, 3), 'glass');
+  assert.strictEqual(hutBlockAt(2, 4, 3), 'glass');       // 后窗
+  assert.strictEqual(hutBlockAt(2, 2, 2), 'torch');       // 屋内火把
+  assert.strictEqual(hutBlockAt(3, 3, 2), 'chest');       // 角落箱子
+  assert.strictEqual(hutBlockAt(1, 1, 3), null);          // 室内空气
+  assert.strictEqual(hutBlockAt(2, 2, 5), 'wood');        // 屋顶
+  assert.strictEqual(hutBlockAt(2, 2, 6), null);          // 屋顶之上无物
 });
 
 console.log('\n=== 总结 ===');

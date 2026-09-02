@@ -31,6 +31,20 @@
 
 ## 轮次记录
 
+### R31 村庄轮 ✅ 已验证(进度 31/50)
+- **villageInCell/hutBlockAt 纯函数(worldgen.js)**:48 格村格哈希 ~50% 有屋;
+  广场 ±40 保护区排除;仅平原/森林;四角高差 ≤1 且 base≥15;小屋中心格内
+  12..36(不跨格);布局 = 地基周圈/地板整层/墙(门洞 2 格高 + 三面玻璃窗)/
+  屋内火把 + 角落箱子/原木屋顶
+- **generateChunkData 集成**:检查相交村格(±1 余量)逐格写入(室内强制空气);
+  门前 3×2 泥土农田 + 1 格水;火把登记 villageTorches(chunkKey→[[x,y,z]]),
+  rebuildLightGrid 光源 = modsByChunk ∪ villageTorches → 屋内光级 14
+- **种树避让**:growTreesInChunk 跳过小屋 ±4(树冠不堵门洞/不入屋)
+- 实测:实机小屋(17,-78) 门洞两格净空+门楣/室内无叶/火把/箱子/三面窗/
+  屋顶/地基全对;屋内光级 14;农田 6/6 泥土;屋顶不在 modifications(零 diff);
+  箱子惰性打开;确定性(同种子二次生成逐字节一致,前测);生成 0.4ms/区块;
+  FPS 120;单测 113→115(villageInCell 确定性/保护区 + hutBlockAt 布局)、lint 0/0
+
 ### R30 治理轮 ✅ 已验证(进度 30/50)
 中期评估(code-reviewer)遗留的 4 个 Minor 全部修复:
 - **M1 教程卡增量渲染**:同一步内 tutEvent 只更新 .tut-progress 文本与

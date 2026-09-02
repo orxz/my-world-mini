@@ -26,6 +26,8 @@ const WORLDGEN_GLOBALS = {
   biomeAt: 'readonly',
   heightAt: 'readonly',
   caveAt: 'readonly',
+  villageInCell: 'readonly',
+  hutBlockAt: 'readonly',
 };
 
 // craft.js 在浏览器以 <script> 加载后挂到全局的命名空间(game.js 直接调用)

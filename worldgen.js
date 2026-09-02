@@ -122,12 +122,54 @@
     return false;
   }
 
+  // ---- 村庄小屋(R31):确定性生成侧结构(平原,零存档 diff) ----
+  const VILLAGE_CELL = 48;   // 村格边长(格内 12..36 放 5×5 小屋,不跨格)
+  // 村格判定:~50% 格子有小屋;广场保护区(中心 ±40)不生成;
+  // 仅平原/森林且中心四角高度平坦(差 ≤1)、离水面足够高
+  function villageInCell(vcx, vcz, seed) {
+    if (hash2(vcx, vcz, seed + 626) > 0.5) return null;
+    const ox = 12 + Math.floor(hash2(vcx, vcz, seed + 627) * (VILLAGE_CELL - 24));
+    const oz = 12 + Math.floor(hash2(vcx, vcz, seed + 628) * (VILLAGE_CELL - 24));
+    const cx = vcx * VILLAGE_CELL + ox, cz = vcz * VILLAGE_CELL + oz;
+    if (cx > -40 && cx < 40 && cz > -40 && cz < 40) return null;   // 出生广场保护区
+    const mtn = fbm2D(cx * 0.008, cz * 0.008, seed + 555, 4);
+    const biome = biomeAt(cx, cz, seed, mtn);
+    if (biome !== 'plains' && biome !== 'forest') return null;
+    const base = heightAt(cx, cz, seed, biome, mtn);
+    if (base < 15) return null;   // 别泡水
+    for (const [dx, dz] of [[-2, -2], [2, -2], [-2, 2], [2, 2]]) {
+      if (Math.abs(heightAt(cx + dx, cz + dz, seed, biome, mtn) - base) > 1) return null;
+    }
+    return { cx, cz, base };
+  }
+  // 小屋局部方块(5×5,lx/lz ∈ 0..4;rel = y - base):
+  // 0=地基周圈 1=地板 2-4=墙(门洞/窗/火把/箱子)5=屋顶
+  function hutBlockAt(lx, lz, rel) {
+    if (rel === 5) return 'wood';                     // 屋顶(原木,与木板墙区分)
+    if (rel === 0) return (lx === 0 || lx === 4 || lz === 0 || lz === 4) ? 'planks' : null;   // 地基
+    if (rel === 1) return 'planks';                   // 地板整层
+    if (rel >= 2 && rel <= 4) {
+      const per = lx === 0 || lx === 4 || lz === 0 || lz === 4;
+      if (per) {
+        if (lz === 0 && lx === 2 && rel <= 3) return null;   // 门洞(前面板 z=0,2 格高)
+        if (rel === 3 && ((lx === 2 && lz === 4) || (lz === 2 && (lx === 0 || lx === 4)))) return 'glass';   // 三面窗
+        return 'planks';
+      }
+      if (rel === 2) {
+        if (lx === 2 && lz === 2) return 'torch';     // 屋内火把(照亮)
+        if (lx === 3 && lz === 3) return 'chest';     // 角落箱子(惰性内容)
+      }
+      return null;   // 室内空气
+    }
+    return null;
+  }
+
   // 导出(Node 环境)
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { hash2, hash3, valueNoise2D, valueNoise3D, fbm2D, BIOMES, biomeAt, heightAt, caveAt };
+    module.exports = { hash2, hash3, valueNoise2D, valueNoise3D, fbm2D, BIOMES, biomeAt, heightAt, caveAt, villageInCell, hutBlockAt };
   }
   // 浏览器:挂到全局
-  global.WORLDGEN = { hash2, hash3, valueNoise2D, valueNoise3D, fbm2D, BIOMES, biomeAt, heightAt, caveAt };
+  global.WORLDGEN = { hash2, hash3, valueNoise2D, valueNoise3D, fbm2D, BIOMES, biomeAt, heightAt, caveAt, villageInCell, hutBlockAt };
   // 同时保持全局函数名(game.js 直接调用)
   global.hash2 = hash2;
   global.hash3 = hash3;
@@ -138,5 +180,7 @@
   global.biomeAt = biomeAt;
   global.heightAt = heightAt;
   global.caveAt = caveAt;
+  global.villageInCell = villageInCell;
+  global.hutBlockAt = hutBlockAt;
 
 })(typeof window !== 'undefined' ? window : globalThis);

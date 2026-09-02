@@ -98,6 +98,7 @@ const TOOL_TYPES = {
   leggings_diamond:    { name: '钻石护腿',  tool: 'armor', slot: 'legs',  armor: 6, durability: 495, tier: 'diamond' },
   boots_diamond:       { name: '钻石靴子',  tool: 'armor', slot: 'feet',  armor: 3, durability: 461, tier: 'diamond' },
   bow:          { name: '弓',     tool: 'bow',     durability: 384, tier: 'wood' },
+  fishing_rod:  { name: '钓鱼竿', tool: 'rod',     durability: 64,  tier: 'wood' },
 };
 const TOOL_ORDER = [
   'sword_diamond','sword_gold','sword_iron','sword_stone','sword_wood',
@@ -105,6 +106,7 @@ const TOOL_ORDER = [
   'axe_diamond','axe_gold','axe_iron','axe_stone','axe_wood',
   'shovel_diamond','shovel_gold','shovel_iron','shovel_stone','shovel_wood',
   'bow',
+  'fishing_rod',
   'shield_diamond','shield_iron','shield_wood',
   'chestplate_diamond','leggings_diamond','helmet_diamond','boots_diamond',
   'chestplate_iron','leggings_iron','helmet_iron','boots_iron',
@@ -130,8 +132,12 @@ const ITEM_TYPES = {
   minecart:    { name: '矿车',   color: '#b8b8c0', shape: 'cart' },
   string:      { name: '蛛丝',   color: '#e8e8e8', shape: 'stick' },
   ender_pearl: { name: '末影珍珠', color: '#b06ee0', shape: 'gem' },
+  wheat:       { name: '小麦',   color: '#d8c86a', shape: 'stick' },
+  bread:       { name: '面包',   color: '#c89858', shape: 'meat' },
+  raw_fish:    { name: '生鱼',   color: '#9ab8c8', shape: 'meat' },
+  cooked_fish: { name: '烤鱼',   color: '#c8a06a', shape: 'meat' },
 };
-const ITEM_ORDER = ['gem_diamond','gem_gold','gem_emerald','arrow','porkchop','cooked_porkchop','beef','steak','mutton','apple','stick','coal','iron_ingot','leather','book','minecart','string','ender_pearl'];
+const ITEM_ORDER = ['gem_diamond','gem_gold','gem_emerald','arrow','porkchop','cooked_porkchop','beef','steak','mutton','apple','stick','coal','iron_ingot','leather','book','minecart','string','ender_pearl','wheat','bread','raw_fish','cooked_fish'];
 // 食物表与堆叠上限来自纯函数模块 inventory.js(INVLIB)
 const FOODS = INVLIB.FOODS;
 
@@ -1749,6 +1755,14 @@ function buildToolMesh(toolId) {
   } else if (def.tool === 'shield') {
     const body = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.45, 0.05), matTier);
     g.add(body); g.rotation.y = 0.2;
+  } else if (def.tool === 'rod') {
+    // 钓鱼竿(R29):细长斜杆 + 浮标
+    const pole = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.55), matHandle);
+    pole.rotation.x = 0.7;
+    g.add(pole);
+    const bob = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.07, 0.07), new THREE.MeshLambertMaterial({ color: 0xd03030 }));
+    bob.position.set(0, 0.1, -0.25);
+    g.add(bob);
   } else if (def.tool === 'armor') {
     // 护甲:按部位大小的护甲板(手持短暂展示,右键即穿上)
     const h = def.slot === 'chest' ? 0.38 : (def.slot === 'head' ? 0.24 : 0.2);
@@ -2358,6 +2372,7 @@ function clearWorld() {
   clearChests();         // 清箱子内容
   clearMinecarts();      // 清矿车实体(R26)
   clearXPOrbs();         // 清经验球(R28)
+  endFishing();          // 收鱼线(R29)
   closeEnchantPanel();   // 关附魔面板(R28)
   spawnPoint = null;     // 重生点回出生广场(读档会按存档恢复)
   tableOpen = false;
@@ -2543,6 +2558,16 @@ function drawToolIcon(ctx, toolId, size) {
     ctx.fillStyle = 'rgba(255,255,255,0.35)';
     ctx.fillRect(-size * 0.04, -size * 0.2, size * 0.08, size * 0.32);
     ctx.fillRect(-size * 0.12, -size * 0.06, size * 0.24, size * 0.08);
+  } else if (def.tool === 'rod') {
+    // 钓鱼竿(R29):斜杆 + 垂线 + 红白浮标
+    ctx.strokeStyle = handleColor; ctx.lineWidth = size * 0.09; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-size * 0.3, size * 0.34); ctx.lineTo(size * 0.26, -size * 0.3); ctx.stroke();
+    ctx.strokeStyle = '#e8e8e8'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(size * 0.26, -size * 0.3); ctx.lineTo(size * 0.3, -size * 0.05); ctx.stroke();
+    ctx.fillStyle = '#d03030';
+    ctx.beginPath(); ctx.arc(size * 0.3, size * 0.0, size * 0.09, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#f0f0f0';
+    ctx.beginPath(); ctx.arc(size * 0.3, size * 0.0, size * 0.05, 0, Math.PI * 2); ctx.fill();
   } else if (def.tool === 'armor') {
     // 护甲四件套:帽(圆顶+护颊)/甲(背心)/裤(腰+双腿)/靴(双短筒),材质色区分
     ctx.fillStyle = tc; ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1;
@@ -3372,6 +3397,12 @@ function breakBlock() {
   else if (type === 'coal_ore') { dropType = 'coal'; dropKind = 'item'; dropCount = 1 + (Math.random() < 0.3 ? 1 : 0); }
   else if (type === 'diamond_ore') { dropType = 'gem_diamond'; dropKind = 'item'; }
   else if (type === 'leaves' && Math.random() < 0.15) { dropType = 'apple'; dropKind = 'item'; }
+  // 成熟麦田(R29):麦子格上仍有种植计时 → 收获小麦(计时即成熟标记)
+  if (type === 'leaves' && cropTimers.has(blockKey(t.x, t.y, t.z))) {
+    cropTimers.delete(blockKey(t.x, t.y, t.z));
+    spawnDroppedItem(t.x, t.y, t.z, 'wheat', 1, 'item');
+    markDirtySave();
+  }
   spawnDroppedItem(t.x, t.y, t.z, dropType, dropCount, dropKind);
   breakProgress = 0; breakTargetKey = null;
   hideBreakOverlay();
@@ -3413,6 +3444,11 @@ function placeBlock() {
     if (lookCart && !(item0 && item0.kind === 'item' && item0.id === 'minecart')) {
       mountCart(lookCart);
       return;
+    }
+    // 喂食繁殖(R29):手持小麦右键被动生物
+    if (item0 && item0.kind === 'item' && item0.id === 'wheat') {
+      const mobHit0 = raycastMob(3.5);
+      if (mobHit0 && !MOB_DEFS[mobHit0.type].hostile) { feedAnimal(mobHit0, item0); return; }
     }
   }
   const item = hotbar[currentSlot];
@@ -3534,6 +3570,19 @@ function useTool(item) {
     swingHoldItem();
     showToast(`举盾:${def.name}`);
     consumeToolDurability(item);
+  } else if (def.tool === 'rod') {
+    // 钓鱼(R29):有浮标 → 咬钩窗口内收获 / 否则收回;无浮标 → 对水甩竿
+    toolCooldown[item.id] = now;
+    if (fishingState) {
+      if (fishingState.stage === 'bite') catchFish(fishingState);
+      else showToast('收回鱼线');
+      endFishing();
+    } else {
+      const w = findWaterAlongView(8);
+      if (!w) { showToast('对着水面甩竿'); return; }
+      startFishing(w.x, w.y, w.z, item);
+      swingHoldItem();
+    }
   } else if (def.tool === 'armor') {
     toolCooldown[item.id] = now;
     equipArmor(item);
@@ -3966,6 +4015,7 @@ function spawnMob(x, groundY, z, type) {
     hp: MOB_DEFS[t].hp, hurtT: 0, walkPhase: Math.random() * 6, onGround: false,
     attackCd: 0, fuse: 0, burnT: 0, fireT: 0, groanT: 2 + Math.random() * 3,
   });
+  return mobs[mobs.length - 1];
 }
 
 // 僵尸模型:绿皮人形,-z 为前,双臂经典前平举;userData 携带腿/臂引用
@@ -4785,6 +4835,79 @@ function renderEnchantPanel() {
   if (cb) cb.onclick = closeEnchantPanel;
 }
 
+// ============================================================
+// 钓鱼系统(R29):手持钓鱼竿右键甩竿 → 等待咬钩 → 窗口内再右键收鱼
+// 产出:生鱼 70% / 蛛丝 15% / 皮革 10% / 绿宝石 5%(宝物)
+// ============================================================
+let fishingState = null;
+function findWaterAlongView(maxDist) {
+  const dx = -Math.sin(yaw) * Math.cos(pitch), dy = Math.sin(pitch), dz = -Math.cos(yaw) * Math.cos(pitch);
+  for (let t = 0.4; t <= maxDist; t += 0.25) {
+    const x = Math.floor(playerPos.x + dx * t), y = Math.floor(playerPos.y + dy * t), z = Math.floor(playerPos.z + dz * t);
+    if (getBlock(x, y, z) === 'water') return { x: playerPos.x + dx * t, y: y + 0.95, z: playerPos.z + dz * t };
+  }
+  return null;
+}
+function startFishing(px, py, pz, rodItem) {
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.11, 8, 8), new THREE.MeshLambertMaterial({ color: 0xd03030 }));
+  mesh.position.set(px, py, pz);
+  scene.add(mesh);
+  fishingState = { mesh, x: px, y: py, z: pz, t: 0, biteAt: 2 + Math.random() * 3.5, biteT: 0, stage: 'wait', rodItem };
+  showToast('🎣 甩竿…等鱼上钩');
+}
+function endFishing() {
+  if (fishingState) { scene.remove(fishingState.mesh); fishingState = null; }
+}
+function catchFish(f) {
+  const r = Math.random();
+  const drop = r < 0.7 ? ['raw_fish', '钓到生鱼!'] : r < 0.85 ? ['string', '钓到一团蛛丝?'] : r < 0.95 ? ['leather', '钓到旧皮革'] : ['gem_emerald', '钓到宝石!'];
+  spawnDroppedItem(f.x - 0.5, f.y - 0.6, f.z - 0.5, drop[0], 1, 'item');
+  showToast('🐟 ' + drop[1]);
+  audio.play('place');
+  if (f.rodItem) consumeToolDurability(f.rodItem);
+  markDirtySave();
+}
+function updateFishing(dt) {
+  const f = fishingState;
+  if (!f) return;
+  f.t += dt;
+  if (f.stage === 'wait') {
+    if (f.t >= f.biteAt) {
+      f.stage = 'bite'; f.biteT = 1.4;
+      showToast('🐟 咬钩了!快按右键!');
+      audio.play('place');
+    }
+  } else if (f.stage === 'bite') {
+    f.biteT -= dt;
+    f.mesh.position.y = f.y - 0.12 + Math.sin(f.t * 22) * 0.05;   // 浮标下坠抖动
+    if (f.biteT <= 0) { showToast('鱼跑了…再甩一竿'); endFishing(); return; }
+  }
+  if (f.stage === 'wait') f.mesh.position.y = f.y + Math.sin(f.t * 2) * 0.03;
+}
+
+// ============================================================
+// 动物繁殖(R29):手持小麦右键牛/羊/猪喂食 → 求爱模式(红心),
+// 两只会合 → 产幼崽(0.55 缩放,60 秒长大);生育冷却 60 秒
+// ============================================================
+const MOB_CN = { pig: '猪', cow: '牛', sheep: '羊' };
+function countPassives() {
+  let n = 0;
+  for (const m of mobs) if (!MOB_DEFS[m.type].hostile) n++;
+  return n;
+}
+function feedAnimal(m, item) {
+  swingHoldItem();
+  if (m.baby) { showToast('幼崽还小,长大再喂'); return; }
+  if (m.breedCd > 0) { showToast('它最近刚生育过,歇一歇'); return; }
+  if (m.loveT > 0) { showToast('已在求爱中(再喂一只同类)'); return; }
+  m.loveT = 30;
+  item.count = (item.count || 1) - 1;
+  if (item.count <= 0) hotbar[currentSlot] = null;
+  refreshHotbarSlot(currentSlot);
+  spawnParticles(m.mesh.position.x, m.mesh.position.y + 0.6, m.mesh.position.z, 0xff5a8a, 6);
+  showToast('💗 ' + (MOB_CN[m.type] || m.type) + ' 进入求爱模式(再喂一只同类)');
+}
+
 // 夜间在距玩家 ≥12 格处生成敌对生物(僵尸 65% / 苦力怕 35%);关闭怪物或昼夜循环 = 和平模式
 function trySpawnHostile() {
   if (!settings.hostiles || !settings.dayNightEnabled) return;
@@ -4838,6 +4961,37 @@ function updateMobs(dt) {
     }
 
     // ---- 按类型 AI(决定 yaw/speed 与特殊行为);返回 true 表示该生物已移除 ----
+    // 繁殖与成长(R29):求爱红心 + 配对产崽;幼崽 60 秒长大
+    if (!MOB_DEFS[m.type].hostile) {
+      if (m.baby) {
+        m.growT -= dt;
+        if (m.growT <= 0) { m.baby = false; m.mesh.scale.setScalar(1); }
+      }
+      if (m.breedCd > 0) m.breedCd -= dt;
+      if (m.loveT > 0) {
+        m.loveT -= dt;
+        m.heartT = (m.heartT || 0) - dt;
+        if (m.heartT <= 0) {
+          m.heartT = 0.8;
+          spawnParticles(p.x, p.y + 0.6, p.z, 0xff5a8a, 2);
+        }
+        for (const o of mobs) {
+          if (o !== m && o.type === m.type && o.loveT > 0 && !o.baby && !o.breedCd
+              && o.mesh.position.distanceTo(p) < 3) {
+            if (countPassives() >= 15) { showToast('动物太多啦'); m.loveT = 0; o.loveT = 0; break; }
+            m.loveT = 0; o.loveT = 0;
+            m.breedCd = 60; o.breedCd = 60;
+            const baby = spawnMob((p.x + o.mesh.position.x) / 2, ((p.y + o.mesh.position.y) / 2) - 0.45, (p.z + o.mesh.position.z) / 2, m.type);
+            baby.baby = true; baby.growT = 60;
+            baby.mesh.scale.setScalar(0.55);
+            spawnParticles(baby.mesh.position.x, baby.mesh.position.y, baby.mesh.position.z, 0xff5a8a, 10);
+            showToast('💗 ' + (MOB_CN[m.type] || m.type) + '宝宝诞生了!');
+            audio.play('place');
+            break;
+          }
+        }
+      }
+    }
     if (m.type === 'pig') {
       wanderStep(m, dt, 1.3, 0.65);
     } else if (m.type === 'cow' || m.type === 'sheep') {
@@ -5924,6 +6078,7 @@ function animate() {
   if (locked) updateTNT(dt);                       // 点燃的 TNT(暂停时冻结)
   if (locked) updateMinecarts(dt);                 // 矿车(暂停时冻结,R26)
   if (locked) updateXPOrbs(dt);                    // 经验球(R28)
+  if (locked) updateFishing(dt);                   // 钓鱼浮标(R29)
   updateWeather(dt);                               // 天气(晴雨随机调度,暂停也推进)
   updateFurnaces(dt);                              // 熔炉冶炼(经典:暂停也持续燃烧)
   if (locked) updateDroppedItems(dt);              // 掉落物(暂停时冻结;每帧仅一次)
@@ -6095,10 +6250,10 @@ function updateCrops() {
     const [x, y, z] = key.split(',').map(Number);
     const b = getBlock(x, y, z);
     if (b === 'snow') { setBlock(x, y, z, 'leaves'); showToast('小麦成熟了'); }
-    // getBlock 对「未加载区块」与「空气」都返回 null:区块不在内存时保留计时器,
-    // 等玩家回访再判定(否则远离后计时器被误删,小麦永久停在幼苗)
+    // getBlock 对「未加载区块」与「空气」都返回 null:区块不在内存时保留计时器(R20),
+    // 等玩家回访再判定;成熟标记保留(R29):cropTimers 里的 leaves 条目 = 成熟麦田
     else if (b === null && !chunks.has(chunkKey(Math.floor(x / CHUNK_SIZE), Math.floor(z / CHUNK_SIZE)))) continue;
-    else if (b !== 'snow') cropTimers.delete(key);
+    else if (b !== 'snow' && b !== 'leaves') cropTimers.delete(key);
   }
 }
 
@@ -6205,6 +6360,7 @@ function applySave(rec) {
       spawnMob(md.x, md.y - 0.45, md.z, md.t);   // spawnMob 内部再 +0.45 回中心位
       const mm = mobs[mobs.length - 1];
       mm.hp = Math.max(1, Math.min(MOB_DEFS[md.t].hp, (typeof md.hp === 'number') ? md.hp : MOB_DEFS[md.t].hp));
+      if (md.baby) { mm.baby = true; mm.growT = 55; mm.mesh.scale.setScalar(0.55); }   // 幼崽(R29)
     }
   }
   // 恢复护甲装备(4 部位;脏数据防御:非法 id/部位回 null)
@@ -6817,7 +6973,7 @@ function buildSaveRecord() {
     spawnPoint,
     armorSlotsData: ['head', 'chest', 'legs', 'feet'].map(s => armorSlots[s] ? [s, { id: armorSlots[s].id, durability: armorSlots[s].durability }] : [s, null]),
     minecartsData: minecarts.map(c => ({ x: c.cx, y: Math.round(c.y), z: c.cz })),
-    mobsData: mobs.map(mm => ({ t: mm.type, x: Math.round(mm.mesh.position.x * 100) / 100, y: Math.round(mm.mesh.position.y * 100) / 100, z: Math.round(mm.mesh.position.z * 100) / 100, hp: mm.hp })),
+    mobsData: mobs.map(mm => ({ t: mm.type, x: Math.round(mm.mesh.position.x * 100) / 100, y: Math.round(mm.mesh.position.y * 100) / 100, z: Math.round(mm.mesh.position.z * 100) / 100, hp: mm.hp, baby: !!mm.baby })),
     xpData: { level: xpState.level, points: xpState.points },
     doorsData: Array.from(doors.entries()).map(function(e){return [e[0], {x:e[1].x,y:e[1].y,z:e[1].z,type:e[1].type,open:e[1].open,facing:e[1].facing}];}),
     timestamp: Date.now(),

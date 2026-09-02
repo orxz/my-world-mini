@@ -67,6 +67,10 @@
     { name: '矿车', pattern: ['iron_ingot', null, 'iron_ingot', 'iron_ingot', 'iron_ingot', 'iron_ingot', null, null, null], result: { kind: 'item', id: 'minecart' }, count: 1, shapeless: false },
     // 附魔台:2 钻石 + 3 书 + 1 石头(R28 简化配方;经典为黑曜石)
     { name: '附魔台', pattern: ['gem_diamond', 'book', 'gem_diamond', 'book', 'stone', 'book', null, null, null], result: { kind: 'block', id: 'enchanting_table' }, count: 1, shapeless: false },
+    // 钓鱼竿:3 木棍斜排 + 2 蛛丝(经典配方,R29)
+    { name: '钓鱼竿', pattern: [null, null, 'stick', null, 'stick', 'string', 'stick', null, 'string'], result: { kind: 'tool', id: 'fishing_rod' }, count: 1, shapeless: false },
+    // 面包:3 小麦一排(经典配方,R29)
+    { name: '面包', pattern: ['wheat', 'wheat', 'wheat', null, null, null, null, null, null], result: { kind: 'item', id: 'bread' }, count: 1, shapeless: false },
     // ---- 工具配方(3×3:3 材料上排 + 2 木棍中列,经典镐形)----
     { name: '木镐', pattern: ['planks', 'planks', 'planks', null, 'stick', null, null, 'stick', null], result: { kind: 'tool', id: 'pickaxe_wood' }, shapeless: false },
     { name: '石镐', pattern: ['cobblestone', 'cobblestone', 'cobblestone', null, 'stick', null, null, 'stick', null], result: { kind: 'tool', id: 'pickaxe_stone' }, shapeless: false },

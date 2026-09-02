@@ -46,6 +46,7 @@
     cobblestone: { kind: 'block', id: 'stone' },
     porkchop: { kind: 'item', id: 'cooked_porkchop' },
     beef: { kind: 'item', id: 'steak' },
+    raw_fish: { kind: 'item', id: 'cooked_fish' },
   };
   const FUELS = { coal: 8, wood: 1.5, planks: 1.5, stick: 0.5 };   // 单位:可产能物个数
 

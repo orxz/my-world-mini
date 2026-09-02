@@ -677,6 +677,17 @@ test('附魔台配方:2 钻石 + 3 书 + 1 石头(3×3)', () => {
   assert.ok(r && r.result.id === 'enchanting_table');
 });
 
+test('钓鱼竿配方:3 木棍斜排 + 2 蛛丝(R29)', () => {
+  const g3 = (ids) => ids.map(x => x === null ? null : { kind: 'item', id: x });
+  const r = matchRecipeGrid(g3([null, null, 'stick', null, 'stick', 'string', 'stick', null, 'string']), 3, RECIPES);
+  assert.ok(r && r.result.id === 'fishing_rod');
+});
+test('面包配方:3 小麦一排(R29);2×2 放不下', () => {
+  const g3 = (ids) => ids.map(x => x === null ? null : { kind: 'item', id: x });
+  const r = matchRecipeGrid(g3(['wheat', 'wheat', 'wheat', null, null, null, null, null, null]), 3, RECIPES);
+  assert.ok(r && r.result.id === 'bread' && r.count === 1);
+});
+
 console.log('\n=== 总结 ===');
 console.log(`通过: ${passed}/${passed+failed}`);
 if (failed > 0) { console.log('❌ 有失败'); process.exit(1); }

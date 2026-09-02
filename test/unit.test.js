@@ -461,6 +461,12 @@ test('护甲配方:2×2 背包格放不下护甲(需 3×3 合成台)', () => {
   assert.notStrictEqual(r && r.result && r.result.id, 'boots_gold');
 });
 
+test('火把配方:煤炭上 + 木棍下 → 4 支(2×2 背包可合成)', () => {
+  const g4 = ['coal', null, 'stick', null].map(x => x === null ? null : { kind: 'item', id: x });
+  const r = matchRecipeGrid(g4, 2, RECIPES);
+  assert.ok(r && r.result.id === 'torch' && r.count === 4);
+});
+
 console.log('\n=== 总结 ===');
 console.log(`通过: ${passed}/${passed+failed}`);
 if (failed > 0) { console.log('❌ 有失败'); process.exit(1); }

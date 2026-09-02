@@ -42,12 +42,13 @@ const BLOCK_TYPES = {
   bed:          { name: '床',     top: '#c0392b', side: '#8a2820', bottom: '#6e4f2a', solid: true, tool: 'axe', hardness: 0.3 },
   chest:        { name: '箱子',   top: '#a0763a', side: '#96682e', bottom: '#8a5f28', solid: true, tool: 'axe', hardness: 1.8 },
   ladder:       { name: '梯子',   top: '#9a6b3f', side: '#9a6b3f', bottom: '#9a6b3f', solid: false, tool: 'axe', hardness: 0.5 },
+  torch:        { name: '火把',   top: '#ffd86b', side: '#ffd86b', bottom: '#8a6430', solid: false, tool: 'any', hardness: 0.05, light: 14 },
   bookshelf:    { name: '书架',   top: '#a0763a', side: '#96682e', bottom: '#8a5f28', solid: true, tool: 'axe', hardness: 1.5 },
 };
 const HOTBAR_ORDER = ['grass', 'dirt', 'stone', 'wood', 'leaves', 'sand', 'planks', 'brick'];
 
 // 方块数字 id(用于紧凑的 Uint8Array 区块存储)
-const BLOCK_ID = { air: 0, grass: 1, dirt: 2, stone: 3, wood: 4, leaves: 5, sand: 6, planks: 7, brick: 8, water: 9, snow: 10, gravel: 11, wool_red: 12, wool_yellow: 13, wool_white: 14, wool_black: 15, door: 16, door_iron: 17, door_stone: 18, door_gold: 19, door_diamond: 20, crafting_table: 21, cobblestone: 22, coal_ore: 23, iron_ore: 24, diamond_ore: 25, tnt: 26, furnace: 27, glass: 28, bed: 29, chest: 30, ladder: 31, bookshelf: 32 };
+const BLOCK_ID = { air: 0, grass: 1, dirt: 2, stone: 3, wood: 4, leaves: 5, sand: 6, planks: 7, brick: 8, water: 9, snow: 10, gravel: 11, wool_red: 12, wool_yellow: 13, wool_white: 14, wool_black: 15, door: 16, door_iron: 17, door_stone: 18, door_gold: 19, door_diamond: 20, crafting_table: 21, cobblestone: 22, coal_ore: 23, iron_ore: 24, diamond_ore: 25, tnt: 26, furnace: 27, glass: 28, bed: 29, chest: 30, ladder: 31, bookshelf: 32, torch: 33 };
 const ID_TO_BLOCK = Object.keys(BLOCK_ID);
 
 // ============================================================
@@ -432,6 +433,21 @@ function drawBlockFace(ctx, type, face, s, seedRand) {
       ctx.fillRect(Math.floor(s * 0.3), Math.floor(s * 0.2), Math.floor(s * 0.4), Math.floor(s * 0.12));
       break;
     }
+    case 'torch': {
+      // 火把:透明底(alphaTest)+ 细木棍 + 发光头部(火焰芯 + 光晕)
+      ctx.clearRect(0, 0, s, s);
+      ctx.fillStyle = '#8a6430';
+      ctx.fillRect(Math.floor(s * 0.44), Math.floor(s * 0.32), Math.max(1, Math.floor(s * 0.12)), Math.floor(s * 0.62));
+      ctx.fillStyle = 'rgba(120,80,40,0.5)';
+      ctx.fillRect(Math.floor(s * 0.52), Math.floor(s * 0.32), Math.max(1, Math.floor(s * 0.05)), Math.floor(s * 0.62));
+      ctx.fillStyle = '#ffd86b';
+      ctx.fillRect(Math.floor(s * 0.38), Math.floor(s * 0.18), Math.floor(s * 0.24), Math.floor(s * 0.18));
+      ctx.fillStyle = '#ff9a3c';
+      ctx.fillRect(Math.floor(s * 0.42), Math.floor(s * 0.12), Math.floor(s * 0.16), Math.floor(s * 0.1));
+      ctx.fillStyle = 'rgba(255,200,90,0.35)';
+      ctx.fillRect(Math.floor(s * 0.3), Math.floor(s * 0.06), Math.floor(s * 0.4), Math.floor(s * 0.3));
+      break;
+    }
     case 'glass': {
       // 玻璃:浅色边框 + 斜高光,中心透明(alphaTest 挖空)
       ctx.clearRect(0, 0, s, s);
@@ -560,6 +576,16 @@ function buildAtlas() {
 
   // 共享区块材质:所有区块的 solid/water mesh 复用这两个材质,避免每区块 new ~242 个 Material
   matSolidChunk = new THREE.MeshLambertMaterial({ map: atlasTexture, alphaTest: 0.1, transparent: true, vertexColors: true });  // vertexColors:烘焙面色
+  // R22 火把光照:顶点 aTorch 属性注入自发光 —— 与场景昼夜光解耦,夜晚火光不灭。
+  // emissive = 纹理色 × 面烘焙色 × 光级曲线 × uTorchGlow(暖色偏置)
+  matSolidChunk.onBeforeCompile = (shader) => {
+    shader.uniforms.uTorchGlow = torchGlowUniform;
+    shader.vertexShader = 'attribute float aTorch;\nvarying float vTorch;\n' + shader.vertexShader
+      .replace('#include <color_vertex>', '#include <color_vertex>\n\tvTorch = aTorch;');
+    shader.fragmentShader = 'uniform float uTorchGlow;\nvarying float vTorch;\n' + shader.fragmentShader
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n\ttotalEmissiveRadiance += diffuseColor.rgb * (vTorch * uTorchGlow) * vec3(1.0, 0.92, 0.78);');
+  };
+  matSolidChunk.customProgramCacheKey = () => 'torchglow';
   // 水用 MeshBasicMaterial(不受光照影响,显示纯清水蓝;Lambert 受法线/光照会压暗变灰)
   matWaterChunk = new THREE.MeshBasicMaterial({ color: 0x2a8fd6, transparent: true, opacity: 0.78, depthWrite: false });
 }
@@ -576,6 +602,11 @@ function makeBlockMaterials(type) {
   if (type === 'leaves') {
     const lm = M(side); lm.transparent = true; lm.alphaTest = 0.1;
     return [lm, lm.clone(), M(top), M(bottom), lm.clone(), lm.clone()];
+  }
+  if (type === 'torch') {
+    // 火把:透明贴图(手持/图标用,与树叶同款 alphaTest)
+    const tm = M(side); tm.transparent = true; tm.alphaTest = 0.1;
+    return [tm, tm.clone(), M(top), M(bottom), tm.clone(), tm.clone()];
   }
   return [M(side), M(side), M(top), M(bottom), M(side), M(side)];
 }
@@ -805,6 +836,7 @@ function setBlock(x, y, z, type) {
   const lx = x - cx * CHUNK_SIZE, lz = z - cz * CHUNK_SIZE;
   const idx = chunkIdx(lx, y, lz);
   const newId = type ? BLOCK_ID[type] : 0;
+  const oldId = ch.data[idx];
   if (ch.data[idx] === newId) return false;
   ch.data[idx] = newId;
   ch.meshDirty = true;
@@ -816,6 +848,19 @@ function setBlock(x, y, z, type) {
   if (lx === CHUNK_SIZE - 1) markChunkDirty(cx + 1, cz);
   if (lz === 0) markChunkDirty(cx, cz - 1);
   if (lz === CHUNK_SIZE - 1) markChunkDirty(cx, cz + 1);
+  // 光照缓存失效(R22):火把增删 → 3×3 重算重绘;在火把照亮范围内的其他改动
+  // (遮挡物增删)同样需要 —— 缓存中已有光照网格即说明半径内有光源
+  if (newId === TORCH_ID || oldId === TORCH_ID) {
+    for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
+      lightGridCache.delete(chunkKey(cx + dx, cz + dz));
+      markChunkDirty(cx + dx, cz + dz);
+    }
+  } else {
+    for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
+      const k = chunkKey(cx + dx, cz + dz);
+      if (lightGridCache.get(k)) { lightGridCache.delete(k); markChunkDirty(cx + dx, cz + dz); }
+    }
+  }
   // 沙砾重力:检查本格(新放/爆炸暴露)与上格(失去支撑)
   scheduleFallCheck(x, y, z);
   scheduleFallCheck(x, y + 1, z);
@@ -856,6 +901,90 @@ function getBlockId(x, y, z) {
   return ch.data[chunkIdx(x - cx * CHUNK_SIZE, y, z - cz * CHUNK_SIZE)];
 }
 
+// ============================================================
+// 火把逐方块光照(R22):光源 BFS 光级 14→1,不透明方块挡光,跨区块传播
+// ============================================================
+const TORCH_ID = BLOCK_ID.torch;
+const TORCH_LIGHT_LEVEL = 14;                    // 火把光级(经典)
+const LIGHT_MARGIN = TORCH_LIGHT_LEVEL;          // 光照网格外扩半径 = 最大传播距离(14 < 16,影响至多相邻区块)
+const DIR6 = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
+// 挡光表:不透明实体挡光;玻璃/树叶透光(经典近似);非固体(空气/水/梯子/火把)透光
+const LIGHT_BLOCK_BY_ID = new Uint8Array(64);
+for (const name in BLOCK_TYPES) {
+  const d = BLOCK_TYPES[name];
+  LIGHT_BLOCK_BY_ID[BLOCK_ID[name]] = (d.solid && name !== 'glass' && name !== 'leaves') ? 1 : 0;
+}
+// 光级 → 顶点自发光强度(非线性衰减曲线,近亮远暗更自然)
+const LIGHT_CURVE = new Float32Array(TORCH_LIGHT_LEVEL + 1);
+for (let li = 1; li <= TORCH_LIGHT_LEVEL; li++) LIGHT_CURVE[li] = Math.pow(li / TORCH_LIGHT_LEVEL, 1.5);
+// 火光总强度(昼夜调节:白天微光/夜晚全亮),由 updateDayNight 更新
+const torchGlowUniform = { value: 0.9 };
+// 光照网格缓存:chunkKey -> {grid, gx0, gz0, W} | null(无光源零开销);火把增删时失效
+const lightGridCache = new Map();
+
+// 重建区块光照网格:chunk ± 14 格范围 BFS;光源来自 modifications 中的火把(与存档一致)
+function rebuildLightGrid(cx, cz) {
+  const W = CHUNK_SIZE + 2 * LIGHT_MARGIN;
+  const gx0 = cx * CHUNK_SIZE - LIGHT_MARGIN, gz0 = cz * CHUNK_SIZE - LIGHT_MARGIN;
+  // 收集相邻 3×3 区块内的火把(光级 14 < 区块边长 16,更远的不可能照到本区块)
+  const sources = [];
+  for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
+    const bucket = modsByChunk.get(chunkKey(cx + dx, cz + dz));
+    if (!bucket) continue;
+    for (const [cidx, type] of bucket) {
+      if (type !== 'torch') continue;
+      const y = (cidx / (CHUNK_SIZE * CHUNK_SIZE)) | 0, rem = cidx % (CHUNK_SIZE * CHUNK_SIZE);
+      const lz = (rem / CHUNK_SIZE) | 0, lx = rem % CHUNK_SIZE;
+      sources.push((cx + dx) * CHUNK_SIZE + lx, y, (cz + dz) * CHUNK_SIZE + lz);
+    }
+  }
+  if (!sources.length) return null;
+  const grid = new Uint8Array(W * WORLD_HEIGHT * W);
+  const gi = (x, y, z) => ((y * W) + (z - gz0)) * W + (x - gx0);
+  // 种子:火把格 = 14(BFS 起点)
+  const queue = [];
+  for (let i = 0; i < sources.length; i += 3) {
+    const x = sources[i], y = sources[i + 1], z = sources[i + 2];
+    if (x < gx0 || x >= gx0 + W || z < gz0 || z >= gz0 + W || y < 0 || y >= WORLD_HEIGHT) continue;
+    const ii = gi(x, y, z);
+    if (grid[ii] < TORCH_LIGHT_LEVEL) { grid[ii] = TORCH_LIGHT_LEVEL; queue.push(x, y, z); }
+  }
+  let head = 0;
+  while (head < queue.length) {
+    const x = queue[head++], y = queue[head++], z = queue[head++];
+    const lv = grid[gi(x, y, z)];
+    if (lv <= 1) continue;
+    for (let d = 0; d < 6; d++) {
+      const nx = x + DIR6[d][0], ny = y + DIR6[d][1], nz = z + DIR6[d][2];
+      if (ny < 0 || ny >= WORLD_HEIGHT || nx < gx0 || nx >= gx0 + W || nz < gz0 || nz >= gz0 + W) continue;
+      const ni = gi(nx, ny, nz);
+      if (grid[ni] >= lv - 1) continue;                 // 已有更亮值
+      const nid = getBlockId(nx, ny, nz);
+      if (nid !== 0 && LIGHT_BLOCK_BY_ID[nid]) continue; // 不透明挡光
+      grid[ni] = lv - 1;
+      queue.push(nx, ny, nz);
+    }
+  }
+  return { grid, gx0, gz0, W };
+}
+
+function getLightGrid(cx, cz) {
+  const k = chunkKey(cx, cz);
+  if (!lightGridCache.has(k)) lightGridCache.set(k, rebuildLightGrid(cx, cz));
+  return lightGridCache.get(k);
+}
+
+// 采样世界坐标处的火把光级(测试/调试用;0=无光)
+function lightAtWorld(x, y, z) {
+  const cx = Math.floor(x / CHUNK_SIZE), cz = Math.floor(z / CHUNK_SIZE);
+  const light = getLightGrid(cx, cz);
+  if (!light) return 0;
+  const gx = x - light.gx0, gz = z - light.gz0;
+  if (gx < 0 || gx >= light.W || gz < 0 || gz >= light.W || y < 0 || y >= WORLD_HEIGHT) return 0;
+  return light.grid[((y * light.W) + gz) * light.W + gx];
+}
+window.__lightAt = lightAtWorld;   // 调试/测试钩子(Playwright 光照断言用)
+
 // 面方向烘焙亮度(+x,-x,+y,-y,+z,-z),模块级常量
 const FACE_SHADE = [0.86, 0.86, 1.0, 0.55, 0.72, 0.72];
 // 每面 UV 复用缓冲,避免每面分配 [ [u,v]×4 ] 小数组
@@ -870,7 +999,9 @@ function buildChunkMesh(ch) {
   const ox = ch.cx * CHUNK_SIZE, oz = ch.cz * CHUNK_SIZE;
   const data = ch.data;
   const positions = [], normals = [], uvs = [], indices = [], colors = [];
+  const torch = [];   // 顶点火把光级强度(R22 光照;无光源区块全 0)
   const wPositions = [], wNormals = [], wUvs = [], wIndices = []; // 水面/透明
+  const light = getLightGrid(ch.cx, ch.cz);   // 光照网格(无光源时为 null,零采样开销)
 
   for (let y = 0; y < WORLD_HEIGHT; y++) {
     for (let lz = 0; lz < CHUNK_SIZE; lz++) {
@@ -919,6 +1050,15 @@ function buildChunkMesh(ch) {
           const tgtI = isWater ? wIndices : indices;
           // 烘焙顶点色(按面方向,非水才加)
           const shade = FACE_SHADE[f];
+          // 火把光级:采样面朝向的相邻格(空气/透明格)的光值(R22 光照)
+          let torchV = 0;
+          if (light && !isWater) {
+            const ax = wx + F.n[0], ay = y + F.n[1], az = wz + F.n[2];
+            const gx = ax - light.gx0, gz2 = az - light.gz0;
+            if (gx >= 0 && gx < light.W && gz2 >= 0 && gz2 < light.W && ay >= 0 && ay < WORLD_HEIGHT) {
+              torchV = LIGHT_CURVE[light.grid[((ay * light.W) + gz2) * light.W + gx]];
+            }
+          }
           const start = tgtP.length / 3;
           for (let k = 0; k < 4; k++) {
             tgtP.push(wx + base[k][0], y + base[k][1], wz + base[k][2]);
@@ -926,6 +1066,7 @@ function buildChunkMesh(ch) {
             tgtU.push(faceUV[k * 2], faceUV[k * 2 + 1]);
             if (!isWater) colors.push(shade, shade, shade);
           }
+          if (!isWater) torch.push(torchV, torchV, torchV, torchV);
           tgtI.push(start, start + 1, start + 2, start, start + 2, start + 3);
         }
       }
@@ -942,18 +1083,19 @@ function buildChunkMesh(ch) {
   dirtyChunks.delete(ch);
   ch.hasMesh = false;
 
-  const buildGeo = (P, N, U, I, C) => {
+  const buildGeo = (P, N, U, I, C, T) => {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
     g.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
     g.setAttribute('uv', new THREE.Float32BufferAttribute(U, 2));
     if (C) g.setAttribute('color', new THREE.Float32BufferAttribute(C, 3));
+    if (T) g.setAttribute('aTorch', new THREE.Float32BufferAttribute(T, 1));   // R22 火把光照
     g.setIndex(I);
     return g;
   };
 
   if (positions.length) {
-    const m = new THREE.Mesh(buildGeo(positions, normals, uvs, indices, colors), matSolidChunk);
+    const m = new THREE.Mesh(buildGeo(positions, normals, uvs, indices, colors, torch), matSolidChunk);
     m.userData.isChunk = true;
     m.userData.cx = ch.cx; m.userData.cz = ch.cz;
     scene.add(m);
@@ -2146,6 +2288,7 @@ function clearWorld() {
   particles.length = 0;
   cropTimers.clear();
   clearDoors();
+  lightGridCache.clear();   // 光照网格随世界重置(读档后首次建 mesh 重算)
   dayTime = 0.3;   // 新世界/切换存档前重置为早晨;读档由 applySave 按存档恢复(防跨存档时间串档)
   armorSlots.head = armorSlots.chest = armorSlots.legs = armorSlots.feet = null;   // 护甲随世界重置(读档按存档恢复)
   updateArmorBar();
@@ -2249,12 +2392,31 @@ function drawItemIcon(item, cv) {
   ctx.clearRect(0, 0, cv.width, cv.height);
   if (!item) return;
   if (item.kind === 'block') {
+    if (item.id === 'torch') { drawTorchIconFlat(ctx, cv.width); return; }
     drawBlockIcon3D(ctx, item.id, cv.width);
   } else if (item.kind === 'tool') {
     drawToolIcon(ctx, item.id, cv.width);
   } else if (item.kind === 'item') {
     drawMaterialIcon(ctx, item.id, cv.width);
   }
+}
+
+// 火把扁平图标:木棍 + 发光头部(透明贴图块不适合 3D 块图标)
+function drawTorchIconFlat(ctx, size) {
+  ctx.save();
+  ctx.translate(size / 2, size / 2);
+  ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1;
+  ctx.fillStyle = '#8a6430';
+  ctx.fillRect(-size * 0.07, -size * 0.12, size * 0.14, size * 0.46);
+  ctx.strokeRect(-size * 0.07, -size * 0.12, size * 0.14, size * 0.46);
+  ctx.fillStyle = 'rgba(255,160,60,0.4)';
+  ctx.fillRect(-size * 0.2, -size * 0.4, size * 0.4, size * 0.34);
+  ctx.fillStyle = '#ffd86b';
+  ctx.fillRect(-size * 0.13, -size * 0.34, size * 0.26, size * 0.24);
+  ctx.strokeRect(-size * 0.13, -size * 0.34, size * 0.26, size * 0.24);
+  ctx.fillStyle = '#ff9a3c';
+  ctx.fillRect(-size * 0.07, -size * 0.3, size * 0.12, size * 0.12);
+  ctx.restore();
 }
 
 function tierColorOf(tier) {
@@ -3061,6 +3223,11 @@ function breakBlock() {
   if (breakProgress < cost) return;
   spawnParticles(t.x, t.y, t.z, new THREE.Color(BLOCK_TYPES[type].top).getHex(), 8);
   setBlock(t.x, t.y, t.z, null);
+  // 火把附着:拆掉支撑后,上面的火把一并掉落(经典)
+  if (getBlock(t.x, t.y + 1, t.z) === 'torch') {
+    setBlock(t.x, t.y + 1, t.z, null);
+    spawnDroppedItem(t.x, t.y + 1, t.z, 'torch', 1, 'block');
+  }
   // 箱子被拆:掉落全部内容
   if (type === 'chest') {
     const ck = blockKey(t.x, t.y, t.z);
@@ -3173,6 +3340,10 @@ function placeBlock() {
     const hasSupport = isSolidAt(nx - 1, ny, nz) || isSolidAt(nx + 1, ny, nz)
       || isSolidAt(nx, ny, nz - 1) || isSolidAt(nx, ny, nz + 1) || isSolidAt(nx, ny - 1, nz);
     if (!hasSupport) { showToast('梯子需要贴着实体墙或地面放置'); return; }
+  }
+  // 火把:需放在固体方块上面(经典附着;R22 先做立式火把)
+  if (selectedType === 'torch' && !isSolidAt(nx, ny - 1, nz)) {
+    showToast('火把需要放在固体方块上面'); return;
   }
   if (selectedType !== 'ladder' && overlapsPlayer(nx, ny, nz)) { showToast('挡住自己了,换个方向'); return; }
   if (selectedType && selectedType.indexOf('door') === 0) {
@@ -5124,6 +5295,8 @@ function updateDayNight(dt, waterNow) {
   if (hemiLight) {
     hemiLight.intensity = 0.1 + dayFactor * 0.25;
   }
+  // 火把光晕随昼夜调整:白天微光(0.3)、夜晚全亮(1.0) —— 火光与场景光解耦
+  torchGlowUniform.value = 0.3 + 0.7 * (1 - dayFactor);
 
   // 太阳/月亮天体:沿圆轨道运动,互为对侧
   const R2 = 120;
@@ -5650,7 +5823,7 @@ function buildInventoryPanel() {
   addSection(grid, '方块');
   HOTBAR_ORDER.forEach(id => addCell({ kind: 'block', id }));
   // 新增方块也可取用
-  ['water', 'snow', 'gravel', 'door', 'door_iron', 'door_stone', 'door_gold', 'door_diamond', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'bed', 'chest', 'ladder', 'bookshelf'].forEach(id => addCell({ kind: 'block', id }));
+  ['water', 'snow', 'gravel', 'door', 'door_iron', 'door_stone', 'door_gold', 'door_diamond', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'bed', 'chest', 'ladder', 'bookshelf', 'torch'].forEach(id => addCell({ kind: 'block', id }));
   addSection(grid, '材料 · 宝石');
   ITEM_ORDER.forEach(id => addCell({ kind: 'item', id, count: 64 }));
 }
@@ -5769,7 +5942,7 @@ function openTablePanel() {
   if (closeBtn) closeBtn.onclick = closeTablePanel;
   // 目录循环列表:方块 + 材料物品(矿石/圆石/木棍等,按 kind 区分图标)
   const catalog = HOTBAR_ORDER.map(id => ({ kind: 'block', id }))
-    .concat(['water', 'snow', 'gravel', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'sand', 'bed', 'chest', 'ladder', 'bookshelf', 'wool_red', 'wool_white'].map(id => ({ kind: 'block', id })))
+    .concat(['water', 'snow', 'gravel', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'sand', 'bed', 'chest', 'ladder', 'bookshelf', 'wool_red', 'wool_white', 'torch'].map(id => ({ kind: 'block', id })))
     .concat(['leather', 'book'].map(id => ({ kind: 'item', id })))
     .concat(['gem_gold', 'gem_diamond', 'gem_emerald', 'arrow', 'stick', 'coal', 'iron_ingot'].map(id => ({ kind: 'item', id })));
   document.querySelectorAll('#table-grid .inv-cell').forEach((cell, i) => {

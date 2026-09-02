@@ -59,6 +59,8 @@
     { name: '书', pattern: ['leather', 'leather', 'stick', null], result: { kind: 'item', id: 'book' }, count: 1, shapeless: true },
     // 书架:6 木板 + 3 书(经典配方)
     { name: '书架', pattern: ['planks', 'planks', 'planks', 'book', 'book', 'book', 'planks', 'planks', 'planks'], result: { kind: 'block', id: 'bookshelf' }, count: 1, shapeless: false },
+    // 火把:煤炭上 + 木棍下(经典配方 → 4 支;光源,R22)
+    { name: '火把', pattern: ['coal', null, 'stick', null], result: { kind: 'block', id: 'torch' }, count: 4, shapeless: false },
     // ---- 工具配方(3×3:3 材料上排 + 2 木棍中列,经典镐形)----
     { name: '木镐', pattern: ['planks', 'planks', 'planks', null, 'stick', null, null, 'stick', null], result: { kind: 'tool', id: 'pickaxe_wood' }, shapeless: false },
     { name: '石镐', pattern: ['cobblestone', 'cobblestone', 'cobblestone', null, 'stick', null, null, 'stick', null], result: { kind: 'tool', id: 'pickaxe_stone' }, shapeless: false },

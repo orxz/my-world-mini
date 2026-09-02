@@ -14,8 +14,8 @@ const { hash2, hash3, valueNoise2D, fbm2D, BIOMES, biomeAt, heightAt } = require
 // ---- 从 craft.js 模块加载(合成/破坏计算的单一数据源) ----
 const { RECIPES, matchRecipe, matchRecipeGrid, breakCost } = require('../craft.js');
 
-// ---- 从 inventory.js 模块加载(库存/掉落/饥饿纯函数) ----
-const { STACK_MAX, FOODS, pickupIntoInventory, normalizeHotbar, hungerTick } = require('../inventory.js');
+// ---- 从 inventory.js 模块加载(库存/掉落/饥饿/护甲纯函数) ----
+const { STACK_MAX, FOODS, ARMOR_MAX_POINTS, armorReduce, pickupIntoInventory, normalizeHotbar, hungerTick } = require('../inventory.js');
 
 // ---- 测试用例 ----
 let passed = 0, failed = 0;
@@ -402,6 +402,63 @@ test('breakCost 确定性(同输入同输出)', () => {
     breakCost({ hardness: 2.0, tool: 'pickaxe' }, { tool: 'pickaxe', speed: 4.0 }),
     breakCost({ hardness: 2.0, tool: 'pickaxe' }, { tool: 'pickaxe', speed: 4.0 })
   );
+});
+
+// ===== 护甲系统(R21) =====
+console.log('\n=== 护甲减伤(armorReduce) ===');
+test('armorReduce 0 点护甲伤害不变', () => {
+  assert.strictEqual(armorReduce(5, 0), 5);
+  assert.strictEqual(armorReduce(3, null), 3);
+});
+test('armorReduce 20 点(钻石全套)= 80% 减伤', () => {
+  assert.strictEqual(armorReduce(10, 20), 2);
+  assert.strictEqual(armorReduce(5, 20), 1);
+});
+test('armorReduce 15 点(铁全套)按每点 4% 取整', () => {
+  assert.strictEqual(armorReduce(3, 15), 1);    // 3×0.4=1.2 → 1
+  assert.strictEqual(armorReduce(14, 15), 6);   // 14×0.4=5.6 → 6
+});
+test('armorReduce 超 20 点封顶(80%)', () => {
+  assert.strictEqual(armorReduce(10, 30), 2);
+  assert.strictEqual(ARMOR_MAX_POINTS, 20);
+});
+test('armorReduce 减伤后至少 1 点 / 非法输入返回 0', () => {
+  assert.strictEqual(armorReduce(1, 20), 1);
+  assert.strictEqual(armorReduce(-5, 20), 0);
+  assert.strictEqual(armorReduce(NaN, 5), 0);
+});
+
+console.log('\n=== 护甲配方(matchRecipeGrid) ===');
+const g9 = (ids) => ids.map(x => x === null ? null : { kind: 'item', id: x });
+test('护甲配方:钻石头盔(5 钻经典形)', () => {
+  const r = matchRecipeGrid(g9(['gem_diamond','gem_diamond','gem_diamond', 'gem_diamond',null,'gem_diamond', null,null,null]), 3, RECIPES);
+  assert.ok(r && r.result.id === 'helmet_diamond');
+});
+test('护甲配方:铁胸甲(8 铁围形)', () => {
+  const r = matchRecipeGrid(g9(['iron_ingot',null,'iron_ingot', 'iron_ingot','iron_ingot','iron_ingot', 'iron_ingot','iron_ingot','iron_ingot']), 3, RECIPES);
+  assert.ok(r && r.result.id === 'chestplate_iron');
+});
+test('护甲配方:皮革裤子(7 皮革)', () => {
+  const r = matchRecipeGrid(g9(['leather','leather','leather', 'leather',null,'leather', 'leather',null,'leather']), 3, RECIPES);
+  assert.ok(r && r.result.id === 'leggings_leather');
+});
+test('护甲配方:金靴子(4 金两侧列)', () => {
+  const r = matchRecipeGrid(g9(['gem_gold',null,'gem_gold', 'gem_gold',null,'gem_gold', null,null,null]), 3, RECIPES);
+  assert.ok(r && r.result.id === 'boots_gold');
+});
+test('护甲配方:错误图案不匹配', () => {
+  const r = matchRecipeGrid(g9(['gem_diamond',null,'gem_diamond', null,'gem_diamond',null, null,null,null]), 3, RECIPES);
+  assert.strictEqual(r, null);
+});
+test('钻石门(4 钻 2×2 方形)不再截胡钻石靴子(4 钻两侧列)', () => {
+  const boots = matchRecipeGrid(g9(['gem_diamond',null,'gem_diamond', 'gem_diamond',null,'gem_diamond', null,null,null]), 3, RECIPES);
+  assert.ok(boots && boots.result.id === 'boots_diamond');
+  const door = matchRecipeGrid(g9(['gem_diamond','gem_diamond','gem_diamond','gem_diamond']).map(x => x), 2, RECIPES);
+  assert.ok(door && door.result.id === 'door_diamond');
+});
+test('护甲配方:2×2 背包格放不下护甲(需 3×3 合成台)', () => {
+  const r = matchRecipeGrid(g9([null,'gem_gold',null, null,'gem_gold',null, null,null,null]).slice(0, 4), 2, RECIPES);
+  assert.notStrictEqual(r && r.result && r.result.id, 'boots_gold');
 });
 
 console.log('\n=== 总结 ===');

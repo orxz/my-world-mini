@@ -77,6 +77,23 @@ const TOOL_TYPES = {
   shield_wood:  { name: '木盾',   tool: 'shield',  durability: 80,  tier: 'wood' },
   shield_iron:  { name: '铁盾',   tool: 'shield',  durability: 400, tier: 'iron' },
   shield_diamond:{ name: '钻石盾', tool: 'shield', durability: 800, tier: 'diamond' },
+  // ---- 护甲(4 部位 × 4 材质;armor=护甲点数,每点 4% 减伤,经典数值) ----
+  helmet_leather:      { name: '皮革帽子',  tool: 'armor', slot: 'head',  armor: 1, durability: 55,  tier: 'leather' },
+  chestplate_leather:  { name: '皮革上衣',  tool: 'armor', slot: 'chest', armor: 3, durability: 80,  tier: 'leather' },
+  leggings_leather:    { name: '皮革裤子',  tool: 'armor', slot: 'legs',  armor: 2, durability: 75,  tier: 'leather' },
+  boots_leather:       { name: '皮革鞋子',  tool: 'armor', slot: 'feet',  armor: 1, durability: 65,  tier: 'leather' },
+  helmet_iron:         { name: '铁头盔',    tool: 'armor', slot: 'head',  armor: 2, durability: 165, tier: 'iron' },
+  chestplate_iron:     { name: '铁胸甲',    tool: 'armor', slot: 'chest', armor: 6, durability: 240, tier: 'iron' },
+  leggings_iron:       { name: '铁护腿',    tool: 'armor', slot: 'legs',  armor: 5, durability: 225, tier: 'iron' },
+  boots_iron:          { name: '铁靴子',    tool: 'armor', slot: 'feet',  armor: 2, durability: 195, tier: 'iron' },
+  helmet_gold:         { name: '金头盔',    tool: 'armor', slot: 'head',  armor: 2, durability: 77,  tier: 'gold' },
+  chestplate_gold:     { name: '金胸甲',    tool: 'armor', slot: 'chest', armor: 5, durability: 112, tier: 'gold' },
+  leggings_gold:       { name: '金护腿',    tool: 'armor', slot: 'legs',  armor: 3, durability: 105, tier: 'gold' },
+  boots_gold:          { name: '金靴子',    tool: 'armor', slot: 'feet',  armor: 1, durability: 91,  tier: 'gold' },
+  helmet_diamond:      { name: '钻石头盔',  tool: 'armor', slot: 'head',  armor: 3, durability: 363, tier: 'diamond' },
+  chestplate_diamond:  { name: '钻石胸甲',  tool: 'armor', slot: 'chest', armor: 8, durability: 528, tier: 'diamond' },
+  leggings_diamond:    { name: '钻石护腿',  tool: 'armor', slot: 'legs',  armor: 6, durability: 495, tier: 'diamond' },
+  boots_diamond:       { name: '钻石靴子',  tool: 'armor', slot: 'feet',  armor: 3, durability: 461, tier: 'diamond' },
   bow:          { name: '弓',     tool: 'bow',     durability: 384, tier: 'wood' },
 };
 const TOOL_ORDER = [
@@ -86,6 +103,10 @@ const TOOL_ORDER = [
   'shovel_diamond','shovel_gold','shovel_iron','shovel_stone','shovel_wood',
   'bow',
   'shield_diamond','shield_iron','shield_wood',
+  'chestplate_diamond','leggings_diamond','helmet_diamond','boots_diamond',
+  'chestplate_iron','leggings_iron','helmet_iron','boots_iron',
+  'chestplate_gold','leggings_gold','helmet_gold','boots_gold',
+  'chestplate_leather','leggings_leather','helmet_leather','boots_leather',
 ];
 const ITEM_TYPES = {
   gem_diamond: { name: '钻石',   color: '#5fe3e8', shape: 'gem' },
@@ -1048,6 +1069,7 @@ let playerModel = null;
 let holdGroup = null;
 let holdSwingT = 0;
 let shieldActive = 0;
+let raisedShield = null;   // 举盾时手持的盾引用(格挡成功扣耐久用)
 
 let breakTargetKey = null;
 let breakProgress = 0;
@@ -1070,6 +1092,17 @@ const BLOCK_STACK_MAX = INVLIB.STACK_MAX;   // 方块最大堆叠数(来自 inve
 
 // 玩家生命系统(无怪物,先建立基础设施:跌落/溺水伤害 + HUD + 存档)
 let playerHP = 20;       // 10 颗心,每心 2 点
+// 护甲装备槽(经典 4 部位):格 = {kind:'tool', id, durability};手持护甲右键穿上
+const armorSlots = { head: null, chest: null, legs: null, feet: null };
+const ARMOR_SLOT_NAMES = { head: '头盔', chest: '胸甲', legs: '护腿', feet: '靴子' };
+function totalArmorPoints() {
+  let p = 0;
+  for (const s in armorSlots) {
+    const it = armorSlots[s];
+    if (it && TOOL_TYPES[it.id]) p += TOOL_TYPES[it.id].armor || 0;
+  }
+  return p;
+}
 let breathTimer = 0;     // 持续在水下憋气计时(秒);浮出水面归零
 // 饥饿状态(状态机逻辑在 inventory.js:hungerTick;{hunger, drain, regenT, starveT})
 const hungerState = { hunger: 20, drain: 0, regenT: 0, starveT: 0 };
@@ -1478,6 +1511,11 @@ function buildToolMesh(toolId) {
     arc.rotation.z = Math.PI / 2; g.add(arc); g.rotation.z = -0.2;
   } else if (def.tool === 'shield') {
     const body = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.45, 0.05), matTier);
+    g.add(body); g.rotation.y = 0.2;
+  } else if (def.tool === 'armor') {
+    // 护甲:按部位大小的护甲板(手持短暂展示,右键即穿上)
+    const h = def.slot === 'chest' ? 0.38 : (def.slot === 'head' ? 0.24 : 0.2);
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.32, h, 0.1), matTier);
     g.add(body); g.rotation.y = 0.2;
   } else {
     // 镐/斧/铲:统一斜柄,但头部按工具类型区分形状,与图标一致
@@ -2109,6 +2147,8 @@ function clearWorld() {
   cropTimers.clear();
   clearDoors();
   dayTime = 0.3;   // 新世界/切换存档前重置为早晨;读档由 applySave 按存档恢复(防跨存档时间串档)
+  armorSlots.head = armorSlots.chest = armorSlots.legs = armorSlots.feet = null;   // 护甲随世界重置(读档按存档恢复)
+  updateArmorBar();
 }
 
 function resetWorld() {
@@ -2218,7 +2258,7 @@ function drawItemIcon(item, cv) {
 }
 
 function tierColorOf(tier) {
-  return ({ wood: '#8a6430', stone: '#9a9a9a', iron: '#d8d8e0', gold: '#ffd54a', diamond: '#5fe3e8' })[tier] || '#888';
+  return ({ wood: '#8a6430', stone: '#9a9a9a', iron: '#d8d8e0', gold: '#ffd54a', diamond: '#5fe3e8', leather: '#a8784a' })[tier] || '#888';
 }
 
 function drawToolIcon(ctx, toolId, size) {
@@ -2258,6 +2298,40 @@ function drawToolIcon(ctx, toolId, size) {
     ctx.fillStyle = 'rgba(255,255,255,0.35)';
     ctx.fillRect(-size * 0.04, -size * 0.2, size * 0.08, size * 0.32);
     ctx.fillRect(-size * 0.12, -size * 0.06, size * 0.24, size * 0.08);
+  } else if (def.tool === 'armor') {
+    // 护甲四件套:帽(圆顶+护颊)/甲(背心)/裤(腰+双腿)/靴(双短筒),材质色区分
+    ctx.fillStyle = tc; ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1;
+    if (def.slot === 'head') {
+      ctx.beginPath();
+      ctx.moveTo(-size * 0.3, size * 0.02);
+      ctx.quadraticCurveTo(-size * 0.3, -size * 0.38, 0, -size * 0.38);
+      ctx.quadraticCurveTo(size * 0.3, -size * 0.38, size * 0.3, size * 0.02);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillRect(-size * 0.36, size * 0.02, size * 0.16, size * 0.12);
+      ctx.strokeRect(-size * 0.36, size * 0.02, size * 0.16, size * 0.12);
+      ctx.fillRect(size * 0.2, size * 0.02, size * 0.16, size * 0.12);
+      ctx.strokeRect(size * 0.2, size * 0.02, size * 0.16, size * 0.12);
+    } else if (def.slot === 'chest') {
+      ctx.beginPath();
+      ctx.moveTo(-size * 0.28, -size * 0.34); ctx.lineTo(size * 0.28, -size * 0.34);
+      ctx.lineTo(size * 0.2, -size * 0.08); ctx.lineTo(size * 0.26, size * 0.36);
+      ctx.lineTo(-size * 0.26, size * 0.36); ctx.lineTo(-size * 0.2, -size * 0.08);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,0.28)';
+      ctx.fillRect(-size * 0.07, -size * 0.3, size * 0.14, size * 0.6);
+    } else if (def.slot === 'legs') {
+      ctx.fillRect(-size * 0.26, -size * 0.34, size * 0.52, size * 0.3);
+      ctx.strokeRect(-size * 0.26, -size * 0.34, size * 0.52, size * 0.3);
+      ctx.fillRect(-size * 0.24, -size * 0.06, size * 0.2, size * 0.44);
+      ctx.strokeRect(-size * 0.24, -size * 0.06, size * 0.2, size * 0.44);
+      ctx.fillRect(size * 0.04, -size * 0.06, size * 0.2, size * 0.44);
+      ctx.strokeRect(size * 0.04, -size * 0.06, size * 0.2, size * 0.44);
+    } else {
+      ctx.fillRect(-size * 0.28, -size * 0.12, size * 0.22, size * 0.44);
+      ctx.strokeRect(-size * 0.28, -size * 0.12, size * 0.22, size * 0.44);
+      ctx.fillRect(size * 0.06, -size * 0.12, size * 0.22, size * 0.44);
+      ctx.strokeRect(size * 0.06, -size * 0.12, size * 0.22, size * 0.44);
+    }
   } else {
     ctx.strokeStyle = handleColor; ctx.lineWidth = size * 0.12;
     ctx.beginPath(); ctx.moveTo(size * 0.32, size * 0.32); ctx.lineTo(-size * 0.3, -size * 0.3); ctx.stroke();
@@ -3153,9 +3227,13 @@ function useTool(item) {
   } else if (def.tool === 'shield') {
     toolCooldown[item.id] = now;   // 交互:举盾进入冷却
     shieldActive = 0.6;
+    raisedShield = item;           // 记住举起的盾(格挡成功扣耐久)
     swingHoldItem();
     showToast(`举盾:${def.name}`);
     consumeToolDurability(item);
+  } else if (def.tool === 'armor') {
+    toolCooldown[item.id] = now;
+    equipArmor(item);
   } else {
     showToast(`${def.name}:用于破坏方块(左键),右键只是展示`);
     toolCooldown[item.id] = now;
@@ -3856,7 +3934,7 @@ function zombieAI(m, dt, distP) {
   m.attackCd -= dt;
   if (distP < 1.5 && m.attackCd <= 0) {
     m.attackCd = 1.5;
-    damagePlayer(3);
+    damagePlayer(3, 'combat');
     const inv = 1 / Math.max(0.001, distP);
     velocity.x += (playerPos.x - m.mesh.position.x) * inv * 6;
     velocity.z += (playerPos.z - m.mesh.position.z) * inv * 6;
@@ -3959,7 +4037,7 @@ function explodeAt(cx, cy, cz, radius, maxDamage) {
   const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
   if (d < radius * 2.6) {
     // 伤害随距离衰减:贴脸高伤、2.6 倍半径外无伤(曲线较陡,远距更安全)
-    damagePlayer(Math.max(1, Math.round((1 - d / (radius * 2.6)) * maxDamage)));
+    damagePlayer(Math.max(1, Math.round((1 - d / (radius * 2.6)) * maxDamage)), 'explosion');
     const inv = 1 / Math.max(0.5, d);
     velocity.x += dx * inv * 8; velocity.z += dz * inv * 8; velocity.y = 6;   // 爆炸击退
   }
@@ -4533,6 +4611,31 @@ function updateHPBar() {
   }
 }
 
+// 渲染护甲条(左侧 10 面盾,每盾 = 2 护甲点;无护甲时隐藏 —— 经典)
+const ARMOR_ICON_COUNT = 10;
+function updateArmorBar() {
+  const bar = document.getElementById('armor-bar');
+  if (!bar) return;
+  const pts = Math.max(0, Math.min(2 * ARMOR_ICON_COUNT, totalArmorPoints()));
+  bar.style.display = pts > 0 ? 'flex' : 'none';
+  if (bar.children.length !== ARMOR_ICON_COUNT) {
+    bar.innerHTML = '';
+    for (let i = 0; i < ARMOR_ICON_COUNT; i++) {
+      const a = document.createElement('div');
+      a.className = 'armoricon';
+      a.textContent = '🛡';
+      bar.appendChild(a);
+    }
+  }
+  for (let i = 0; i < ARMOR_ICON_COUNT; i++) {
+    const seg = pts - i * 2;
+    const el = bar.children[i];
+    if (seg >= 2) el.className = 'armoricon full';
+    else if (seg === 1) el.className = 'armoricon half';
+    else el.className = 'armoricon empty';
+  }
+}
+
 // 渲染饥饿条(右侧 10 鸡腿;满 = 彩色,空 = 灰暗)
 function updateHungerBar() {
   const bar = document.getElementById('hunger-bar');
@@ -4570,10 +4673,74 @@ function updateDamageVignette(dt) {
   else { el.style.opacity = String(Math.max(0, damageVignetteTimer / 0.6) * 0.45); }
 }
 
+// ---- 护甲系统(经典):穿上/卸下/受击损耗 ----
+function equipArmor(item) {
+  const def = TOOL_TYPES[item.id];
+  const prev = armorSlots[def.slot];
+  armorSlots[def.slot] = { kind: 'tool', id: item.id, durability: item.durability };
+  hotbar[currentSlot] = prev;   // 换下的旧件放回手持格(没有则空手)
+  buildHotbar();
+  selectSlot(currentSlot);      // 刷新 selectedType/手持模型
+  updateArmorBar();
+  markDirtySave();
+  showToast(prev ? `装备:${def.name}(换下 ${TOOL_TYPES[prev.id].name})` : `装备:${def.name} · 护甲 ${totalArmorPoints()}/${INVLIB.ARMOR_MAX_POINTS}`);
+}
+
+function unequipArmor(slot) {
+  const it = armorSlots[slot];
+  if (!it) { showToast('该部位没有装备护甲'); return; }
+  const got = INVLIB.pickupIntoInventory(hotbar, 'tool', it.id, 1, { durability: it.durability, defaultDurability: TOOL_TYPES[it.id].durability });
+  if (got > 0) {
+    armorSlots[slot] = null;
+    updateArmorBar(); buildHotbar(); markDirtySave();
+    showToast(`卸下:${TOOL_TYPES[it.id].name}`);
+    buildInventoryPanel();
+  } else showToast('快捷栏已满,腾出格子再卸下');
+}
+
+// 战斗受击:每件已装备护甲耐久 -1,耗尽即碎(经典)
+function wearArmorHit() {
+  for (const s of ['head', 'chest', 'legs', 'feet']) {
+    const it = armorSlots[s];
+    if (!it) continue;
+    it.durability = Math.max(0, it.durability - 1);
+    if (it.durability <= 0) { showToast(`${TOOL_TYPES[it.id].name} 坏了!`); armorSlots[s] = null; }
+  }
+  updateArmorBar();
+  markDirtySave();
+}
+
+// 格挡消耗举起的盾(耐久 -1,耗尽即碎)
+function damageRaisedShield() {
+  if (!raisedShield) return;
+  const idx = hotbar.indexOf(raisedShield);
+  if (idx < 0) return;
+  raisedShield.durability = Math.max(0, raisedShield.durability - 1);
+  if (raisedShield.durability <= 0) {
+    showToast(`${TOOL_TYPES[raisedShield.id].name} 坏了!`);
+    hotbar[idx] = null;
+    buildHotbar();
+  } else refreshHotbarSlot(idx);
+  markDirtySave();
+}
+
 // 扣血(统一入口:扣血 + 红屏渐晕 + 音效;若 HP<=0 触发死亡)
-function damagePlayer(amount) {
+// kind:'combat'=近战/箭 · 'explosion'=爆炸 · 'fall'/'drown'/'starve'=环境伤
+// 战斗伤先过盾格挡(举盾中:combat 全格挡、explosion 减半),再过护甲减伤
+// (护甲每点 4%、上限 80%;摔落/溺水/饥饿不吃护甲 —— 经典)
+function damagePlayer(amount, kind) {
   if (amount <= 0) return;
-  playerHP = Math.max(0, playerHP - amount);
+  let dmg = amount;
+  if (kind !== 'fall' && kind !== 'drown' && kind !== 'starve') {
+    if (shieldActive > 0) {
+      damageRaisedShield();
+      if (kind !== 'explosion') { audio.play('place'); showToast('🛡 格挡!'); return; }
+      dmg = dmg * 0.5;
+    }
+    const pts = totalArmorPoints();
+    if (pts > 0) { dmg = INVLIB.armorReduce(dmg, pts); wearArmorHit(); }
+  }
+  playerHP = Math.max(0, playerHP - Math.round(dmg));
   showDamageVignette();
   audio.play('hurt');
   updateHPBar();
@@ -4595,6 +4762,16 @@ function dropInventoryOnDeath() {
       it.id, it.kind === 'tool' ? 1 : (it.count || 1), it.kind, it.durability);
     hotbar[i] = null;
   }
+  // 已装备护甲同样掉落(经典死亡掉落)
+  for (const s of ['head', 'chest', 'legs', 'feet']) {
+    const it = armorSlots[s];
+    if (!it) continue;
+    const adx = (Math.random() - 0.5) * 1.6;
+    const adz = (Math.random() - 0.5) * 1.6;
+    spawnDroppedItem(playerPos.x + adx - 0.5, playerPos.y - 0.9, playerPos.z + adz - 0.5, it.id, 1, 'tool', it.durability);
+    armorSlots[s] = null;
+  }
+  updateArmorBar();
   selectedType = null;
   buildHotbar();
   updateHoldItem();
@@ -4654,7 +4831,7 @@ function updateArrows(dt) {
     // 命中玩家(骷髅之箭):身体包围盒 → 伤害 + 移除(玩家自己的箭豁免)
     if (!a.userData.fromPlayer
         && Math.abs(a.position.x - playerPos.x) < 0.5 && Math.abs(a.position.y - playerPos.y) < 0.9 && Math.abs(a.position.z - playerPos.z) < 0.5) {
-      damagePlayer(2);   // 骷髅之箭(经典普通难度均值偏低;玩家无护甲)
+      damagePlayer(2, 'combat');   // 骷髅之箭(经典普通难度均值)
       scene.remove(a);
       arrows.splice(i, 1);
       continue;
@@ -4812,7 +4989,7 @@ function updatePlayer(dt, prevVy) {
   // Fall damage: when landing with prevVy < -15 (~4+ blocks), scale by speed. Flying immune.
   if (onGround && !wasOnGround && !isFlying && prevVy < -15 && !inWater()) {
     const dmg = Math.floor((-prevVy - 15) / 3);
-    if (dmg > 0) damagePlayer(dmg);
+    if (dmg > 0) damagePlayer(dmg, 'fall');
   }
   wasOnGround = onGround;
   // 记录最后安全位置(用于虚空救援):仅当稳稳站在实体方块上时更新
@@ -4852,7 +5029,7 @@ function updatePlayer(dt, prevVy) {
       const over = breathTimer - 15;
       const before = Math.floor(over - dt);
       const after = Math.floor(over);
-      if (after > before) damagePlayer(after - before);
+      if (after > before) damagePlayer(after - before, 'drown');
     }
   } else {
     breathTimer = 0;
@@ -4868,7 +5045,7 @@ function updatePlayer(dt, prevVy) {
     playerHP = Math.min(PLAYER_MAX_HP, playerHP + 1);
     updateHPBar();
   }
-  if (hres.starve && playerHP > 2) damagePlayer(1);
+  if (hres.starve && playerHP > 2) damagePlayer(1, 'starve');
 
   // 防掉落到地图下面:y < 0(世界底部以下)立即救援,不等 -20
   if (playerPos.y < 0) {
@@ -5264,6 +5441,13 @@ function applySave(rec) {
     }
   }
   spawnPoint = (rec.spawnPoint && Number.isFinite(rec.spawnPoint.x) && Number.isFinite(rec.spawnPoint.y) && Number.isFinite(rec.spawnPoint.z)) ? rec.spawnPoint : null;
+  // 恢复护甲装备(4 部位;脏数据防御:非法 id/部位回 null)
+  for (const s of ['head', 'chest', 'legs', 'feet']) {
+    const a = rec.armorSlotsData ? rec.armorSlotsData.find(e => e && e[0] === s) : null;
+    const d = a && a[1] && TOOL_TYPES[a[1].id];
+    armorSlots[s] = (d && d.tool === 'armor' && d.slot === s) ? { kind: 'tool', id: a[1].id, durability: a[1].durability || d.durability } : null;
+  }
+  updateArmorBar();
   saveDirty = false;
 }
 
@@ -5441,6 +5625,26 @@ function buildInventoryPanel() {
     });
     grid.appendChild(cell);
   };
+  // 护甲装备槽(经典 4 部位):点击卸下回快捷栏;穿上 = 游戏内手持护甲右键
+  addSection(grid, '护甲装备(穿上:手持护甲右键 · 点击卸下)');
+  const armorRow = document.createElement('div');
+  armorRow.style.cssText = 'grid-column:1/-1;display:flex;gap:8px;margin:2px 0 6px;';
+  for (const s of ['head', 'chest', 'legs', 'feet']) {
+    const it = armorSlots[s];
+    const cell = document.createElement('div');
+    cell.className = 'inv-cell';
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 48;
+    if (it) drawItemIcon(it, cv);
+    cell.appendChild(cv);
+    const label = document.createElement('span');
+    label.className = 'inv-label';
+    label.textContent = it ? itemName(it) : ARMOR_SLOT_NAMES[s] + '(空)';
+    cell.appendChild(label);
+    cell.addEventListener('click', () => unequipArmor(s));
+    armorRow.appendChild(cell);
+  }
+  grid.appendChild(armorRow);
   addSection(grid, '工具 · 武器');
   TOOL_ORDER.forEach(id => addCell({ kind: 'tool', id }));
   addSection(grid, '方块');
@@ -5567,7 +5771,7 @@ function openTablePanel() {
   const catalog = HOTBAR_ORDER.map(id => ({ kind: 'block', id }))
     .concat(['water', 'snow', 'gravel', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'sand', 'bed', 'chest', 'ladder', 'bookshelf', 'wool_red', 'wool_white'].map(id => ({ kind: 'block', id })))
     .concat(['leather', 'book'].map(id => ({ kind: 'item', id })))
-    .concat(['gem_gold', 'gem_diamond', 'gem_emerald', 'arrow', 'stick', 'coal'].map(id => ({ kind: 'item', id })));
+    .concat(['gem_gold', 'gem_diamond', 'gem_emerald', 'arrow', 'stick', 'coal', 'iron_ingot'].map(id => ({ kind: 'item', id })));
   document.querySelectorAll('#table-grid .inv-cell').forEach((cell, i) => {
     cell.onclick = () => {
       const cur = tableGrid[i];
@@ -5844,6 +6048,7 @@ function buildSaveRecord() {
     furnacesData: Array.from(furnaces.values()).map(f => ({ x: f.x, y: f.y, z: f.z, input: f.input, fuel: f.fuel, output: f.output, burnT: f.burnT, burnMax: f.burnMax, cookT: f.cookT })),
     chestsData: Array.from(chests.values()).map(c => ({ x: c.x, y: c.y, z: c.z, slots: c.slots })),
     spawnPoint,
+    armorSlotsData: ['head', 'chest', 'legs', 'feet'].map(s => armorSlots[s] ? [s, { id: armorSlots[s].id, durability: armorSlots[s].durability }] : [s, null]),
     doorsData: Array.from(doors.entries()).map(function(e){return [e[0], {x:e[1].x,y:e[1].y,z:e[1].z,type:e[1].type,open:e[1].open,facing:e[1].facing}];}),
     timestamp: Date.now(),
   };

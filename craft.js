@@ -28,13 +28,13 @@
     // 木门:2 木板(横向)→1 门
     { name: '木门', pattern: ['planks', 'planks', null, null], result: { kind: 'block', id: 'door' }, count: 1, shapeless: false },
     // 铁门:4 铁锭(2×2)→1 铁门
-    { name: '铁门', pattern: ['gem_gold', 'gem_gold', 'gem_gold', 'gem_gold'], result: { kind: 'block', id: 'door_iron' }, count: 1, shapeless: true },
+    { name: '铁门', pattern: ['gem_gold', 'gem_gold', 'gem_gold', 'gem_gold'], result: { kind: 'block', id: 'door_iron' }, count: 1, shapeless: false },
     // 石门:2 石头(纵向)→1 石门(有序,与石砖的4石头区分)
     { name: '石门', pattern: ['stone', null, 'stone', null], result: { kind: 'block', id: 'door_stone' }, count: 1, shapeless: false },
     // 金门:2 金锭(横向)→1 金门(有序,与铁门的4金锭区分)
     { name: '金门', pattern: ['gem_gold', 'gem_gold', null, null], result: { kind: 'block', id: 'door_gold' }, count: 1, shapeless: false },
     // 钻石门:4 钻石(2×2)→1 钻石门
-    { name: '钻石门', pattern: ['gem_diamond', 'gem_diamond', 'gem_diamond', 'gem_diamond'], result: { kind: 'block', id: 'door_diamond' }, count: 1, shapeless: true },
+    { name: '钻石门', pattern: ['gem_diamond', 'gem_diamond', 'gem_diamond', 'gem_diamond'], result: { kind: 'block', id: 'door_diamond' }, count: 1, shapeless: false },
     // ---- 以下为 3×3 专属配方(合成台内可用) ----
     // 铁镐:3 金锭(代铁)上排 + 2 箭(代木棍)中列
     { name: '铁镐', pattern: ['gem_gold', 'gem_gold', 'gem_gold', null, 'arrow', null, null, 'arrow', null], result: { kind: 'tool', id: 'pickaxe_iron' }, shapeless: false },
@@ -68,6 +68,27 @@
     { name: '石剑', pattern: ['cobblestone', null, null, 'cobblestone', null, null, 'stick', null, null], result: { kind: 'tool', id: 'sword_stone' }, shapeless: false },
     { name: '铁剑', pattern: ['iron_ingot', null, null, 'iron_ingot', null, null, 'stick', null, null], result: { kind: 'tool', id: 'sword_iron' }, shapeless: false },
     { name: '钻石剑', pattern: ['gem_diamond', null, null, 'gem_diamond', null, null, 'stick', null, null], result: { kind: 'tool', id: 'sword_diamond' }, shapeless: false },
+    // ---- 护甲配方(3×3 经典形状:帽 5 材料981形 / 甲 8 围形 / 裤 7 / 靴 4 两侧列)----
+    // 皮革(牛掉皮革的下游)
+    { name: '皮革帽子', pattern: ['leather', 'leather', 'leather', 'leather', null, 'leather', null, null, null], result: { kind: 'tool', id: 'helmet_leather' }, shapeless: false },
+    { name: '皮革上衣', pattern: ['leather', null, 'leather', 'leather', 'leather', 'leather', 'leather', 'leather', 'leather'], result: { kind: 'tool', id: 'chestplate_leather' }, shapeless: false },
+    { name: '皮革裤子', pattern: ['leather', 'leather', 'leather', 'leather', null, 'leather', 'leather', null, 'leather'], result: { kind: 'tool', id: 'leggings_leather' }, shapeless: false },
+    { name: '皮革鞋子', pattern: ['leather', null, 'leather', 'leather', null, 'leather', null, null, null], result: { kind: 'tool', id: 'boots_leather' }, shapeless: false },
+    // 铁(熔炉冶炼铁锭的下游)
+    { name: '铁头盔', pattern: ['iron_ingot', 'iron_ingot', 'iron_ingot', 'iron_ingot', null, 'iron_ingot', null, null, null], result: { kind: 'tool', id: 'helmet_iron' }, shapeless: false },
+    { name: '铁胸甲', pattern: ['iron_ingot', null, 'iron_ingot', 'iron_ingot', 'iron_ingot', 'iron_ingot', 'iron_ingot', 'iron_ingot', 'iron_ingot'], result: { kind: 'tool', id: 'chestplate_iron' }, shapeless: false },
+    { name: '铁护腿', pattern: ['iron_ingot', 'iron_ingot', 'iron_ingot', 'iron_ingot', null, 'iron_ingot', 'iron_ingot', null, 'iron_ingot'], result: { kind: 'tool', id: 'leggings_iron' }, shapeless: false },
+    { name: '铁靴子', pattern: ['iron_ingot', null, 'iron_ingot', 'iron_ingot', null, 'iron_ingot', null, null, null], result: { kind: 'tool', id: 'boots_iron' }, shapeless: false },
+    // 金
+    { name: '金头盔', pattern: ['gem_gold', 'gem_gold', 'gem_gold', 'gem_gold', null, 'gem_gold', null, null, null], result: { kind: 'tool', id: 'helmet_gold' }, shapeless: false },
+    { name: '金胸甲', pattern: ['gem_gold', null, 'gem_gold', 'gem_gold', 'gem_gold', 'gem_gold', 'gem_gold', 'gem_gold', 'gem_gold'], result: { kind: 'tool', id: 'chestplate_gold' }, shapeless: false },
+    { name: '金护腿', pattern: ['gem_gold', 'gem_gold', 'gem_gold', 'gem_gold', null, 'gem_gold', 'gem_gold', null, 'gem_gold'], result: { kind: 'tool', id: 'leggings_gold' }, shapeless: false },
+    { name: '金靴子', pattern: ['gem_gold', null, 'gem_gold', 'gem_gold', null, 'gem_gold', null, null, null], result: { kind: 'tool', id: 'boots_gold' }, shapeless: false },
+    // 钻石
+    { name: '钻石头盔', pattern: ['gem_diamond', 'gem_diamond', 'gem_diamond', 'gem_diamond', null, 'gem_diamond', null, null, null], result: { kind: 'tool', id: 'helmet_diamond' }, shapeless: false },
+    { name: '钻石胸甲', pattern: ['gem_diamond', null, 'gem_diamond', 'gem_diamond', 'gem_diamond', 'gem_diamond', 'gem_diamond', 'gem_diamond', 'gem_diamond'], result: { kind: 'tool', id: 'chestplate_diamond' }, shapeless: false },
+    { name: '钻石护腿', pattern: ['gem_diamond', 'gem_diamond', 'gem_diamond', 'gem_diamond', null, 'gem_diamond', 'gem_diamond', null, 'gem_diamond'], result: { kind: 'tool', id: 'leggings_diamond' }, shapeless: false },
+    { name: '钻石靴子', pattern: ['gem_diamond', null, 'gem_diamond', 'gem_diamond', null, 'gem_diamond', null, null, null], result: { kind: 'tool', id: 'boots_diamond' }, shapeless: false },
   ];
 
   // 匹配配方:grid 是长度 4 的数组(每格 null 或 {kind,id}),返回配方对象或 null

@@ -56,6 +56,7 @@
     .slot .cnt { font-size: 10px; }
     #hp-bar { bottom: 56px; left: 8px; }
     #hunger-bar { bottom: 56px; right: 8px; }
+    #armor-bar { bottom: 78px; left: 8px; }
     #info { font-size: 11px; padding: 4px 8px; line-height: 1.45; top: 6px; left: 6px; }
     .inv-grid { grid-template-columns: repeat(auto-fill, 56px); }
     .inv-cell { width: 56px; height: 56px; }
@@ -216,6 +217,12 @@
 #hunger-bar .drumstick.full  { filter: none; }
 #hunger-bar .drumstick.half  { filter: grayscale(0.5) brightness(0.8); }
 #hunger-bar .drumstick.empty { filter: grayscale(1) brightness(0.35); }
+/* 护甲条:生命条上方,10 面盾(每盾 2 护甲点),无护甲时 display:none(由 JS 控制) */
+#armor-bar { position: fixed; left: 18px; bottom: 108px; display: none; gap: 2px; z-index: 10; }
+#armor-bar .armoricon { width: 18px; height: 18px; font-size: 14px; line-height: 18px; text-align: center; text-shadow: 1px 1px 1px #000; }
+#armor-bar .armoricon.full  { filter: none; }
+#armor-bar .armoricon.half  { filter: grayscale(0.5) brightness(0.8); }
+#armor-bar .armoricon.empty { filter: grayscale(1) brightness(0.4); }
 
   /* 合成台 3×3 面板(经典 MC 灰岩面板) */
   #craft-table-panel {
@@ -336,6 +343,9 @@
   <div id="touch-break" style="position:fixed;right:100px;bottom:120px;width:60px;height:60px;background:rgba(220,80,80,0.3);border:2px solid rgba(255,100,100,0.5);border-radius:30px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;z-index:20;touch-action:none;">挖</div>
   <div id="touch-place" style="position:fixed;right:30px;bottom:120px;width:60px;height:60px;background:rgba(80,180,80,0.3);border:2px solid rgba(100,200,100,0.5);border-radius:30px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;z-index:20;touch-action:none;">放</div>
 </div>
+
+<!-- 护甲条(生命条上方,无护甲时隐藏) -->
+<div id="armor-bar"></div>
 
 <!-- 生命条(左下) -->
 <div id="hp-bar"></div>
@@ -548,9 +558,9 @@
 </div>
 
 <script src="worldgen.js?v=20260829"></script>
-<script src="craft.js?v=20260829"></script>
-<script src="inventory.js?v=20260829"></script>
+<script src="craft.js?v=20260903"></script>
+<script src="inventory.js?v=20260903"></script>
 <script src="three.min.js?v=r160"></script>
-<script src="game.js?v=20260902"></script>
+<script src="game.js?v=20260903"></script>
 </body>
 </html>

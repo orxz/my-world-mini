@@ -9,6 +9,9 @@
   const STACK_MAX = 64;   // 方块/材料最大堆叠数
   // 食物 → 恢复的饥饿值(右键进食)
   const FOODS = { porkchop: 8, apple: 4, cooked_porkchop: 12, beef: 6, mutton: 6, steak: 10 };
+  // 护甲减伤(经典):每点护甲 4% 减伤,上限 20 点(钻石全套)= 80%
+  const ARMOR_MAX_POINTS = 20;
+  const ARMOR_PCT_PER_POINT = 0.04;
   // 饥饿参数
   const HUNGER_DRAIN_PER_POINT = 4;  // 消耗累计 4 单位 → 扣 1 点饥饿
   const HUNGER_REGEN_LEVEL = 18;     // 饥饿 ≥18 缓慢回血
@@ -93,11 +96,20 @@
     return { hungerChanged, regen, starve };
   }
 
+  // 护甲减伤:damage 原始伤害,points 装备护甲总点数
+  // 返回实际伤害(0 点 = 原伤害取整;减伤后至少 1;非法输入返回 0)
+  function armorReduce(damage, points) {
+    if (!Number.isFinite(damage) || damage <= 0) return 0;
+    const p = Math.max(0, Math.min(ARMOR_MAX_POINTS, Math.round(points) || 0));
+    if (p === 0) return Math.round(damage);
+    return Math.max(1, Math.round(damage * (1 - p * ARMOR_PCT_PER_POINT)));
+  }
+
   // 导出(Node 环境)
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { STACK_MAX, FOODS, pickupIntoInventory, normalizeHotbar, hungerTick };
+    module.exports = { STACK_MAX, FOODS, ARMOR_MAX_POINTS, ARMOR_PCT_PER_POINT, armorReduce, pickupIntoInventory, normalizeHotbar, hungerTick };
   }
   // 浏览器:挂到全局
-  global.INVLIB = { STACK_MAX, FOODS, pickupIntoInventory, normalizeHotbar, hungerTick };
+  global.INVLIB = { STACK_MAX, FOODS, ARMOR_MAX_POINTS, ARMOR_PCT_PER_POINT, armorReduce, pickupIntoInventory, normalizeHotbar, hungerTick };
 
 })(typeof window !== 'undefined' ? window : globalThis);

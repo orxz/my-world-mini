@@ -45,6 +45,7 @@ export default [
       'three.min.js',      // 第三方压缩库(Three.js r160)
       'node_modules/**',
       '.zcode/**',
+      'test/smoke.cdp.mjs',   // CDP 冒烟测试(Node 脚本,跑在 headless Chrome 侧,不参与 lint)
     ],
   },
 

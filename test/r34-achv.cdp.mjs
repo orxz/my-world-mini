@@ -57,7 +57,8 @@ async function main() {
   await evl(`document.getElementById('overlay').click()`);
   await sleep(600);
   check('进入游戏', await evl(`document.getElementById('overlay').classList.contains('hidden') && typeof unlockAchv === 'function'`));
-  check('初始按钮 0/16', (await evl(`document.getElementById('btn-achv').textContent`)).includes('(0/16)'));
+  const TOTAL = await evl(`MACHINES.ACHIEVEMENTS.length`);   // 动态总数(后续轮可加成就)
+  check('初始按钮 0/' + TOTAL, (await evl(`document.getElementById('btn-achv').textContent`)).includes('(0/' + TOTAL + ')'));
 
   // ---- 1. 拾取链(走 pickupIntoInventory 真实包装层)----
   const pick = await evl(`(() => {
@@ -72,7 +73,7 @@ async function main() {
              btn: document.getElementById('btn-achv').textContent,
              toastText: toast ? toast.textContent : '' };
   })()`);
-  check('拾取里程碑 ×4(木头/圆石/铁/钻)+ toast + 按钮 4/16', pick.n === 4 && pick.has && pick.btn.includes('(4/16)') && pick.toastText.includes('进度已达成') && pick.toastText.includes('获得木头'), JSON.stringify(pick));
+  check('拾取里程碑 ×4(木头/圆石/铁/钻)+ toast + 按钮 4/' + TOTAL, pick.n === 4 && pick.has && pick.btn.includes('(4/' + TOTAL + ')') && pick.toastText.includes('进度已达成') && pick.toastText.includes('获得木头'), JSON.stringify(pick));
 
   // ---- 2. 去重:重复拾取不重复解锁 ----
   const dedup = await evl(`(() => {
@@ -91,7 +92,7 @@ async function main() {
     closeAchvPanel();
     return { rows: rows.length, done, allLockedIcon: lockText, count: document.getElementById('achv-count').textContent };
   })()`);
-  check('成就面板:16 行 / 4 解锁金框 / 未解锁 🔒 / 计数 4 / 16', panelMid.rows === 16 && panelMid.done === 4 && panelMid.allLockedIcon && panelMid.count === '4 / 16', JSON.stringify(panelMid));
+  check('成就面板:' + TOTAL + ' 行 / 4 解锁金框 / 未解锁 🔒 / 计数 4 / ' + TOTAL, panelMid.rows === TOTAL && panelMid.done === 4 && panelMid.allLockedIcon && panelMid.count === '4 / ' + TOTAL, JSON.stringify(panelMid));
 
   // ---- 4. 合成链(craftGiveResult,2×2 与合成台共用)----
   const craft = await evl(`(() => {
@@ -159,6 +160,21 @@ async function main() {
   check('发现村庄里程碑(小屋 24 格内)', !!hut && village.has && village.n === 15, JSON.stringify(village));
   await sleep(2600);   // 等传送目的地区块加载完成(否则后续生成的猪会掉出未加载世界)
 
+  // ---- 11.5 史莱姆(R35 黏糊糊:大→中→小逐级分裂,小死亡解锁)----
+  const slime = await evl(`(() => {
+    const big = spawnMob(playerPos.x + 2, playerPos.y + 1, playerPos.z, 'slime', { size: 2 });
+    const kids = [];
+    hurtMob(big, 99, 0, 0, true);   // 大死 → 分裂 2-3 只中
+    for (const m of mobs.filter(m => m.type === 'slime')) {
+      hurtMob(m, 99, 0, 0, true);   // 中死 → 分裂小
+      kids.push(m);
+    }
+    const smalls = mobs.filter(m => m.type === 'slime' && m.slimeSize === 0);
+    for (const m of [...smalls]) hurtMob(m, 99, 0, 0, true);   // 小死 → 成就
+    return { has: achvUnlocked.has('kill_slime'), n: achvUnlocked.size, left: mobs.filter(m => m.type === 'slime').length };
+  })()`);
+  check('史莱姆分裂链 + 黏糊糊成就', slime.has && slime.n === 16 && slime.left === 0, JSON.stringify(slime));
+
   // ---- 12. 繁殖(两只求爱猪 → 幼崽;跟随玩家当前位置生成)----
   const breed = await evl(`(() => {
     clearMobs();
@@ -171,9 +187,9 @@ async function main() {
     for (let i = 0; i < 120; i++) updateMobs(0.05);
     return { has: achvUnlocked.has('breed'), n: achvUnlocked.size, mobs: mobs.length };
   })()`);
-  check('繁殖里程碑(牧场主,幼崽诞生)', breed.has && breed.n === 16 && breed.mobs >= 3, JSON.stringify(breed));
+  check('繁殖里程碑(牧场主,幼崽诞生)', breed.has && breed.n === TOTAL && breed.mobs >= 3, JSON.stringify(breed));
 
-  // ---- 13. 终态面板:16/16 全金 ----
+  // ---- 13. 终态面板:全解锁 ----
   const panelEnd = await evl(`(() => {
     openAchvPanel();
     const done = document.querySelectorAll('#achv-list .achv-row.done').length;
@@ -182,7 +198,7 @@ async function main() {
     closeAchvPanel();
     return { done, anyLock, cnt, btn: document.getElementById('btn-achv').textContent };
   })()`);
-  check('终态面板 16/16 全解锁无锁图标 + 按钮计数', panelEnd.done === 16 && !panelEnd.anyLock && panelEnd.cnt === '16 / 16' && panelEnd.btn.includes('(16/16)'), JSON.stringify(panelEnd));
+  check('终态面板 ' + TOTAL + '/' + TOTAL + ' 全解锁无锁图标 + 按钮计数', panelEnd.done === TOTAL && !panelEnd.anyLock && panelEnd.cnt === TOTAL + ' / ' + TOTAL && panelEnd.btn.includes('(' + TOTAL + '/' + TOTAL + ')'), JSON.stringify(panelEnd));
 
   // ---- 14. 存档往返 + 脏 id 防御 ----
   const roundtrip = await evl(`(() => {
@@ -198,7 +214,7 @@ async function main() {
     const dirtyN = achvUnlocked.size;
     return { saved, restored, dirtyN, hasWood: achvUnlocked.has('get_wood') };
   })()`);
-  check('存档往返 16 条恢复 / 脏 id 只恢复合法条目', roundtrip.saved === 16 && roundtrip.restored === 16 && roundtrip.dirtyN === 1 && roundtrip.hasWood, JSON.stringify(roundtrip));
+  check('存档往返 ' + TOTAL + ' 条恢复 / 脏 id 只恢复合法条目', roundtrip.saved === TOTAL && roundtrip.restored === TOTAL && roundtrip.dirtyN === 1 && roundtrip.hasWood, JSON.stringify(roundtrip));
 
   // ---- 15. 报错 ----
   await sleep(800);

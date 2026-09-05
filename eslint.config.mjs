@@ -48,6 +48,7 @@ export default [
       'test/smoke.cdp.mjs',   // CDP 冒烟测试(Node 脚本,跑在 headless Chrome 侧,不参与 lint)
       'test/r33-villager.cdp.mjs',   // R33 村民轮 CDP 实机验证(同上)
       'test/r34-achv.cdp.mjs',       // R34 成就轮 CDP 实机验证(同上)
+      'test/r35-slime.cdp.mjs',      // R35 史莱姆+剪刀轮 CDP 实机验证(同上)
     ],
   },
 

@@ -172,6 +172,7 @@
     { id: 'enchant',    icon: '✨', name: '附魔师',       desc: '附魔一件装备' },
     { id: 'trade',      icon: '🤝', name: '交易大师',     desc: '与村民完成一次交易' },
     { id: 'find_village',icon: '🏘️', name: '发现村庄',    desc: '找到一座村庄小屋' },
+    { id: 'kill_slime',  icon: '🟢', name: '黏糊糊',       desc: '击碎一只小史莱姆' },
   ];
   const ACHV_BY_ID = {};
   for (const a of ACHIEVEMENTS) ACHV_BY_ID[a.id] = a;

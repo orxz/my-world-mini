@@ -766,6 +766,16 @@ test('面包配方:3 小麦一排(R29);2×2 放不下', () => {
   const r = matchRecipeGrid(g3(['wheat', 'wheat', 'wheat', null, null, null, null, null, null]), 3, RECIPES);
   assert.ok(r && r.result.id === 'bread' && r.count === 1);
 });
+test('剪刀配方:2 铁锭对角(R35)', () => {
+  const g2 = (ids) => ids.map(x => x === null ? null : { kind: 'item', id: x });
+  const r = matchRecipeGrid(g2(['iron_ingot', null, null, 'iron_ingot']), 2, RECIPES);
+  assert.ok(r && r.result.id === 'shears' && r.result.kind === 'tool');
+});
+test('黏液块配方:4 黏液球无序(R35)', () => {
+  const g2 = (ids) => ids.map(x => x === null ? null : { kind: 'item', id: x });
+  const r = matchRecipeGrid(g2(['slime_ball', 'slime_ball', 'slime_ball', 'slime_ball']), 2, RECIPES);
+  assert.ok(r && r.result.id === 'slime' && r.result.kind === 'block');
+});
 
 // ===== 村庄小屋(R31) =====
 console.log('\n=== 村庄小屋(villageInCell/hutBlockAt) ===');

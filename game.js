@@ -46,11 +46,12 @@ const BLOCK_TYPES = {
   rail:         { name: '铁轨',   top: '#b8b8c0', side: '#b8b8c0', bottom: '#b8b8c0', solid: false, tool: 'pickaxe', hardness: 0.5 },
   enchanting_table: { name: '附魔台', top: '#2a1a3a', side: '#1a1024', bottom: '#1a1024', solid: true, tool: 'pickaxe', hardness: 3 },
   bookshelf:    { name: '书架',   top: '#a0763a', side: '#96682e', bottom: '#8a5f28', solid: true, tool: 'axe', hardness: 1.5 },
+  slime:        { name: '黏液块', top: '#6fc05a', side: '#5eae4c', bottom: '#4f9c40', solid: true, tool: 'any', hardness: 0.4 },
 };
 const HOTBAR_ORDER = ['grass', 'dirt', 'stone', 'wood', 'leaves', 'sand', 'planks', 'brick'];
 
 // 方块数字 id(用于紧凑的 Uint8Array 区块存储)
-const BLOCK_ID = { air: 0, grass: 1, dirt: 2, stone: 3, wood: 4, leaves: 5, sand: 6, planks: 7, brick: 8, water: 9, snow: 10, gravel: 11, wool_red: 12, wool_yellow: 13, wool_white: 14, wool_black: 15, door: 16, door_iron: 17, door_stone: 18, door_gold: 19, door_diamond: 20, crafting_table: 21, cobblestone: 22, coal_ore: 23, iron_ore: 24, diamond_ore: 25, tnt: 26, furnace: 27, glass: 28, bed: 29, chest: 30, ladder: 31, bookshelf: 32, torch: 33, rail: 34, enchanting_table: 35 };
+const BLOCK_ID = { air: 0, grass: 1, dirt: 2, stone: 3, wood: 4, leaves: 5, sand: 6, planks: 7, brick: 8, water: 9, snow: 10, gravel: 11, wool_red: 12, wool_yellow: 13, wool_white: 14, wool_black: 15, door: 16, door_iron: 17, door_stone: 18, door_gold: 19, door_diamond: 20, crafting_table: 21, cobblestone: 22, coal_ore: 23, iron_ore: 24, diamond_ore: 25, tnt: 26, furnace: 27, glass: 28, bed: 29, chest: 30, ladder: 31, bookshelf: 32, torch: 33, rail: 34, enchanting_table: 35, slime: 36 };
 const ID_TO_BLOCK = Object.keys(BLOCK_ID);
 
 // ============================================================
@@ -99,6 +100,7 @@ const TOOL_TYPES = {
   boots_diamond:       { name: '钻石靴子',  tool: 'armor', slot: 'feet',  armor: 3, durability: 461, tier: 'diamond' },
   bow:          { name: '弓',     tool: 'bow',     durability: 384, tier: 'wood' },
   fishing_rod:  { name: '钓鱼竿', tool: 'rod',     durability: 64,  tier: 'wood' },
+  shears:       { name: '剪刀',   tool: 'shears',  durability: 238, tier: 'iron' },
 };
 const TOOL_ORDER = [
   'sword_diamond','sword_gold','sword_iron','sword_stone','sword_wood',
@@ -107,6 +109,7 @@ const TOOL_ORDER = [
   'shovel_diamond','shovel_gold','shovel_iron','shovel_stone','shovel_wood',
   'bow',
   'fishing_rod',
+  'shears',
   'shield_diamond','shield_iron','shield_wood',
   'chestplate_diamond','leggings_diamond','helmet_diamond','boots_diamond',
   'chestplate_iron','leggings_iron','helmet_iron','boots_iron',
@@ -136,8 +139,9 @@ const ITEM_TYPES = {
   bread:       { name: '面包',   color: '#c89858', shape: 'meat' },
   raw_fish:    { name: '生鱼',   color: '#9ab8c8', shape: 'meat' },
   cooked_fish: { name: '烤鱼',   color: '#c8a06a', shape: 'meat' },
+  slime_ball:  { name: '黏液球', color: '#7ec850', shape: 'gem' },
 };
-const ITEM_ORDER = ['gem_diamond','gem_gold','gem_emerald','arrow','porkchop','cooked_porkchop','beef','steak','mutton','apple','stick','coal','iron_ingot','leather','book','minecart','string','ender_pearl','wheat','bread','raw_fish','cooked_fish'];
+const ITEM_ORDER = ['gem_diamond','gem_gold','gem_emerald','arrow','porkchop','cooked_porkchop','beef','steak','mutton','apple','stick','coal','iron_ingot','leather','book','minecart','string','ender_pearl','wheat','bread','raw_fish','cooked_fish','slime_ball'];
 // 食物表与堆叠上限来自纯函数模块 inventory.js(INVLIB)
 const FOODS = INVLIB.FOODS;
 
@@ -506,6 +510,22 @@ function drawBlockFace(ctx, type, face, s, seedRand) {
       ctx.strokeStyle = 'rgba(255,255,255,0.55)';
       ctx.beginPath(); ctx.moveTo(s * 0.58, s * 0.16); ctx.lineTo(s * 0.84, s * 0.42); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(s * 0.7, s * 0.1); ctx.lineTo(s * 0.9, s * 0.3); ctx.stroke();
+      break;
+    }
+    case 'slime': {
+      // 黏液块(R35):半透明胶质 —— 外圈凝胶边框 + 内部深一档胶芯 + 斜高光 + 两粒气泡
+      ctx.fillStyle = face === 'top' ? '#6fc05a' : face === 'bottom' ? '#4f9c40' : '#5eae4c';
+      ctx.fillRect(0, 0, s, s);
+      ctx.fillStyle = 'rgba(255,255,255,0.18)';
+      ctx.fillRect(0, 0, s, Math.max(1, Math.floor(s * 0.08)));
+      ctx.fillRect(0, 0, Math.max(1, Math.floor(s * 0.08)), s);
+      ctx.fillStyle = face === 'top' ? 'rgba(70,140,55,0.55)' : 'rgba(60,120,48,0.55)';
+      ctx.fillRect(Math.floor(s * 0.22), Math.floor(s * 0.22), Math.floor(s * 0.56), Math.floor(s * 0.56));
+      ctx.fillStyle = 'rgba(255,255,255,0.35)';
+      ctx.fillRect(Math.floor(s * 0.3), Math.floor(s * 0.3), Math.max(1, Math.floor(s * 0.09)), Math.max(1, Math.floor(s * 0.09)));
+      ctx.fillRect(Math.floor(s * 0.68), Math.floor(s * 0.16), Math.max(1, Math.floor(s * 0.06)), Math.max(1, Math.floor(s * 0.06)));
+      ctx.fillStyle = 'rgba(220,255,210,0.3)';
+      ctx.fillRect(Math.floor(s * 0.6), Math.floor(s * 0.62), Math.max(1, Math.floor(s * 0.07)), Math.max(1, Math.floor(s * 0.07)));
       break;
     }
     case 'tnt': {
@@ -2648,6 +2668,16 @@ function drawToolIcon(ctx, toolId, size) {
     ctx.beginPath(); ctx.arc(size * 0.3, size * 0.0, size * 0.09, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#f0f0f0';
     ctx.beginPath(); ctx.arc(size * 0.3, size * 0.0, size * 0.05, 0, Math.PI * 2); ctx.fill();
+  } else if (def.tool === 'shears') {
+    // 剪刀(R35):两片交叉铁刃 + 中心铆钉 + 双环柄
+    ctx.strokeStyle = '#d8d8e0'; ctx.lineWidth = size * 0.11; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-size * 0.3, -size * 0.3); ctx.lineTo(size * 0.26, size * 0.26); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(size * 0.3, -size * 0.3); ctx.lineTo(-size * 0.26, size * 0.26); ctx.stroke();
+    ctx.strokeStyle = handleColor; ctx.lineWidth = size * 0.08;
+    ctx.beginPath(); ctx.arc(-size * 0.3, size * 0.3, size * 0.12, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(size * 0.3, size * 0.3, size * 0.12, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = '#8a8a92';
+    ctx.beginPath(); ctx.arc(0, 0, size * 0.07, 0, Math.PI * 2); ctx.fill();
   } else if (def.tool === 'armor') {
     // 护甲四件套:帽(圆顶+护颊)/甲(背心)/裤(腰+双腿)/靴(双短筒),材质色区分
     ctx.fillStyle = tc; ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1;
@@ -3549,6 +3579,11 @@ function placeBlock() {
     {
       const mobHitV = raycastMob(3.5);
       if (mobHitV && mobHitV.type === 'villager') { openTradePanel(mobHitV); return; }
+      // 剪羊毛(R35):手持剪刀右键羊
+      if (mobHitV && mobHitV.type === 'sheep' && item0 && item0.kind === 'tool' && item0.id === 'shears') {
+        shearSheep(mobHitV, item0);
+        return;
+      }
     }
     // 喂食繁殖(R29):手持小麦右键猪/牛/羊(村民不吃麦,走上面的交易)
     if (item0 && item0.kind === 'item' && item0.id === 'wheat') {
@@ -4054,6 +4089,7 @@ const MOB_DEFS = {
   spider:   { hp: 16, hostile: true },     // R27:夜间敌对,白天中性(经典)
   enderman: { hp: 40, hostile: false },    // R27:中立,被注视/被攻击才激怒
   villager: { hp: 20, hostile: false },    // R33:村庄 NPC,右键交易(绿宝石经济)
+  slime:    { hp: 16, hostile: true },     // R35:跳跃移动,死亡分裂(大→中→小)
 };
 function countHostiles() {
   let n = 0;
@@ -4128,7 +4164,7 @@ function countVillagersNear(hx, hz) {
   return n;
 }
 
-function spawnMob(x, groundY, z, type) {
+function spawnMob(x, groundY, z, type, opts) {
   const t = type || 'pig';
   const mesh = t === 'zombie' ? buildZombieMesh()
     : t === 'creeper' ? buildCreeperMesh()
@@ -4138,6 +4174,7 @@ function spawnMob(x, groundY, z, type) {
     : t === 'cow' ? buildCowMesh()
     : t === 'sheep' ? buildSheepMesh()
     : t === 'villager' ? buildVillagerMesh()
+    : t === 'slime' ? buildSlimeMesh()
     : buildPigMesh();
   mesh.position.set(x, groundY + 0.45, z);   // 身体中心离地 0.45
   scene.add(mesh);
@@ -4148,8 +4185,16 @@ function spawnMob(x, groundY, z, type) {
     hp: MOB_DEFS[t].hp, hurtT: 0, walkPhase: Math.random() * 6, onGround: false,
     attackCd: 0, fuse: 0, burnT: 0, fireT: 0, groanT: 2 + Math.random() * 3,
   });
-  if (t === 'villager') mobs[mobs.length - 1].home = villagerHomeFor(x, z);
-  return mobs[mobs.length - 1];
+  const m = mobs[mobs.length - 1];
+  if (t === 'villager') m.home = villagerHomeFor(x, z);
+  if (t === 'slime') {   // R35:体型分级 2=大(hp16/伤4) 1=中(hp4/伤2) 0=小(hp1/掉黏液球)
+    m.slimeSize = (opts && Number.isInteger(opts.size)) ? Math.max(0, Math.min(2, opts.size)) : 2;
+    m.hp = [1, 4, 16][m.slimeSize];
+    m.slimeCharge = 0.4 + Math.random() * 0.6;
+    m.slimeBase = [0.55, 0.85, 1.2][m.slimeSize];
+    m.mesh.scale.setScalar(m.slimeBase);
+  }
+  return m;
 }
 
 // 僵尸模型:绿皮人形,-z 为前,双臂经典前平举;userData 携带腿/臂引用
@@ -4401,6 +4446,7 @@ function buildSheepMesh() {
   const woolMat = new THREE.MeshLambertMaterial({ color: 0xe8e8e4 });
   const faceMat = new THREE.MeshLambertMaterial({ color: 0xd8c8b8 });
   const legMat = new THREE.MeshLambertMaterial({ color: 0x9a8a78 });
+  const skinMat = new THREE.MeshLambertMaterial({ color: 0xe8b8a8 });   // 剪毛后的粉皮(R35)
   const body = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.6, 0.95), woolMat);
   body.position.y = 0.72;
   const head = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.34, 0.34), faceMat);
@@ -4419,8 +4465,31 @@ function buildSheepMesh() {
   };
   mkLeg(-0.18, -0.3); mkLeg(0.18, -0.3); mkLeg(-0.18, 0.3); mkLeg(0.18, 0.3);
   g.add(body, head, woolCap, legGroups[0], legGroups[1], legGroups[2], legGroups[3]);
-  g.userData = { legs: legGroups, mats: [woolMat, faceMat, legMat], baseColors: [0xe8e8e4, 0xd8c8b8, 0x9a8a78] };
+  g.userData = { legs: legGroups, mats: [woolMat, faceMat, legMat, skinMat], baseColors: [0xe8e8e4, 0xd8c8b8, 0x9a8a78, 0xe8b8a8], woolParts: [body, woolCap], woolMat, skinMat };
   return g;
+}
+
+// 剪羊毛(R35):手持剪刀右键羊 → 掉 1-3 白羊毛 + 模型换粉皮;45 秒长回
+function shearSheep(m, tool) {
+  swingHoldItem();
+  if (m.sheared) { showToast('这只羊已经被剪过了'); return; }
+  if (m.baby) { showToast('幼崽的毛还没长好'); return; }
+  m.sheared = true;
+  m.shearT = 45;
+  for (const part of m.mesh.userData.woolParts) part.material = m.mesh.userData.skinMat;
+  const n = 1 + (Math.random() * 3 | 0);
+  spawnDroppedItem(m.mesh.position.x - 0.5, m.mesh.position.y - 0.2, m.mesh.position.z - 0.5, 'wool_white', n, 'block');
+  spawnParticles(m.mesh.position.x, m.mesh.position.y + 0.4, m.mesh.position.z, 0xe8e8e4, 8);
+  showToast('✂️ 剪下羊毛 ×' + n);
+  audio.play('break');
+  if (tool) {
+    tool.durability = Math.max(0, tool.durability - 1);
+    if (tool.durability <= 0) {
+      showToast(TOOL_TYPES[tool.id].name + ' 坏了!');
+      hotbar[currentSlot] = null;
+    }
+    refreshHotbarSlot(currentSlot);
+  }
 }
 
 // 村民模型(R33):棕色长袍人形 + 大鼻子 + 双臂交叠身前(经典站姿)
@@ -4473,6 +4542,27 @@ function buildVillagerMesh() {
   };
   g.add(head, nose, brow, eyeL, eyeR, torso, skirt, mkArm(-1), mkArm(1), mkLeg(-1), mkLeg(1));
   g.userData = { legs: legGroups, arms, mats: [robeMat, robeDark, skinMat, noseMat], baseColors: [0x7a5a3a, 0x63482e, 0xc9a177, 0xb98e66] };
+  return g;
+}
+
+// 史莱姆模型(R35):半透明绿方体 + 嘴 + 双眼;体型由 mesh.scale 控制(分裂用)
+function buildSlimeMesh() {
+  const g = new THREE.Group();
+  const gelMat = new THREE.MeshLambertMaterial({ color: 0x6fc05a, transparent: true, opacity: 0.82 });
+  const innerMat = new THREE.MeshLambertMaterial({ color: 0x4a9c3c });
+  const eyeMat = new THREE.MeshLambertMaterial({ color: 0x142014 });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), gelMat);
+  body.position.y = 0.45;
+  const inner = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.55, 0.55), innerMat);
+  inner.position.y = 0.45;
+  const eyeL = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.04), eyeMat);
+  eyeL.position.set(-0.16, 0.56, -0.46);
+  const eyeR = eyeL.clone();
+  eyeR.position.x = 0.16;
+  const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.08, 0.04), eyeMat);
+  mouth.position.set(0, 0.34, -0.46);
+  g.add(body, inner, eyeL, eyeR, mouth);
+  g.userData = { legs: [], mats: [gelMat, innerMat], baseColors: [0x6fc05a, 0x4a9c3c] };
   return g;
 }
 
@@ -5132,9 +5222,14 @@ function trySpawnHostile() {
     if (b !== 'water' && BLOCK_TYPES[b] && BLOCK_TYPES[b].solid && !getBlock(fx, y + 1, fz) && !getBlock(fx, y + 2, fz)) {
       // 光照判定(经典,R23):生成点火把光级 ≥8 过亮 → 不刷(火把防刷怪;无光源区域光级 0 正常刷)
       if (lightAtWorld(fx, y + 1, fz) < 8) {
-        // 敌对生物池:僵尸 50% / 苦力怕 30% / 骷髅 20%
+        // 敌对生物池:僵尸 40% / 苦力怕 24% / 骷髅 19% / 蜘蛛 10% / 史莱姆 5% / 末影人 2%
         const hr = Math.random();
-        spawnMob(wx, y + 1, fz, hr < 0.4 ? 'zombie' : hr < 0.65 ? 'creeper' : hr < 0.85 ? 'skeleton' : hr < 0.95 ? 'spider' : 'enderman');
+        if (hr < 0.4) spawnMob(wx, y + 1, fz, 'zombie');
+        else if (hr < 0.64) spawnMob(wx, y + 1, fz, 'creeper');
+        else if (hr < 0.83) spawnMob(wx, y + 1, fz, 'skeleton');
+        else if (hr < 0.93) spawnMob(wx, y + 1, fz, 'spider');
+        else if (hr < 0.98) spawnMob(wx, y + 1, fz, 'slime');
+        else spawnMob(wx, y + 1, fz, 'enderman');
       }
     }
     break;   // 只看地表第一个非空气方块
@@ -5171,6 +5266,14 @@ function updateMobs(dt) {
       if (m.baby) {
         m.growT -= dt;
         if (m.growT <= 0) { m.baby = false; m.mesh.scale.setScalar(1); }
+      }
+      // 剪毛恢复(R35):45 秒后羊毛长回
+      if (m.sheared) {
+        m.shearT -= dt;
+        if (m.shearT <= 0) {
+          m.sheared = false;
+          for (const part of m.mesh.userData.woolParts) part.material = m.mesh.userData.woolMat;
+        }
       }
       if (m.breedCd > 0) m.breedCd -= dt;
       if (m.loveT > 0) {
@@ -5226,6 +5329,8 @@ function updateMobs(dt) {
       if (endermanAI(m, dt, distP)) continue;
     } else if (m.type === 'skeleton') {
       if (skeletonAI(m, dt, distP)) continue;
+    } else if (m.type === 'slime') {
+      slimeAI(m, dt, distP);
     } else if (creeperAI(m, dt, distP)) {
       continue;
     }
@@ -5284,7 +5389,7 @@ function updateMobs(dt) {
     const legs = m.mesh.userData.legs;
     if (legs.length === 2) {
       legs[0].rotation.x = swing; legs[1].rotation.x = -swing;
-    } else {
+    } else if (legs.length >= 4) {
       legs[0].rotation.x = swing; legs[3].rotation.x = swing;
       legs[1].rotation.x = -swing; legs[2].rotation.x = -swing;
     }
@@ -5305,6 +5410,31 @@ function updateMobs(dt) {
 }
 
 // 击中生物:扣血 + 击退 + 闪红;HP 归零 → 粒子消散(silent=不播音效,燃烧伤害用)
+// ---- 史莱姆 AI(R35):地面蓄力 → 蹦跳逼近(经典移动方式);接触伤害按体型 ----
+// 大(4)/中(2)有伤害;小无伤。跳跃中速度保持,落地进入下一次蓄力
+function slimeAI(m, dt, distP) {
+  if (m.onGround) {
+    m.speed = 0;
+    m.slimeCharge -= dt;
+    if (m.slimeCharge <= 0) {
+      m.slimeCharge = 0.6 + Math.random() * 0.8;
+      m.yaw = distP < 14 ? faceYaw(m) : m.yaw + (Math.random() - 0.5) * 2;
+      m.speed = 2.4;
+      m.vy = 6.8;
+    }
+  }
+  // 接触伤害(冷却 1.2s)
+  m.attackCd -= dt;
+  if (distP < 1.4 && m.slimeSize > 0 && m.attackCd <= 0) {
+    m.attackCd = 1.2;
+    damagePlayer([0, 2, 4][m.slimeSize], 'combat');
+  }
+  // 胶体挤压动画:上升拉伸/下落压扁(仅缩放,不动网格结构)
+  const sq = 1 + Math.max(-0.22, Math.min(0.22, m.vy * 0.035));
+  m.mesh.scale.set(m.slimeBase / Math.sqrt(sq), m.slimeBase * sq, m.slimeBase / Math.sqrt(sq));
+  return false;
+}
+
 function hurtMob(m, dmg, kx, kz, silent) {
   m.hp -= dmg;
   m.hurtT = 0.25;
@@ -5318,21 +5448,32 @@ function hurtMob(m, dmg, kx, kz, silent) {
   if (!silent) audio.play(m.type === 'zombie' ? 'zombie' : m.type === 'creeper' ? 'hurt' : 'pig');
   if (m.hp <= 0) {
     const p = m.mesh.position;
-    spawnParticles(p.x - 0.5, p.y - 0.5, p.z - 0.5, m.type === 'pig' ? 0xeba3a9 : m.type === 'cow' ? 0x6b4a2f : m.type === 'sheep' ? 0xe8e8e4 : m.type === 'spider' ? 0x2a2a30 : m.type === 'enderman' ? 0x7a4a9a : m.type === 'villager' ? 0x7a5a3a : 0x7a9a7a, 12);
+    spawnParticles(p.x - 0.5, p.y - 0.5, p.z - 0.5, m.type === 'pig' ? 0xeba3a9 : m.type === 'cow' ? 0x6b4a2f : m.type === 'sheep' ? 0xe8e8e4 : m.type === 'spider' ? 0x2a2a30 : m.type === 'enderman' ? 0x7a4a9a : m.type === 'villager' ? 0x7a5a3a : m.type === 'slime' ? 0x6fc05a : 0x7a9a7a, 12);
     // 经典掉落(按生物类型)
     const dropAt = (id, kind, count) => spawnDroppedItem(p.x - 0.5, p.y - 0.2, p.z - 0.5, id, count, kind);
     if (m.type === 'pig') dropAt('porkchop', 'item', 1 + (Math.random() < 0.5 ? 1 : 0));
     else if (m.type === 'cow') { dropAt('beef', 'item', 1 + (Math.random() < 0.5 ? 1 : 0)); dropAt('leather', 'item', 1); }
-    else if (m.type === 'sheep') { dropAt('mutton', 'item', 1 + (Math.random() < 0.5 ? 1 : 0)); dropAt('wool_white', 'block', 1); }
+    else if (m.type === 'sheep') { dropAt('mutton', 'item', 1 + (Math.random() < 0.5 ? 1 : 0)); if (!m.sheared) dropAt('wool_white', 'block', 1); }   // 剪过的羊不再掉毛(R35)
     else if (m.type === 'skeleton') dropAt('arrow', 'item', Math.random() < 0.7 ? 2 : 1);
     else if (m.type === 'spider') dropAt('string', 'item', Math.random() < 0.5 ? 2 : 1);
     else if (m.type === 'enderman' && Math.random() < 0.6) dropAt('ender_pearl', 'item', 1);
+    else if (m.type === 'slime') {
+      // 经典分裂:大/中史莱姆死亡 → 2-3 只小一级;最小级掉黏液球
+      if (m.slimeSize > 0) {
+        const n = 2 + (Math.random() < 0.5 ? 1 : 0);
+        for (let i = 0; i < n; i++) {
+          spawnMob(p.x + (Math.random() - 0.5) * 1.2, p.y - 0.2, p.z + (Math.random() - 0.5) * 1.2, 'slime', { size: m.slimeSize - 1 });
+        }
+        spawnParticles(p.x, p.y, p.z, 0x6fc05a, 10);
+      } else if (Math.random() < 0.75) dropAt('slime_ball', 'item', Math.random() < 0.35 ? 2 : 1);
+    }
     // 经验球(R28):敌对 5(末影人 10)/被动 1-3
     spawnXPOrbs(p.x, p.y, p.z, MOB_DEFS[m.type].hostile ? (m.type === 'enderman' ? 10 : 5) : 1 + (Math.random() * 3 | 0));
     if (m.type === 'zombie') unlockAchv('kill_zombie');       // 成就:怪物猎人(R34)
     else if (m.type === 'creeper') unlockAchv('kill_creeper'); // 成就:拆弹专家
+    else if (m.type === 'slime' && m.slimeSize === 0) unlockAchv('kill_slime');   // 成就:黏糊糊(R35)
     killMob(m);
-    showToast(m.type === 'zombie' ? '🧟 击倒了僵尸' : m.type === 'creeper' ? '💥 击倒了苦力怕' : m.type === 'skeleton' ? '💀 击倒了骷髅' : m.type === 'spider' ? '🕷 击倒了蜘蛛' : m.type === 'enderman' ? '🟣 击倒了末影人' : m.type === 'villager' ? '🧑‍🌾 村民倒下了…(他什么也没掉落)' : m.type === 'cow' ? '🐮 击倒了牛' : m.type === 'sheep' ? '🐑 击倒了羊' : '🐷 击倒了猪');
+    showToast(m.type === 'zombie' ? '🧟 击倒了僵尸' : m.type === 'creeper' ? '💥 击倒了苦力怕' : m.type === 'skeleton' ? '💀 击倒了骷髅' : m.type === 'spider' ? '🕷 击倒了蜘蛛' : m.type === 'enderman' ? '🟣 击倒了末影人' : m.type === 'villager' ? '🧑‍🌾 村民倒下了…(他什么也没掉落)' : m.type === 'slime' ? '🟢 击碎了' + ['小', '中', '大'][m.slimeSize] + '史莱姆' : m.type === 'cow' ? '🐮 击倒了牛' : m.type === 'sheep' ? '🐑 击倒了羊' : '🐷 击倒了猪');
   }
 }
 
@@ -6256,12 +6397,23 @@ function updatePlayer(dt, prevVy) {
   collidePlayer(dt);
 
   // 落地音效:仅在"从空中→触地"这一帧触发(边沿检测),避免着地后重复播放
+  // 黏液块(R35):重着陆弹起(越猛越高),免摔伤 —— 经典蹦床
+  let landedOnSlime = false;
   if (onGround && !wasOnGround && prevVy < -6) {
-    audio.play('jump');
-    if (!water) spawnParticles(playerPos.x, playerPos.y - 0.7, playerPos.z, 0x9a8a6a, 6);   // 落地尘土
+    const underSlime = getBlock(Math.floor(playerPos.x), Math.floor(playerPos.y - PLAYER_HEIGHT * 0.5 - 0.1), Math.floor(playerPos.z)) === 'slime';
+    if (underSlime && !isFlying) {
+      landedOnSlime = true;
+      onGround = false;
+      velocity.y = Math.min(14, Math.max(7, -prevVy * 0.65));
+      audio.play('jump');
+      spawnParticles(playerPos.x, playerPos.y - 0.8, playerPos.z, 0x6fc05a, 6);
+    } else {
+      audio.play('jump');
+      if (!water) spawnParticles(playerPos.x, playerPos.y - 0.7, playerPos.z, 0x9a8a6a, 6);   // 落地尘土
+    }
   }
   // Fall damage: when landing with prevVy < -15 (~4+ blocks), scale by speed. Flying immune.
-  if (onGround && !wasOnGround && !isFlying && prevVy < -15 && !inWater()) {
+  if (onGround && !wasOnGround && !isFlying && prevVy < -15 && !inWater() && !landedOnSlime) {
     const dmg = Math.floor((-prevVy - 15) / 3);
     if (dmg > 0) damagePlayer(dmg, 'fall');
   }
@@ -6765,9 +6917,10 @@ function applySave(rec) {
   if (rec.mobsData) {
     for (const md of rec.mobsData) {
       if (!md || !MOB_DEFS[md.t] || !Number.isFinite(md.x) || !Number.isFinite(md.y) || !Number.isFinite(md.z)) continue;
-      spawnMob(md.x, md.y - 0.45, md.z, md.t);   // spawnMob 内部再 +0.45 回中心位
+      spawnMob(md.x, md.y - 0.45, md.z, md.t, md.t === 'slime' ? { size: md.s } : undefined);   // spawnMob 内部再 +0.45 回中心位;史莱姆带体型(R35)
       const mm = mobs[mobs.length - 1];
       mm.hp = Math.max(1, Math.min(MOB_DEFS[md.t].hp, (typeof md.hp === 'number') ? md.hp : MOB_DEFS[md.t].hp));
+      if (md.t === 'slime') mm.hp = Math.max(1, Math.min([1, 4, 16][mm.slimeSize], mm.hp));   // 体型上限
       if (md.baby) { mm.baby = true; mm.growT = 55; mm.mesh.scale.setScalar(0.55); }   // 幼崽(R29)
     }
   }
@@ -6980,7 +7133,7 @@ function buildInventoryPanel() {
   addSection(grid, '方块');
   HOTBAR_ORDER.forEach(id => addCell({ kind: 'block', id }));
   // 新增方块也可取用
-  ['water', 'snow', 'gravel', 'door', 'door_iron', 'door_stone', 'door_gold', 'door_diamond', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'bed', 'chest', 'ladder', 'bookshelf', 'torch', 'rail', 'enchanting_table'].forEach(id => addCell({ kind: 'block', id }));
+  ['water', 'snow', 'gravel', 'door', 'door_iron', 'door_stone', 'door_gold', 'door_diamond', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'bed', 'chest', 'ladder', 'bookshelf', 'torch', 'rail', 'enchanting_table', 'slime'].forEach(id => addCell({ kind: 'block', id }));
   addSection(grid, '材料 · 宝石');
   ITEM_ORDER.forEach(id => addCell({ kind: 'item', id, count: 64 }));
 }
@@ -7101,7 +7254,7 @@ function openTablePanel() {
   if (closeBtn) closeBtn.onclick = closeTablePanel;
   // 目录循环列表:方块 + 材料物品(矿石/圆石/木棍等,按 kind 区分图标)
   const catalog = HOTBAR_ORDER.map(id => ({ kind: 'block', id }))
-    .concat(['water', 'snow', 'gravel', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'sand', 'bed', 'chest', 'ladder', 'bookshelf', 'wool_red', 'wool_white', 'torch', 'rail', 'enchanting_table'].map(id => ({ kind: 'block', id })))
+    .concat(['water', 'snow', 'gravel', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'sand', 'bed', 'chest', 'ladder', 'bookshelf', 'wool_red', 'wool_white', 'torch', 'rail', 'enchanting_table', 'slime'].map(id => ({ kind: 'block', id })))
     .concat(['leather', 'book'].map(id => ({ kind: 'item', id })))
     .concat(['gem_gold', 'gem_diamond', 'gem_emerald', 'arrow', 'stick', 'coal', 'iron_ingot'].map(id => ({ kind: 'item', id })));
   document.querySelectorAll('#table-grid .inv-cell').forEach((cell, i) => {
@@ -7383,7 +7536,7 @@ function buildSaveRecord() {
     spawnPoint,
     armorSlotsData: ['head', 'chest', 'legs', 'feet'].map(s => armorSlots[s] ? [s, { id: armorSlots[s].id, durability: armorSlots[s].durability }] : [s, null]),
     minecartsData: minecarts.map(c => ({ x: c.cx, y: Math.round(c.y), z: c.cz })),
-    mobsData: mobs.map(mm => ({ t: mm.type, x: Math.round(mm.mesh.position.x * 100) / 100, y: Math.round(mm.mesh.position.y * 100) / 100, z: Math.round(mm.mesh.position.z * 100) / 100, hp: mm.hp, baby: !!mm.baby })),
+    mobsData: mobs.map(mm => ({ t: mm.type, x: Math.round(mm.mesh.position.x * 100) / 100, y: Math.round(mm.mesh.position.y * 100) / 100, z: Math.round(mm.mesh.position.z * 100) / 100, hp: mm.hp, baby: !!mm.baby, s: mm.type === 'slime' ? mm.slimeSize : undefined })),
     xpData: { level: xpState.level, points: xpState.points },
     achvData: Array.from(achvUnlocked),   // 成就解锁清单(R34)
     doorsData: Array.from(doors.entries()).map(function(e){return [e[0], {x:e[1].x,y:e[1].y,z:e[1].z,type:e[1].type,open:e[1].open,facing:e[1].facing}];}),

@@ -61,6 +61,10 @@
     { name: '书架', pattern: ['planks', 'planks', 'planks', 'book', 'book', 'book', 'planks', 'planks', 'planks'], result: { kind: 'block', id: 'bookshelf' }, count: 1, shapeless: false },
     // 火把:煤炭上 + 木棍下(经典配方 → 4 支;光源,R22)
     { name: '火把', pattern: ['coal', null, 'stick', null], result: { kind: 'block', id: 'torch' }, count: 4, shapeless: false },
+    // 剪刀:2 铁锭对角(经典配方,R35;剪羊毛)
+    { name: '剪刀', pattern: ['iron_ingot', null, null, 'iron_ingot'], result: { kind: 'tool', id: 'shears' }, count: 1, shapeless: false },
+    // 黏液块:4 黏液球(经典配方,R35;落地弹跳)
+    { name: '黏液块', pattern: ['slime_ball', 'slime_ball', 'slime_ball', 'slime_ball'], result: { kind: 'block', id: 'slime' }, count: 1, shapeless: true },
     // 铁轨:6 铁锭 + 1 木棍(经典配方 → 16 节)
     { name: '铁轨', pattern: ['iron_ingot', 'iron_ingot', 'iron_ingot', 'iron_ingot', 'stick', 'iron_ingot', null, null, null], result: { kind: 'block', id: 'rail' }, count: 16, shapeless: false },
     // 矿车:5 铁锭 U 形(经典配方 → 1 辆)

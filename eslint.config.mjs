@@ -66,6 +66,7 @@ export default [
       'test/r47-save.cdp.mjs',       // R47 存档迁移边界验收(同上)
       'test/r48-mobile.cdp.mjs',     // R48 移动端全流程验收(同上)
       'test/r49-perf.cdp.mjs',       // R49 性能长测复验(同上)
+      'test/r50-final.cdp.mjs',      // R50 收官细审(同上)
       'test/reload.cdp.mjs',         // 回归运行助手:套件连跑前重载新世界(同上)
     ],
   },

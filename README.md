@@ -471,17 +471,18 @@ npm run serve    # python3 -m http.server 8843
 ```bash
 npm install      # 安装开发依赖(ESLint 9)
 npm test         # 跑确定性函数单元测试(141 项)
-npm test         # 跑确定性函数单元测试(50 项)
 npm run lint     # ESLint 静态检查
 npm run serve    # 启动本地静态服务器 http://localhost:8843/
 ```
 
 - **测试**:`test/unit.test.js` 覆盖 `worldgen.js`(哈希/噪声/群系/高度/存档序列化)、
   `craft.js`(配方匹配/破坏耗时)与 `inventory.js`(拾取堆叠/饥饿状态机)的纯函数
-- **测试**:`test/unit.test.js` 覆盖 `worldgen.js`(哈希/噪声/群系/高度/存档序列化)与
-  `craft.js`(配方匹配/破坏耗时)的纯函数
 - **浏览器冒烟测试(可选)**:`test/smoke.cdp.mjs` 通过 CDP 驱动 headless Chrome 做 24 项端到端断言
   (触屏物理/门持久化/树木标脏/存档往返等),用法见文件头注释
+- **实机套件(R33-R44)**:`test/rXX-*.cdp.mjs` 共 12 套 CDP 实机验证(村民/成就/史莱姆/
+  铁桶/地牢/红石/铁傀儡/蛋糕/建筑/活塞/打磨/端到端旅程);旧套件按「每 Chrome 启动跑一套」
+  设计,同实例连跑前先 `node test/reload.cdp.mjs` 重载新世界;`r44-journey.cdp.mjs` 自带导航
+  可直接连跑(13 项:砍树→合成链→冶炼→床→红石→交易→舀水)
 - **Lint**:`eslint.config.mjs`(flat config);`game.js`/`worldgen.js`/`craft.js` 是经典 script(非 ES module)
 - **CI**:GitHub Actions 在 push/PR 自动跑 `npm test` + `npm run lint` + 浏览器冒烟测试(headless Chrome,24 项)
 - 详细代码组织、数据流、扩展点见 **[docs/architecture.md](./docs/architecture.md)**
@@ -495,18 +496,14 @@ myword/
 ├── worldgen.js         世界生成模块(噪声/生物群系/地形高度,纯函数可独立测试)
 ├── craft.js            合成与破坏计算模块(RECIPES/matchRecipe/breakCost,纯函数可独立测试)
 ├── inventory.js        库存/掉落/饥饿纯函数模块(pickupIntoInventory/hungerTick/armorReduce)
-├── machines.js         状态机纯函数模块(教程推进/熔炉/天气/存档 schema 校验,R25)
-├── three.min.js        Three.js r160(已内置,离线可玩)
-├── test/unit.test.js   Node 单元测试(确定性函数验证,141 项)
-├── game.js             游戏主逻辑(渲染/物理/物品/视角/存档状态机/UI/广场)
-├── worldgen.js         世界生成(噪声/生物群系/地形高度,纯函数)
-├── craft.js            合成与破坏计算(RECIPES/matchRecipe/breakCost,纯函数)
+├── machines.js         状态机纯函数模块(教程推进/熔炉/天气/红石/成就/存档 schema 校验)
 ├── audio.js            程序化音效(Web Audio 合成)
 ├── save.js             IndexedDB 纯存储层(SAVELIB)
 ├── doors.js            门实体渲染层(容器/网格/查询)
 ├── three.min.js        Three.js r160(已内置,离线可玩)
-├── test/unit.test.js   Node 单元测试(确定性函数验证,50 项)
-├── docs/               架构与模块文档(architecture.md / worldgen.md)
+├── test/unit.test.js   Node 单元测试(确定性函数验证,141 项)
+├── test/*.cdp.mjs      CDP 实机套件(smoke + r33-r44 共 13 套)+ reload.cdp.mjs 回归助手
+├── docs/               架构与模块文档(architecture.md / worldgen.md / review-rounds.md)
 ├── eslint.config.mjs   ESLint 9 flat config(仅开发期)
 ├── package.json        npm scripts(test / serve / lint)
 ├── LICENSE             MIT

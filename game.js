@@ -7432,8 +7432,15 @@ function updatePlayer(dt, prevVy) {
   const hres = INVLIB.hungerTick(hungerState, dt,
     (Math.hypot(velocity.x, velocity.z) > 0.5 ? 0.7 : 0.25) * (isFlying ? 0.4 : 1),
     playerHP < PLAYER_MAX_HP);
-  if (hres.hungerChanged) updateHungerBar();
+  if (hres.hungerChanged) {
+    updateHungerBar();
+    // 低饥饿一次性警告(R45):饿伤前可感知(6 = 鸡腿图标将空过半)
+    if (hungerState.hunger === 6) showToast('🍗 你饿了:饥饿低于 18 不再回血,归零会持续掉血');
+  }
   if (hres.regen) {
+    // 回血消耗食物(R45 经典收敛):每次 +1 血附加 0.5 点饥饿消耗
+    // (drain +2,4 单位=1 点)—— 吃满 20 只能「白嫖」几口,食物换血经济成立
+    hungerState.drain += 2;
     playerHP = Math.min(PLAYER_MAX_HP, playerHP + 1);
     updateHPBar();
   }
@@ -7475,6 +7482,7 @@ let autoMineTimer = 0;
 
 // 昼夜循环:dayTime 0..1(0=午夜,0.25=日出,0.5=正午,0.75=日落),起步 0.3(早晨)
 let dayTime = 0.3;
+let lastSunUp = null;   // 昼夜边沿检测(R45):入夜/黎明一次性提示用
 // updateDayNight 用的临时颜色对象(避免每帧分配)
 const _dayColor = new THREE.Color();
 const _dayColorB = new THREE.Color();
@@ -7501,6 +7509,15 @@ function updateDayNight(dt, waterNow) {
   // 太阳角度:0=午夜,0.25=日出(东升),0.5=正午,0.75=日落(西落)
   const sunAngle = dayTime * Math.PI * 2 - Math.PI / 2;
   const sunH = Math.sin(sunAngle);       // -1..1(高度,>0 为白天)
+  // 入夜/黎明一次性提示(R45):昼夜危险切换可感知 —— 夜间刷怪、
+  // 拂晓阳光烧毁亡灵;边沿触发不刷屏,首帧只建立基线不出提示
+  const sunUpNow = sunH > 0;
+  if (lastSunUp === null) lastSunUp = sunUpNow;
+  else if (sunUpNow !== lastSunUp) {
+    lastSunUp = sunUpNow;
+    if (!sunUpNow && settings.hostiles && settings.dayNightEnabled) showToast('🌙 天黑了,黑暗中开始有怪物出没(火把可防刷怪)');
+    else if (sunUpNow) showToast('☀️ 天亮了,阳光会烧毁僵尸和骷髅');
+  }
   let dayFactor = Math.max(0, sunH);   // 0..1,白天强度因子
   // 雨天:白昼光照整体压暗 ~30%
   if (weather === 'rain') dayFactor *= 0.7;

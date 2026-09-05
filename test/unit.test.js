@@ -18,7 +18,7 @@ const { RECIPES, matchRecipe, matchRecipeGrid, breakCost } = require('../craft.j
 const { TUTORIAL_STEPS, advanceTutorial, furnaceCanSmelt, furnaceTick, weatherNext, cartNextDir, xpToNext, xpGain, rollEnchants, SAVE_SCHEMA_FIELDS, validateSaveRecord } = require('../machines.js');
 
 // ---- 从 inventory.js 模块加载(库存/掉落/饥饿/护甲纯函数) ----
-const { STACK_MAX, FOODS, ARMOR_MAX_POINTS, armorReduce, pickupIntoInventory, normalizeHotbar, hungerTick } = require('../inventory.js');
+const { STACK_MAX, FOODS, ARMOR_MAX_POINTS, armorReduce, pickupIntoInventory, normalizeHotbar, hungerTick, VILLAGER_TRADES, countInHotbar, consumeFromHotbar, canTrade } = require('../inventory.js');
 
 // ---- 测试用例 ----
 let passed = 0, failed = 0;
@@ -429,6 +429,60 @@ test('armorReduce 减伤后至少 1 点 / 非法输入返回 0', () => {
   assert.strictEqual(armorReduce(1, 20), 1);
   assert.strictEqual(armorReduce(-5, 20), 0);
   assert.strictEqual(armorReduce(NaN, 5), 0);
+});
+
+// ===== 村民交易(R33) =====
+console.log('\n=== 村民交易(trades/count/consume) ===');
+test('VILLAGER_TRADES 非空且数量/字段合法', () => {
+  assert.ok(VILLAGER_TRADES.length >= 5);
+  for (const tr of VILLAGER_TRADES) {
+    assert.ok(tr.give && tr.give.id && tr.give.n >= 1, 'give 字段完整');
+    assert.ok(tr.get && tr.get.id && tr.get.n >= 1, 'get 字段完整');
+  }
+});
+test('每条交易恰有一侧是绿宝石(卖/买对称经济)', () => {
+  for (const tr of VILLAGER_TRADES) {
+    const g = (tr.give.id === 'gem_emerald') + (tr.get.id === 'gem_emerald');
+    assert.strictEqual(g, 1, tr.give.id + '→' + tr.get.id);
+  }
+});
+test('countInHotbar 跨堆叠计数 / 忽略其它物品与工具', () => {
+  const hb = [
+    { kind: 'item', id: 'wheat', count: 40 },
+    { kind: 'item', id: 'coal', count: 5 },
+    { kind: 'item', id: 'wheat', count: 10 },
+    { kind: 'tool', id: 'wheat', durability: 10 },   // 脏数据:工具格不参与
+    null,
+  ];
+  assert.strictEqual(countInHotbar(hb, 'wheat'), 50);
+  assert.strictEqual(countInHotbar(hb, 'coal'), 5);
+  assert.strictEqual(countInHotbar(hb, 'gem_emerald'), 0);
+});
+test('consumeFromHotbar 跨格消耗,用尽清格,保留其它物品', () => {
+  const hb = [
+    { kind: 'item', id: 'wheat', count: 30 },
+    { kind: 'item', id: 'coal', count: 7 },
+    { kind: 'item', id: 'wheat', count: 10 },
+  ];
+  const used = consumeFromHotbar(hb, 'wheat', 35);
+  assert.strictEqual(used, 35);
+  assert.strictEqual(hb[0], null);                       // 30 用尽清格
+  assert.deepStrictEqual(hb[1], { kind: 'item', id: 'coal', count: 7 });   // 无辜者不动
+  assert.deepStrictEqual(hb[2], { kind: 'item', id: 'wheat', count: 5 });  // 10-5
+});
+test('consumeFromHotbar 不足时消耗到 0 为止', () => {
+  const hb = [{ kind: 'item', id: 'wheat', count: 9 }];
+  assert.strictEqual(consumeFromHotbar(hb, 'wheat', 18), 9);
+  assert.strictEqual(hb[0], null);
+});
+test('canTrade 边界:足量 true / 差 1 false / 空栏 false', () => {
+  const tr = VILLAGER_TRADES[0];   // 小麦 ×18 → 绿宝石
+  assert.strictEqual(tr.give.id, 'wheat');
+  const mk = (n) => [{ kind: 'item', id: 'wheat', count: n }];
+  assert.strictEqual(canTrade(mk(18), tr), true);
+  assert.strictEqual(canTrade(mk(17), tr), false);
+  assert.strictEqual(canTrade(new Array(9).fill(null), tr), false);
+  assert.strictEqual(canTrade(mk(99), null), false);   // 非法交易对象
 });
 
 console.log('\n=== 护甲配方(matchRecipeGrid) ===');

@@ -2451,6 +2451,7 @@ function clearWorld() {
   clearXPOrbs();         // 清经验球(R28)
   endFishing();          // 收鱼线(R29)
   closeEnchantPanel();   // 关附魔面板(R28)
+  closeTradePanel();     // 关交易面板(R33)
   spawnPoint = null;     // 重生点回出生广场(读档会按存档恢复)
   tableOpen = false;
   for (let i = 0; i < 9; i++) tableGrid[i] = null;
@@ -2920,6 +2921,10 @@ function setupInput() {
       if (e.code === 'KeyE' || e.code === 'Escape') closeChestPanel();
       return;
     }
+    if (tradeOpen) {
+      if (e.code === 'KeyE' || e.code === 'Escape') closeTradePanel();
+      return;
+    }
     if (inventoryOpen) {
       if (e.code === 'KeyE' || e.code === 'Escape') toggleInventory(false);
       return;
@@ -3006,7 +3011,7 @@ function setupInput() {
     if (locked) {
       overlay.classList.add('hidden');
       pauseMenu.classList.add('hidden');
-    } else if (gameStarted && !inventoryOpen && !tableOpen && !furnaceOpen && !chestOpen) {
+    } else if (gameStarted && !inventoryOpen && !tableOpen && !furnaceOpen && !chestOpen && !tradeOpen) {
       pauseMenu.classList.remove('hidden');
       autosave(true);
     }
@@ -3522,10 +3527,15 @@ function placeBlock() {
       mountCart(lookCart);
       return;
     }
-    // 喂食繁殖(R29):手持小麦右键被动生物
+    // 村民交易(R33):右键村民开交易面板(优先于工具/进食,经典)
+    {
+      const mobHitV = raycastMob(3.5);
+      if (mobHitV && mobHitV.type === 'villager') { openTradePanel(mobHitV); return; }
+    }
+    // 喂食繁殖(R29):手持小麦右键猪/牛/羊(村民不吃麦,走上面的交易)
     if (item0 && item0.kind === 'item' && item0.id === 'wheat') {
       const mobHit0 = raycastMob(3.5);
-      if (mobHit0 && !MOB_DEFS[mobHit0.type].hostile) { feedAnimal(mobHit0, item0); return; }
+      if (mobHit0 && (mobHit0.type === 'pig' || mobHit0.type === 'cow' || mobHit0.type === 'sheep')) { feedAnimal(mobHit0, item0); return; }
     }
   }
   const item = hotbar[currentSlot];
@@ -4023,6 +4033,7 @@ const MOB_DEFS = {
   skeleton: { hp: 16, hostile: true },
   spider:   { hp: 16, hostile: true },     // R27:夜间敌对,白天中性(经典)
   enderman: { hp: 40, hostile: false },    // R27:中立,被注视/被攻击才激怒
+  villager: { hp: 20, hostile: false },    // R33:村庄 NPC,右键交易(绿宝石经济)
 };
 function countHostiles() {
   let n = 0;
@@ -4073,6 +4084,30 @@ function buildPigMesh() {
   return g;
 }
 
+// 村民的「家」小屋:扫 3×3 村格取最近的小屋中心(24 格内;R33)
+// 村民离群游荡太远时凭 home 找回村;无小屋(如指令生成)则纯游荡
+function villagerHomeFor(x, z) {
+  const c0x = Math.floor(x / 48), c0z = Math.floor(z / 48);
+  let best = null, bestD = 24 * 24;
+  for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
+    const hut = villageInCell(c0x + dx, c0z + dz, worldSeed);
+    if (!hut) continue;
+    const d = (hut.cx - x) * (hut.cx - x) + (hut.cz - z) * (hut.cz - z);
+    if (d < bestD) { bestD = d; best = { x: hut.cx + 0.5, z: hut.cz + 0.5 }; }
+  }
+  return best;
+}
+// 某小屋现有村民数(每屋上限 2)
+function countVillagersNear(hx, hz) {
+  let n = 0;
+  for (const m of mobs) {
+    if (m.type !== 'villager') continue;
+    const dx = m.mesh.position.x - hx, dz = m.mesh.position.z - hz;
+    if (dx * dx + dz * dz < 400) n++;
+  }
+  return n;
+}
+
 function spawnMob(x, groundY, z, type) {
   const t = type || 'pig';
   const mesh = t === 'zombie' ? buildZombieMesh()
@@ -4082,6 +4117,7 @@ function spawnMob(x, groundY, z, type) {
     : t === 'enderman' ? buildEndermanMesh()
     : t === 'cow' ? buildCowMesh()
     : t === 'sheep' ? buildSheepMesh()
+    : t === 'villager' ? buildVillagerMesh()
     : buildPigMesh();
   mesh.position.set(x, groundY + 0.45, z);   // 身体中心离地 0.45
   scene.add(mesh);
@@ -4092,6 +4128,7 @@ function spawnMob(x, groundY, z, type) {
     hp: MOB_DEFS[t].hp, hurtT: 0, walkPhase: Math.random() * 6, onGround: false,
     attackCd: 0, fuse: 0, burnT: 0, fireT: 0, groanT: 2 + Math.random() * 3,
   });
+  if (t === 'villager') mobs[mobs.length - 1].home = villagerHomeFor(x, z);
   return mobs[mobs.length - 1];
 }
 
@@ -4366,6 +4403,59 @@ function buildSheepMesh() {
   return g;
 }
 
+// 村民模型(R33):棕色长袍人形 + 大鼻子 + 双臂交叠身前(经典站姿)
+function buildVillagerMesh() {
+  const g = new THREE.Group();
+  const robeMat = new THREE.MeshLambertMaterial({ color: 0x7a5a3a });   // 袍子主色
+  const robeDark = new THREE.MeshLambertMaterial({ color: 0x63482e });  // 袍摆
+  const skinMat = new THREE.MeshLambertMaterial({ color: 0xc9a177 });   // 头/手臂肤色
+  const noseMat = new THREE.MeshLambertMaterial({ color: 0xb98e66 });
+  const dark = new THREE.MeshLambertMaterial({ color: 0x2a2018 });
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), skinMat);
+  head.position.y = 1.36;
+  // 大鼻子(村民标志)+ 单字眉 + 双眼
+  const nose = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.16, 0.09), noseMat);
+  nose.position.set(0, 1.3, -0.23);
+  const brow = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.05, 0.03), dark);
+  brow.position.set(0, 1.46, -0.2);
+  const eyeL = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.06, 0.03), dark);
+  eyeL.position.set(-0.09, 1.39, -0.21);
+  const eyeR = eyeL.clone();
+  eyeR.position.x = 0.09;
+  // 袍身(上窄下宽两段)+ 袍摆盖住腿根
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.5, 0.26), robeMat);
+  torso.position.y = 0.92;
+  const skirt = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.42, 0.3), robeDark);
+  skirt.position.y = 0.46;
+  // 双臂交叠:肩部为旋转中心,前平举并向内收,小臂叠在身前
+  const arms = [];
+  const mkArm = (side) => {
+    const a = new THREE.Group();
+    const m = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.44, 0.14), skinMat);
+    m.position.y = -0.22;
+    a.add(m);
+    a.position.set(side * 0.3, 1.1, 0);
+    a.rotation.x = -Math.PI / 2;
+    a.rotation.z = side * 0.24;
+    arms.push(a);
+    return a;
+  };
+  // 短腿(袍下露出一截)
+  const legGroups = [];
+  const mkLeg = (side) => {
+    const lg = new THREE.Group();
+    const m = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.26, 0.16), robeDark);
+    m.position.y = -0.13;
+    lg.add(m);
+    lg.position.set(side * 0.12, 0.26, 0);
+    legGroups.push(lg);
+    return lg;
+  };
+  g.add(head, nose, brow, eyeL, eyeR, torso, skirt, mkArm(-1), mkArm(1), mkLeg(-1), mkLeg(1));
+  g.userData = { legs: legGroups, arms, mats: [robeMat, robeDark, skinMat, noseMat], baseColors: [0x7a5a3a, 0x63482e, 0xc9a177, 0xb98e66] };
+  return g;
+}
+
 function removeMob(i) {
   const m = mobs[i];
   m.mesh.traverse(function(o) {
@@ -4383,8 +4473,9 @@ function removeMob(i) {
 function clearMobs() { for (let i = mobs.length - 1; i >= 0; i--) removeMob(i); }
 
 // 尝试生成:随机挑一个已加载区块,找草地面(离玩家 >10 格,水下/沙漠不刷)
+// 草地 16 格内有村庄小屋 → 优先补村民(每屋 ≤2,不受动物总帽挤占,R33)
 function trySpawnMob() {
-  if (!settings.mobs || mobs.length >= MOB_CAP || chunks.size === 0) return;
+  if (!settings.mobs || chunks.size === 0) return;
   const arr = Array.from(chunks.values());
   const ch = arr[(Math.random() * arr.length) | 0];
   const wx = ch.cx * CHUNK_SIZE + ((Math.random() * CHUNK_SIZE) | 0) + 0.5;
@@ -4396,6 +4487,12 @@ function trySpawnMob() {
     const b = getBlock(fx, y, fz);
     if (!b) continue;
     if (b === 'grass' && !getBlock(fx, y + 1, fz)) {
+      const home = villagerHomeFor(wx, wz);
+      if (home && Math.hypot(home.x - wx, home.z - wz) < 16 && countVillagersNear(home.x, home.z) < 2) {
+        spawnMob(wx, y + 1, wz, 'villager');
+        break;
+      }
+      if (mobs.length >= MOB_CAP) break;
       // 被动生物池:猪 40% / 牛 30% / 羊 30%
       const pr = Math.random();
       spawnMob(wx, y + 1, wz, pr < 0.4 ? 'pig' : pr < 0.7 ? 'cow' : 'sheep');
@@ -5081,6 +5178,22 @@ function updateMobs(dt) {
       wanderStep(m, dt, 1.3, 0.65);
     } else if (m.type === 'cow' || m.type === 'sheep') {
       wanderStep(m, dt, 1.1, 0.6);
+    } else if (m.type === 'villager') {
+      // 村民(R33):平时村庄周边慢逛;离村 >14 格朝家走;受击后 5 秒逃離玩家
+      if (m.fleeT > 0) {
+        m.fleeT -= dt;
+        m.yaw = Math.atan2(playerPos.x - p.x, playerPos.z - p.z);   // 背向玩家
+        m.speed = 1.9;
+      } else {
+        wanderStep(m, dt, 0.85, 0.55);
+        if (m.home) {
+          const dh = Math.hypot(m.home.x - p.x, m.home.z - p.z);
+          if (dh > 14) {
+            m.yaw = Math.atan2(-(m.home.x - p.x), -(m.home.z - p.z));   // 朝家走
+            m.speed = 0.9;
+          }
+        }
+      }
     } else if (m.type === 'zombie') {
       if (zombieAI(m, dt, distP)) continue;
     } else if (m.type === 'spider') {
@@ -5173,13 +5286,15 @@ function hurtMob(m, dmg, kx, kz, silent) {
   m.hurtT = 0.25;
   // 末影人被攻击即激怒,并短暂延迟后瞬移(经典)
   if (m.type === 'enderman') { m.angered = true; m.tpT = 0.35; }
+  // 村民被攻击 → 转身逃跑(经典:不还手)
+  if (m.type === 'villager') m.fleeT = 5;
   m.kvx += kx * 6; m.kvz += kz * 6; m.vy = 4;
   const mats = m.mesh.userData.mats;
   for (let k = 0; k < mats.length; k++) mats[k].color.setHex(0xd05a5a);
   if (!silent) audio.play(m.type === 'zombie' ? 'zombie' : m.type === 'creeper' ? 'hurt' : 'pig');
   if (m.hp <= 0) {
     const p = m.mesh.position;
-    spawnParticles(p.x - 0.5, p.y - 0.5, p.z - 0.5, m.type === 'pig' ? 0xeba3a9 : m.type === 'cow' ? 0x6b4a2f : m.type === 'sheep' ? 0xe8e8e4 : m.type === 'spider' ? 0x2a2a30 : m.type === 'enderman' ? 0x7a4a9a : 0x7a9a7a, 12);
+    spawnParticles(p.x - 0.5, p.y - 0.5, p.z - 0.5, m.type === 'pig' ? 0xeba3a9 : m.type === 'cow' ? 0x6b4a2f : m.type === 'sheep' ? 0xe8e8e4 : m.type === 'spider' ? 0x2a2a30 : m.type === 'enderman' ? 0x7a4a9a : m.type === 'villager' ? 0x7a5a3a : 0x7a9a7a, 12);
     // 经典掉落(按生物类型)
     const dropAt = (id, kind, count) => spawnDroppedItem(p.x - 0.5, p.y - 0.2, p.z - 0.5, id, count, kind);
     if (m.type === 'pig') dropAt('porkchop', 'item', 1 + (Math.random() < 0.5 ? 1 : 0));
@@ -5191,7 +5306,7 @@ function hurtMob(m, dmg, kx, kz, silent) {
     // 经验球(R28):敌对 5(末影人 10)/被动 1-3
     spawnXPOrbs(p.x, p.y, p.z, MOB_DEFS[m.type].hostile ? (m.type === 'enderman' ? 10 : 5) : 1 + (Math.random() * 3 | 0));
     killMob(m);
-    showToast(m.type === 'zombie' ? '🧟 击倒了僵尸' : m.type === 'creeper' ? '💥 击倒了苦力怕' : m.type === 'skeleton' ? '💀 击倒了骷髅' : m.type === 'spider' ? '🕷 击倒了蜘蛛' : m.type === 'enderman' ? '🟣 击倒了末影人' : m.type === 'cow' ? '🐮 击倒了牛' : m.type === 'sheep' ? '🐑 击倒了羊' : '🐷 击倒了猪');
+    showToast(m.type === 'zombie' ? '🧟 击倒了僵尸' : m.type === 'creeper' ? '💥 击倒了苦力怕' : m.type === 'skeleton' ? '💀 击倒了骷髅' : m.type === 'spider' ? '🕷 击倒了蜘蛛' : m.type === 'enderman' ? '🟣 击倒了末影人' : m.type === 'villager' ? '🧑‍🌾 村民倒下了…(他什么也没掉落)' : m.type === 'cow' ? '🐮 击倒了牛' : m.type === 'sheep' ? '🐑 击倒了羊' : '🐷 击倒了猪');
   }
 }
 
@@ -5388,7 +5503,7 @@ function openFurnacePanel(x, y, z) {
 // 交互:关闭面板后自动重新锁定指针(无缝回到游戏,不必再点一下画面)
 function tryRelockPointer() {
   if (!renderer || document.pointerLockElement === renderer.domElement) return;
-  if (inventoryOpen || tableOpen || furnaceOpen || chestOpen) return;   // 还有面板开着则不抢
+  if (inventoryOpen || tableOpen || furnaceOpen || chestOpen || tradeOpen) return;   // 还有面板开着则不抢
   try {
     const p = renderer.domElement.requestPointerLock();
     if (p && typeof p.catch === 'function') p.catch(() => {});
@@ -5535,6 +5650,73 @@ function clearChests() {
   chestOpen = null;
   const panel = document.getElementById('chest-panel');
   if (panel) panel.classList.add('hidden');
+}
+
+// ============================================================
+// 村民交易(R33):右键村民开面板,经典绿宝石经济
+// 表与计数/消耗/判定在 inventory.js 纯函数层(单测覆盖)
+// ============================================================
+let tradeOpen = null;   // 正在交易的村民(mob 引用)
+
+function openTradePanel(m) {
+  tradeOpen = m;
+  swingHoldItem();
+  const panel = document.getElementById('trade-panel');
+  if (!panel) return;
+  panel.classList.remove('hidden');
+  if (document.pointerLockElement) document.exitPointerLock();
+  const closeBtn = document.getElementById('trade-close');
+  if (closeBtn) closeBtn.onclick = closeTradePanel;
+  const listEl = document.getElementById('trade-list');
+  if (listEl && listEl.children.length === 0) {
+    for (const tr of INVLIB.VILLAGER_TRADES) {
+      const row = document.createElement('div');
+      row.className = 'trade-row';
+      const give = document.createElement('div');
+      give.className = 'inv-cell trade-cell';
+      const arrow = document.createElement('span');
+      arrow.className = 'trade-arrow';
+      arrow.textContent = '➜';
+      const get = document.createElement('div');
+      get.className = 'inv-cell trade-cell';
+      row.appendChild(give); row.appendChild(arrow); row.appendChild(get);
+      row.onclick = () => doTrade(tr);
+      listEl.appendChild(row);
+    }
+  }
+  renderTradePanel();
+}
+
+function closeTradePanel() {
+  tradeOpen = null;
+  const panel = document.getElementById('trade-panel');
+  if (panel) panel.classList.add('hidden');
+  tryRelockPointer();
+}
+
+function renderTradePanel() {
+  if (!tradeOpen) return;
+  if (!mobs.includes(tradeOpen)) { closeTradePanel(); return; }   // 村民已消失(死亡/重置)
+  document.querySelectorAll('#trade-list .trade-row').forEach((row, i) => {
+    const tr = INVLIB.VILLAGER_TRADES[i];
+    renderFurnaceCell(row.children[0], { kind: 'item', id: tr.give.id, count: tr.give.n });
+    renderFurnaceCell(row.children[2], { kind: 'item', id: tr.get.id, count: tr.get.n });
+    row.classList.toggle('locked', !INVLIB.canTrade(hotbar, tr));
+  });
+}
+
+function doTrade(tr) {
+  if (!tradeOpen || !mobs.includes(tradeOpen)) { closeTradePanel(); return; }
+  if (!INVLIB.canTrade(hotbar, tr)) { showToast('支付物不够:' + ITEM_TYPES[tr.give.id].name + ' ×' + tr.give.n); return; }
+  INVLIB.consumeFromHotbar(hotbar, tr.give.id, tr.give.n);
+  const got = pickupIntoInventory('item', tr.get.id, tr.get.n);
+  if (got < tr.get.n) {   // 快捷栏满:余数掉在脚边不亏
+    spawnDroppedItem(playerPos.x - 0.5, playerPos.y, playerPos.z - 0.5, tr.get.id, tr.get.n - got, 'item');
+  }
+  buildHotbar(); updateHoldItem(); renderTradePanel();
+  showToast('🤝 换得 ' + ITEM_TYPES[tr.get.id].name + ' ×' + tr.get.n);
+  audio.play('place');
+  markDirtySave();
 }
 
 // ============================================================

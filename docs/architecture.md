@@ -23,7 +23,7 @@
 └───────────────┬─────────────────────────────────────────┘
                 │ <script src> 直引 + onclick 回调
 ┌───────────────▼─────────────────────────────────────────┐
-│  game.js  ── 游戏引擎(20 个模块,~7200 行)             │  引擎层
+│  game.js  ── 游戏引擎(20 个模块,~7400 行)             │  引擎层
 │   渲染 / 物理 / 输入 / 物品 / 视角 / 存档 / 音效 / UI   │
 └───────────────┬─────────────────────────────────────────┘
                 │ 函数调用(hash2/fbm2D/biomeAt/heightAt + CRAFTLIB)
@@ -31,13 +31,13 @@
 │  worldgen + craft + inventory + machines ─ 纯函数层(无 DOM/Three)│
 │   worldgen:  哈希 / 值噪声 / fbm / 群系 / 高度 / 洞穴 / 村庄小屋 │
 │   craft:     RECIPES / matchRecipe / breakCost                  │
-│   inventory: 拾取堆叠 / 饥饿 / 护甲减伤                         │
+│   inventory: 拾取堆叠 / 饥饿 / 护甲减伤 / 村民交易表              │
 │   machines:  教程 / 熔炉 / 天气 / 矿车寻路 / 经验 / 附魔 / 存档schema │
 │   ← 均可单测                                                    │
 └─────────────────────────────────────────────────────────────────┘
                 ▲
 ┌───────────────┴─────────────────────────────────────────┐
-│  test/unit.test.js  ── Node 单元测试(115 项)          │  测试
+│  test/unit.test.js  ── Node 单元测试(121 项)          │  测试
 │    require(worldgen + craft + inventory + machines)    │
 │  test/unit.test.js  ── Node 单元测试(46 项)           │  测试
 │    require('../worldgen.js') + require('../craft.js')   │
@@ -83,7 +83,9 @@ three.min.js  ── Three.js r160(第三方渲染库,内置,离线)
 > 另有:**天空系统**(`createSky`/`updateSky`,渐变天穹+星空+日月光晕,挂第七部分)、
 > **生物系统**(`spawnMob`/`updateMobs`/`hurtMob`/`raycastMob`:被动 猪/牛/羊 游荡+
 > 小麦喂食繁殖(求爱红心→幼崽 0.55 缩放 60s 长大);敌对 僵尸/苦力怕/骷髅/蜘蛛/
-> 末影人(中立,被注视/受击激怒+瞬移);全部生物随存档 mobsData 持久化;
+> 末影人(中立,被注视/受击激怒+瞬移);村民(村庄常驻 ≤2/屋,村边慢逛/
+> 离村 >14 格回家/受击逃跑,`villagerHomeFor` 3×3 村格找家);全部生物随存档
+> mobsData 持久化(村民读档重算 home);
 > 击杀掉经验球 `updateXPOrbs` 磁吸吸收升级,附魔台 `openEnchantPanel` 消耗等级)、
 > **逐方块光照**(火把 BFS 光级 14 跨区块传播,`rebuildLightGrid`+顶点 aTorch/
 > aSky 属性,材质着色器注入自发光;村庄火把 villageTorches 同为光源)、
@@ -91,7 +93,12 @@ three.min.js  ── Three.js r160(第三方渲染库,内置,离线)
 > 直行>弯道转向>死头弹回;乘坐/助推/出轨坠落,minecartsData 存档)、
 > **钓鱼系统**(`startFishing`/`updateFishing`:甩竿-咬钩窗口-收鱼)、
 > **村庄小屋**(worldgen `villageInCell`/`hutBlockAt` 纯函数,generateChunkData
-> 生成侧写入,零存档 diff;小屋 ±4 不种树)、
+> 生成侧写入,零存档 diff;小屋 ±4 不种树;trySpawnMob 草地 16 格内有小屋时
+> 优先补村民(每屋 ≤2,不受动物帽挤占))、
+> **村民交易**(`openTradePanel`/`doTrade`:右键村民开 7 行面板,卖小麦/煤/生鱼/
+> 皮革换绿宝石、绿宝石买面包/箭/熟猪排;交易表与 `countInHotbar`/
+> `consumeFromHotbar`/`canTrade` 在 inventory.js 纯函数层;支付不足行置灰,
+> 满栏产物掉落脚边)、
 > **沙砾重力**(`updateFallingBlocks`/`startFallingBlock`,setBlock 写入支撑检查队列,
 > 失去支撑化为下落实体,落地还原为方块)、
 > **破坏裂纹覆盖层**(`createCrackOverlay`,4 阶段程序化裂纹纹理,随破坏进度切换)。

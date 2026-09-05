@@ -64,6 +64,9 @@
     .chest-grid { grid-template-columns: repeat(9, 34px); }
     .chest-grid .inv-cell { width: 34px; height: 34px; }
     .chest-grid .inv-cell canvas { width: 24px; height: 24px; }
+    .trade-cell { width: 38px !important; height: 38px !important; }
+    .trade-cell canvas { width: 28px !important; height: 28px !important; }
+    #trade-list { max-height: 46vh; }
   }
   @media (max-width: 400px) {
     .slot { width: 30px; height: 30px; }
@@ -266,6 +269,29 @@
   }
   #chest-panel h3 { font-size: 18px; margin-bottom: 4px; color: #3F3F3F; text-shadow: 1px 1px 0 #DBDBDB; }
 
+  /* 村民交易面板(R33):一行一交易,左支付 ➜ 右获得 */
+  #trade-panel {
+    position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    z-index: 95; background: #C6C6C6;
+    border: 3px solid;
+    border-color: #FEFEFE #4E4E4E #4E4E4E #FEFEFE;
+    box-shadow: inset 1px 1px 0 #DBDBDB, inset -1px -1px 0 #A0A0A0, 0 8px 40px rgba(0,0,0,0.6);
+    border-radius: 2px; padding: 20px 22px; color: #3F3F3F;
+    animation: panelIn .18s ease-out;
+  }
+  #trade-panel h3 { font-size: 18px; margin-bottom: 4px; color: #3F3F3F; text-shadow: 1px 1px 0 #DBDBDB; }
+  #trade-list { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; max-height: 430px; overflow-y: auto; }
+  .trade-row {
+    display: flex; align-items: center; gap: 12px; padding: 5px 8px; cursor: pointer;
+    background: #8B8B8B; border: 2px solid;
+    border-color: #373737 #FFF #FFF #373737;
+  }
+  .trade-row:hover { background: #a0a0a4; }
+  .trade-row.locked { opacity: 0.45; filter: grayscale(0.6); }
+  .trade-cell { width: 46px; height: 46px; }
+  .trade-cell canvas { width: 32px; height: 32px; }
+  .trade-arrow { font-size: 18px; color: #2F2F2F; }
+
   /* 新手教程卡片(经典灰岩小卡,屏幕中上;避开 toast 区域) */
   #tutorial-card {
     position: fixed; left: 50%; top: 150px; transform: translateX(-50%);
@@ -464,6 +490,14 @@
   <div class="chest-grid" id="chest-grid"></div>
 </div>
 
+<!-- 村民交易面板(R33,对村民右键打开) -->
+<div id="trade-panel" class="hidden">
+  <span class="inv-close" id="trade-close">×</span>
+  <h3>🧑‍🌾 村民交易</h3>
+  <div class="inv-hint">点击一行成交:左格是你支付的 ➜ 右格是你换得的;绿宝石靠钓鱼淘宝或用作物/煤换</div>
+  <div id="trade-list"></div>
+</div>
+
 <!-- 新手教程卡片(随进度自动推进) -->
 <div id="tutorial-card" class="hidden"></div>
 
@@ -567,9 +601,9 @@
 
 <script src="worldgen.js?v=20260919"></script>
 <script src="craft.js?v=20260915"></script>
-<script src="inventory.js?v=20260915"></script>
+<script src="inventory.js?v=20260922"></script>
 <script src="machines.js?v=20260915"></script>
 <script src="three.min.js?v=r160"></script>
-<script src="game.js?v=20260921"></script>
+<script src="game.js?v=20260922"></script>
 </body>
 </html>

@@ -46,6 +46,7 @@ export default [
       'node_modules/**',
       '.zcode/**',
       'test/smoke.cdp.mjs',   // CDP 冒烟测试(Node 脚本,跑在 headless Chrome 侧,不参与 lint)
+      'test/r33-villager.cdp.mjs',   // R33 村民轮 CDP 实机验证(同上)
     ],
   },
 

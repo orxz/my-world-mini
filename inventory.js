@@ -105,11 +105,50 @@
     return Math.max(1, Math.round(damage * (1 - p * ARMOR_PCT_PER_POINT)));
   }
 
+  // ---- 村民交易(R33):经典绿宝石经济,物品均为可堆叠 item(无工具) ----
+  // 卖(物资 → 绿宝石)前 4 条,买(绿宝石 → 物资)后 3 条;数值取经典区间中位
+  const VILLAGER_TRADES = [
+    { give: { id: 'wheat',        n: 18 }, get: { id: 'gem_emerald', n: 1 } },   // 农夫:小麦
+    { give: { id: 'coal',         n: 15 }, get: { id: 'gem_emerald', n: 1 } },   // 屠夫系:煤炭
+    { give: { id: 'raw_fish',     n: 6  }, get: { id: 'gem_emerald', n: 1 } },   // 渔夫:生鱼
+    { give: { id: 'leather',      n: 8  }, get: { id: 'gem_emerald', n: 1 } },   // 皮匠:皮革
+    { give: { id: 'gem_emerald',  n: 1  }, get: { id: 'bread',        n: 4 } },   // 农夫卖面包
+    { give: { id: 'gem_emerald',  n: 2  }, get: { id: 'arrow',        n: 12 } },  // 制箭匠
+    { give: { id: 'gem_emerald',  n: 2  }, get: { id: 'cooked_porkchop', n: 5 } }, // 屠夫卖熟猪排
+  ];
+  // 数快捷栏内某 id 的总数(跨堆叠;工具格 count 视为 1 不参与交易)
+  function countInHotbar(hotbar, id) {
+    let n = 0;
+    for (const it of hotbar) {
+      if (it && it.id === id && it.kind !== 'tool') n += it.count || 1;
+    }
+    return n;
+  }
+  // 从快捷栏跨格消耗 n 个 id(调用方需先用 countInHotbar 保证足量)
+  // 用尽清格;返回实际消耗数(不足时消耗到 0)
+  function consumeFromHotbar(hotbar, id, n) {
+    let left = n;
+    for (let i = 0; i < hotbar.length && left > 0; i++) {
+      const it = hotbar[i];
+      if (it && it.id === id && it.kind !== 'tool') {
+        const take = Math.min(it.count || 1, left);
+        it.count = (it.count || 1) - take;
+        left -= take;
+        if (it.count <= 0) hotbar[i] = null;
+      }
+    }
+    return n - left;
+  }
+  // 交易可行性:支付物足量(canTrade 不判断收入空间,满栏由游戏层兜底掉落)
+  function canTrade(hotbar, trade) {
+    return !!trade && countInHotbar(hotbar, trade.give.id) >= trade.give.n;
+  }
+
   // 导出(Node 环境)
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { STACK_MAX, FOODS, ARMOR_MAX_POINTS, ARMOR_PCT_PER_POINT, armorReduce, pickupIntoInventory, normalizeHotbar, hungerTick };
+    module.exports = { STACK_MAX, FOODS, ARMOR_MAX_POINTS, ARMOR_PCT_PER_POINT, armorReduce, pickupIntoInventory, normalizeHotbar, hungerTick, VILLAGER_TRADES, countInHotbar, consumeFromHotbar, canTrade };
   }
   // 浏览器:挂到全局
-  global.INVLIB = { STACK_MAX, FOODS, ARMOR_MAX_POINTS, ARMOR_PCT_PER_POINT, armorReduce, pickupIntoInventory, normalizeHotbar, hungerTick };
+  global.INVLIB = { STACK_MAX, FOODS, ARMOR_MAX_POINTS, ARMOR_PCT_PER_POINT, armorReduce, pickupIntoInventory, normalizeHotbar, hungerTick, VILLAGER_TRADES, countInHotbar, consumeFromHotbar, canTrade };
 
 })(typeof window !== 'undefined' ? window : globalThis);

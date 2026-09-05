@@ -776,6 +776,13 @@ test('黏液块配方:4 黏液球无序(R35)', () => {
   const r = matchRecipeGrid(g2(['slime_ball', 'slime_ball', 'slime_ball', 'slime_ball']), 2, RECIPES);
   assert.ok(r && r.result.id === 'slime' && r.result.kind === 'block');
 });
+test('铁桶配方:3 铁锭 V 形(R36);2×2 放不下', () => {
+  const g3 = (ids) => ids.map(x => x === null ? null : { kind: 'item', id: x });
+  const r = matchRecipeGrid(g3(['iron_ingot', null, 'iron_ingot', null, 'iron_ingot', null, null, null, null]), 3, RECIPES);
+  assert.ok(r && r.result.id === 'bucket' && r.result.kind === 'item');
+  const in2x2 = matchRecipeGrid(g3(['iron_ingot', 'iron_ingot', 'iron_ingot', null].map(x => x === null ? null : { kind: 'item', id: x })), 2, RECIPES);
+  assert.ok(!in2x2 || in2x2.result.id !== 'bucket');   // 3 铁锭任何 2×2 摆法都不出桶
+});
 
 // ===== 村庄小屋(R31) =====
 console.log('\n=== 村庄小屋(villageInCell/hutBlockAt) ===');

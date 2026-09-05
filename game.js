@@ -140,8 +140,10 @@ const ITEM_TYPES = {
   raw_fish:    { name: '生鱼',   color: '#9ab8c8', shape: 'meat' },
   cooked_fish: { name: '烤鱼',   color: '#c8a06a', shape: 'meat' },
   slime_ball:  { name: '黏液球', color: '#7ec850', shape: 'gem' },
+  bucket:      { name: '铁桶',   color: '#c8c8d0', shape: 'bucket' },
+  water_bucket:{ name: '水桶',   color: '#2a8fd6', shape: 'bucket' },
 };
-const ITEM_ORDER = ['gem_diamond','gem_gold','gem_emerald','arrow','porkchop','cooked_porkchop','beef','steak','mutton','apple','stick','coal','iron_ingot','leather','book','minecart','string','ender_pearl','wheat','bread','raw_fish','cooked_fish','slime_ball'];
+const ITEM_ORDER = ['gem_diamond','gem_gold','gem_emerald','arrow','porkchop','cooked_porkchop','beef','steak','mutton','apple','stick','coal','iron_ingot','leather','book','minecart','string','ender_pearl','wheat','bread','raw_fish','cooked_fish','slime_ball','bucket','water_bucket'];
 // 食物表与堆叠上限来自纯函数模块 inventory.js(INVLIB)
 const FOODS = INVLIB.FOODS;
 
@@ -1881,6 +1883,15 @@ function buildMaterialMesh(itemId) {
   if (def.shape === 'gem') { g.add(new THREE.Mesh(new THREE.OctahedronGeometry(0.14), mat)); }
   else if (def.shape === 'ingot') { g.add(new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.08, 0.14), mat)); }
   else if (def.shape === 'cart') { const b = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.16, 0.2), mat); g.add(b); g.rotation.y = 0.3; }
+  else if (def.shape === 'bucket') {
+    // 铁桶(R36):梯形近似 = 略宽的桶身;水桶顶加薄水面
+    g.add(new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.24, 0.2), mat));
+    if (itemId === 'water_bucket') {
+      const w = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.04, 0.18), new THREE.MeshLambertMaterial({ color: 0x2a8fd6 }));
+      w.position.y = 0.13;
+      g.add(w);
+    }
+  }
   else { g.add(new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.3), mat)); }
   g.rotation.set(0.3, 0.6, 0.2);
   g.position.set(0, -0.05, 0);
@@ -2820,6 +2831,26 @@ function drawMaterialIcon(ctx, itemId, size) {
     ctx.beginPath();
     ctx.ellipse(-size * 0.08, -size * 0.02, size * 0.05, size * 0.08, 0.4, 0, Math.PI * 2);
     ctx.fill();
+  } else if (def.shape === 'bucket') {
+    // 铁桶(R36):梯形桶身 + 提梁;水桶 = 桶口蓝色水面 + 高光
+    ctx.fillStyle = '#c8c8d0';
+    ctx.beginPath();
+    ctx.moveTo(-size * 0.26, -size * 0.12); ctx.lineTo(size * 0.26, -size * 0.12);
+    ctx.lineTo(size * 0.2, size * 0.3); ctx.lineTo(-size * 0.2, size * 0.3);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = '#8a8a94'; ctx.lineWidth = size * 0.05;
+    ctx.beginPath(); ctx.arc(0, -size * 0.12, size * 0.16, Math.PI, 0); ctx.stroke();
+    if (itemId === 'water_bucket') {
+      ctx.fillStyle = '#2a8fd6';
+      ctx.fillRect(-size * 0.24, -size * 0.12, size * 0.48, size * 0.11);
+      ctx.fillStyle = 'rgba(255,255,255,0.4)';
+      ctx.fillRect(-size * 0.16, -size * 0.09, size * 0.1, size * 0.05);
+    } else {
+      ctx.fillStyle = 'rgba(60,60,70,0.45)';
+      ctx.fillRect(-size * 0.22, -size * 0.12, size * 0.44, size * 0.08);
+      ctx.fillStyle = 'rgba(255,255,255,0.3)';
+      ctx.fillRect(-size * 0.16, -size * 0.02, size * 0.08, size * 0.24);
+    }
   } else {
     ctx.strokeStyle = def.color; ctx.lineWidth = size * 0.06;
     ctx.beginPath(); ctx.moveTo(-size * 0.28, size * 0.2); ctx.lineTo(size * 0.22, -size * 0.22); ctx.stroke();
@@ -3590,6 +3621,8 @@ function placeBlock() {
       const mobHit0 = raycastMob(3.5);
       if (mobHit0 && (mobHit0.type === 'pig' || mobHit0.type === 'cow' || mobHit0.type === 'sheep')) { feedAnimal(mobHit0, item0); return; }
     }
+    // 铁桶(R36):空桶舀水/水桶放水(优先于交互方块 —— 经典持桶点方块即倒水)
+    if (item0 && item0.kind === 'item' && (item0.id === 'bucket' || item0.id === 'water_bucket')) { useBucket(item0); return; }
   }
   const item = hotbar[currentSlot];
   if (item && item.kind === 'tool') { useTool(item); return; }
@@ -4467,6 +4500,55 @@ function buildSheepMesh() {
   g.add(body, head, woolCap, legGroups[0], legGroups[1], legGroups[2], legGroups[3]);
   g.userData = { legs: legGroups, mats: [woolMat, faceMat, legMat, skinMat], baseColors: [0xe8e8e4, 0xd8c8b8, 0x9a8a78, 0xe8b8a8], woolParts: [body, woolCap], woolMat, skinMat };
   return g;
+}
+
+// ============================================================
+// 铁桶(R36):空桶右键舀水 / 水桶右键放水 —— 可移动水源
+// 放出的水是真实 water 方块(可再舀取/可游泳/随存档),静态不扩散
+// ============================================================
+function bucketSwapItem(newId) {
+  // 当前格桶 -1(用尽就地换成新桶);叠放时新桶走拾取入栏,满栏掉脚边
+  const it = hotbar[currentSlot];
+  it.count = (it.count || 1) - 1;
+  if (it.count <= 0) {
+    hotbar[currentSlot] = { kind: 'item', id: newId, count: 1 };
+  } else {
+    const got = pickupIntoInventory('item', newId, 1);
+    if (got < 1) spawnDroppedItem(playerPos.x - 0.5, playerPos.y, playerPos.z - 0.5, newId, 1, 'item');
+  }
+  buildHotbar(); updateHoldItem();
+  markDirtySave();
+}
+function useBucket(item) {
+  swingHoldItem();
+  if (item.id === 'bucket') {
+    // 舀水:沿视线 5 格找第一个水格(经典:水被装走,原地变空气);遇固体停
+    const dx = -Math.sin(yaw) * Math.cos(pitch), dy = Math.sin(pitch), dz = -Math.cos(yaw) * Math.cos(pitch);
+    for (let t = 0.4; t <= 5; t += 0.25) {
+      const x = Math.floor(playerPos.x + dx * t), y = Math.floor(playerPos.y + dy * t), z = Math.floor(playerPos.z + dz * t);
+      const b = getBlock(x, y, z);
+      if (b === 'water') {
+        setBlock(x, y, z, null);
+        bucketSwapItem('water_bucket');
+        showToast('🪣 装满一桶水');
+        audio.play('place');
+        unlockAchv('bucket');   // 成就:桶装玩意(R36)
+        return;
+      }
+      if (b && BLOCK_TYPES[b] && BLOCK_TYPES[b].solid) break;   // 墙后的水够不着
+    }
+    showToast('没对准水(靠近水面,准星对水)');
+    return;
+  }
+  // 放水:对准方块,相邻格倒出静态水
+  const t = raycastTarget();
+  if (!t) { showToast('没对准方块'); return; }
+  const nx = t.x + Math.round(t.normal.x), ny = t.y + Math.round(t.normal.y), nz = t.z + Math.round(t.normal.z);
+  if (getBlock(nx, ny, nz)) { showToast('这里已有方块'); return; }
+  setBlock(nx, ny, nz, 'water');
+  bucketSwapItem('bucket');
+  showToast('🪣 倒出水(可游泳 · 可再舀取)');
+  audio.play('place');
 }
 
 // 剪羊毛(R35):手持剪刀右键羊 → 掉 1-3 白羊毛 + 模型换粉皮;45 秒长回

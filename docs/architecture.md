@@ -23,7 +23,7 @@
 └───────────────┬─────────────────────────────────────────┘
                 │ <script src> 直引 + onclick 回调
 ┌───────────────▼─────────────────────────────────────────┐
-│  game.js  ── 游戏引擎(20 个模块,~7700 行)             │  引擎层
+│  game.js  ── 游戏引擎(20 个模块,~7750 行)             │  引擎层
 │   渲染 / 物理 / 输入 / 物品 / 视角 / 存档 / 音效 / UI   │
 └───────────────┬─────────────────────────────────────────┘
                 │ 函数调用(hash2/fbm2D/biomeAt/heightAt + CRAFTLIB)
@@ -37,7 +37,7 @@
 └─────────────────────────────────────────────────────────────────┘
                 ▲
 ┌───────────────┴─────────────────────────────────────────┐
-│  test/unit.test.js  ── Node 单元测试(126 项)          │  测试
+│  test/unit.test.js  ── Node 单元测试(127 项)          │  测试
 │    require(worldgen + craft + inventory + machines)    │
 │  test/unit.test.js  ── Node 单元测试(46 项)           │  测试
 │    require('../worldgen.js') + require('../craft.js')   │
@@ -102,7 +102,9 @@ three.min.js  ── Three.js r160(第三方渲染库,内置,离线)
 > `consumeFromHotbar`/`canTrade` 在 inventory.js 纯函数层;支付不足行置灰,
 > 满栏产物掉落脚边)、
 > **黏液块蹦床**(`updatePlayer` 落地帧:脚下 slime → 弹起 7-14 免摔伤,R35)、
-> **成就系统**(`unlockAchv`/`showAchvToast`/`openAchvPanel`:17 条经典里程碑,
+> **铁桶与水**(`useBucket`:空桶沿视线 5 格舀水(遇固体停)/水桶对命中面
+> 倒静态水,可移动水源,modifications 持久化,R36)、
+> **成就系统**(`unlockAchv`/`showAchvToast`/`openAchvPanel`:18 条经典里程碑,
 > 埋点 = 拾取(pickupIntoInventory 包装层)/合成(craftGiveResult)/击杀(hurtMob)/
 > 钓鱼/睡觉/矿车/附魔/交易/繁殖/发现村庄(animate 每秒节流探测);
 > 金色 toast 右上滑入,暂停菜单面板全清单;ACHIEVEMENTS/awardAchievement 在

@@ -175,6 +175,21 @@ async function main() {
   })()`);
   check('史莱姆分裂链 + 黏糊糊成就', slime.has && slime.n === 16 && slime.left === 0, JSON.stringify(slime));
 
+  // ---- 11.6 铁桶舀水(R36 桶装玩意:放水格+空桶+瞄准,真实 placeBlock 路径)----
+  const bucket = await evl(`(() => {
+    const bx = Math.floor(playerPos.x) + 2, by = Math.floor(playerPos.y) - 1, bz = Math.floor(playerPos.z);
+    setBlock(bx, by, bz, 'water');
+    for (let i = 0; i < 9; i++) hotbar[i] = null;
+    hotbar[0] = { kind: 'item', id: 'bucket', count: 1 }; currentSlot = 0; buildHotbar();
+    const tx = bx + 0.5, ty = by + 0.5, tz = bz + 0.5;
+    const dx = tx - playerPos.x, dy = ty - playerPos.y, dz = tz - playerPos.z;
+    yaw = Math.atan2(-dx, -dz); pitch = Math.asin(dy / Math.hypot(dx, dy, dz));
+    placeBlock();
+    return { gone: getBlock(bx, by, bz) === null, id: hotbar[0] && hotbar[0].id,
+             achv: achvUnlocked.has('bucket'), n: achvUnlocked.size };
+  })()`);
+  check('铁桶舀水 + 成就「桶装玩意」', bucket.gone && bucket.id === 'water_bucket' && bucket.achv && bucket.n === 17, JSON.stringify(bucket));
+
   // ---- 12. 繁殖(两只求爱猪 → 幼崽;跟随玩家当前位置生成)----
   const breed = await evl(`(() => {
     clearMobs();

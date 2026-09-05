@@ -65,6 +65,8 @@
     { name: '剪刀', pattern: ['iron_ingot', null, null, 'iron_ingot'], result: { kind: 'tool', id: 'shears' }, count: 1, shapeless: false },
     // 黏液块:4 黏液球(经典配方,R35;落地弹跳)
     { name: '黏液块', pattern: ['slime_ball', 'slime_ball', 'slime_ball', 'slime_ball'], result: { kind: 'block', id: 'slime' }, count: 1, shapeless: true },
+    // 铁桶:3 铁锭 V 形(经典配方,R36;舀水/放水)
+    { name: '铁桶', pattern: ['iron_ingot', null, 'iron_ingot', null, 'iron_ingot', null, null, null, null], result: { kind: 'item', id: 'bucket' }, count: 1, shapeless: false },
     // 铁轨:6 铁锭 + 1 木棍(经典配方 → 16 节)
     { name: '铁轨', pattern: ['iron_ingot', 'iron_ingot', 'iron_ingot', 'iron_ingot', 'stick', 'iron_ingot', null, null, null], result: { kind: 'block', id: 'rail' }, count: 16, shapeless: false },
     // 矿车:5 铁锭 U 形(经典配方 → 1 辆)

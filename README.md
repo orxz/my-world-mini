@@ -479,10 +479,11 @@ npm run serve    # 启动本地静态服务器 http://localhost:8843/
   `craft.js`(配方匹配/破坏耗时)与 `inventory.js`(拾取堆叠/饥饿状态机)的纯函数
 - **浏览器冒烟测试(可选)**:`test/smoke.cdp.mjs` 通过 CDP 驱动 headless Chrome 做 24 项端到端断言
   (触屏物理/门持久化/树木标脏/存档往返等),用法见文件头注释
-- **实机套件(R33-R44)**:`test/rXX-*.cdp.mjs` 共 12 套 CDP 实机验证(村民/成就/史莱姆/
-  铁桶/地牢/红石/铁傀儡/蛋糕/建筑/活塞/打磨/端到端旅程);旧套件按「每 Chrome 启动跑一套」
-  设计,同实例连跑前先 `node test/reload.cdp.mjs` 重载新世界;`r44-journey.cdp.mjs` 自带导航
-  可直接连跑(13 项:砍树→合成链→冶炼→床→红石→交易→舀水)
+- **实机套件(R33-R45)**:`test/rXX-*.cdp.mjs` 共 13 套 CDP 实机验证(村民/成就/史莱姆/
+  铁桶/地牢/红石/铁傀儡/蛋糕/建筑/活塞/打磨/端到端旅程/生存数值);旧套件按「每 Chrome
+  启动跑一套」设计,同实例连跑前先 `node test/reload.cdp.mjs` 重载新世界;`r44-journey.cdp.mjs`
+  自带导航可直接连跑(13 项:砍树→合成链→冶炼→床→红石→交易→舀水);`r45-survival.cdp.mjs`
+  为生存数值验收(19 项:挨饿全程/回血食物经济/夜间刷怪压迫/拂晓燃烧/近战数值)
 - **Lint**:`eslint.config.mjs`(flat config);`game.js`/`worldgen.js`/`craft.js` 是经典 script(非 ES module)
 - **CI**:GitHub Actions 在 push/PR 自动跑 `npm test` + `npm run lint` + 浏览器冒烟测试(headless Chrome,24 项)
 - 详细代码组织、数据流、扩展点见 **[docs/architecture.md](./docs/architecture.md)**
@@ -502,7 +503,7 @@ myword/
 ├── doors.js            门实体渲染层(容器/网格/查询)
 ├── three.min.js        Three.js r160(已内置,离线可玩)
 ├── test/unit.test.js   Node 单元测试(确定性函数验证,141 项)
-├── test/*.cdp.mjs      CDP 实机套件(smoke + r33-r44 共 13 套)+ reload.cdp.mjs 回归助手
+├── test/*.cdp.mjs      CDP 实机套件(smoke + r33-r45 共 14 套)+ reload.cdp.mjs 回归助手
 ├── docs/               架构与模块文档(architecture.md / worldgen.md / review-rounds.md)
 ├── eslint.config.mjs   ESLint 9 flat config(仅开发期)
 ├── package.json        npm scripts(test / serve / lint)

@@ -8219,7 +8219,11 @@ function craftGiveResult(r) {
   const res = { ...r.result };
   if (res.kind === 'tool' && !res.durability) res.durability = TOOL_TYPES[res.id].durability;
   if (!res.count) res.count = r.count || 1;
-  putInSlot(currentSlot, res);
+  // R44 可玩性修复:结果并入快捷栏(同 id 叠加/入空格),不再盲覆写当前格 ——
+  // 此前连续合成会销毁当前格残留物品(合成木板后,剩余木板被木棍结果覆盖丢失);
+  // 满栏时余量掉在脚下(经典行为,不再静默消失)
+  const got = pickupIntoInventory(res.kind, res.id, res.count, res.durability);
+  if (got < res.count) spawnDroppedItem(playerPos.x - 0.5, playerPos.y - 0.2, playerPos.z - 0.5, res.id, res.count - got, res.kind, res.durability);
   showToast('合成:' + r.name + ' ×' + res.count);
   audio.play('place');
   const ca = CRAFT_ACHV[res.id];   // 成就:合成里程碑(R34,2×2 与合成台共用此路径)

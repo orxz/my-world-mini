@@ -2452,6 +2452,8 @@ function clearWorld() {
   endFishing();          // 收鱼线(R29)
   closeEnchantPanel();   // 关附魔面板(R28)
   closeTradePanel();     // 关交易面板(R33)
+  achvUnlocked.clear();  // 成就随存档走,重置世界清空(R34)
+  updateAchvBtn();
   spawnPoint = null;     // 重生点回出生广场(读档会按存档恢复)
   tableOpen = false;
   for (let i = 0; i < 9; i++) tableGrid[i] = null;
@@ -3025,6 +3027,22 @@ function setupInput() {
   // 暂停菜单:音效快捷开关 + 设置面板入口
   const btnSettings = document.getElementById('btn-settings');
   if (btnSettings) btnSettings.addEventListener('click', openSettingsPanel);
+  // 成就面板入口(R34)
+  const btnAchv = document.getElementById('btn-achv');
+  if (btnAchv) btnAchv.addEventListener('click', () => {
+    document.getElementById('pause-menu').classList.add('hidden');
+    openAchvPanel();
+  });
+  const achvClose = document.getElementById('achv-close');
+  if (achvClose) achvClose.addEventListener('click', () => {
+    closeAchvPanel();
+    document.getElementById('pause-menu').classList.remove('hidden');
+  });
+  const achvPanelEl = document.getElementById('achv-panel');
+  if (achvPanelEl) achvPanelEl.addEventListener('click', (e) => {
+    if (e.target === achvPanelEl) { closeAchvPanel(); document.getElementById('pause-menu').classList.remove('hidden'); }
+  });
+  updateAchvBtn();   // 初始计数 0/16
   const btnEmpty = document.getElementById('btn-empty-hand');
   if (btnEmpty) btnEmpty.addEventListener('click', () => {
     hotbar[currentSlot] = null; buildHotbar(); updateHoldItem(); markDirtySave(); showToast('已清空当前手持(空手)');
@@ -3940,6 +3958,8 @@ function pickupIntoInventory(kind, id, count, durability) {
   });
   if (absorbed > 0) {
     tutEvent('pickup', absorbed);
+    const pa = PICKUP_ACHV[id];   // 成就:材料里程碑(R34)
+    if (pa) unlockAchv(pa);
     for (let i = 0; i < HOTBAR_SIZE; i++) {
       const it = hotbar[i];
       const now = it ? (it.kind + ':' + it.id + ':' + (it.count || 0) + ':' + (it.durability || 0)) : null;
@@ -4823,6 +4843,7 @@ function mountCart(c) {
     if (nd) { c.dx = nd[0]; c.dz = nd[1]; }
   }
   showToast('乘坐矿车(空格下车)');
+  unlockAchv('ride_cart');   // 成就:矿工之旅(R34)
 }
 
 function dismountCart() {
@@ -5009,6 +5030,7 @@ function renderEnchantPanel() {
       markDirtySave();
       audio.play('place');
       showToast('✨ 附魔成功:' + MACHINES.ENCHANT_NAMES[o.type] + ' ' + 'I'.repeat(o.level));
+      unlockAchv('enchant');   // 成就:附魔师(R34)
       currentEnchantOptions = MACHINES.rollEnchants(TOOL_TYPES[item2.id].tool, Math.random);
       renderEnchantPanel();
     };
@@ -5046,6 +5068,7 @@ function catchFish(f) {
   spawnDroppedItem(f.x - 0.5, f.y - 0.6, f.z - 0.5, drop[0], 1, 'item');
   showToast('🐟 ' + drop[1]);
   audio.play('place');
+  unlockAchv('fish');   // 成就:渔夫(R34)
   if (f.rodItem) consumeToolDurability(f.rodItem);
   markDirtySave();
 }
@@ -5169,6 +5192,7 @@ function updateMobs(dt) {
             spawnParticles(baby.mesh.position.x, baby.mesh.position.y, baby.mesh.position.z, 0xff5a8a, 10);
             showToast('💗 ' + (MOB_CN[m.type] || m.type) + '宝宝诞生了!');
             audio.play('place');
+            unlockAchv('breed');   // 成就:牧场主(R34)
             break;
           }
         }
@@ -5305,6 +5329,8 @@ function hurtMob(m, dmg, kx, kz, silent) {
     else if (m.type === 'enderman' && Math.random() < 0.6) dropAt('ender_pearl', 'item', 1);
     // 经验球(R28):敌对 5(末影人 10)/被动 1-3
     spawnXPOrbs(p.x, p.y, p.z, MOB_DEFS[m.type].hostile ? (m.type === 'enderman' ? 10 : 5) : 1 + (Math.random() * 3 | 0));
+    if (m.type === 'zombie') unlockAchv('kill_zombie');       // 成就:怪物猎人(R34)
+    else if (m.type === 'creeper') unlockAchv('kill_creeper'); // 成就:拆弹专家
     killMob(m);
     showToast(m.type === 'zombie' ? '🧟 击倒了僵尸' : m.type === 'creeper' ? '💥 击倒了苦力怕' : m.type === 'skeleton' ? '💀 击倒了骷髅' : m.type === 'spider' ? '🕷 击倒了蜘蛛' : m.type === 'enderman' ? '🟣 击倒了末影人' : m.type === 'villager' ? '🧑‍🌾 村民倒下了…(他什么也没掉落)' : m.type === 'cow' ? '🐮 击倒了牛' : m.type === 'sheep' ? '🐑 击倒了羊' : '🐷 击倒了猪');
   }
@@ -5567,6 +5593,7 @@ function trySleep(x, y, z) {
   hungerState.hunger = Math.min(20, hungerState.hunger + 2); updateHungerBar();
   showToast('😴 睡了个好觉,重生点已设在此床');
   audio.play('place');
+  unlockAchv('sleep');   // 成就:甜美的梦(R34)
   markDirtySave();
 }
 
@@ -5717,6 +5744,106 @@ function doTrade(tr) {
   showToast('🤝 换得 ' + ITEM_TYPES[tr.get.id].name + ' ×' + tr.get.n);
   audio.play('place');
   markDirtySave();
+  unlockAchv('trade');   // 成就:交易大师(R34)
+}
+
+// ============================================================
+// 成就/进度系统(R34):经典里程碑链 + 金色 toast + 暂停菜单面板
+// 定义与解锁判定在 machines.js 纯函数层(单测覆盖);
+// 埋点:拾取(本函数包装层)/合成(craftGiveResult)/击杀(hurtMob)/
+// 钓鱼(catchFish)/繁殖(updateMobs)/睡觉(trySleep)/矿车(mountCart)/
+// 附魔(附魔台成交)/交易(doTrade)/发现村庄(animate 节流探测)
+// ============================================================
+const achvUnlocked = new Set();
+let achvVillageT = 0;   // 村庄邻近探测节流(秒)
+
+// 拾取类里程碑(掉落拾起/熔炉收取/箱子取回/交易收入全走 pickupIntoInventory)
+const PICKUP_ACHV = { wood: 'get_wood', cobblestone: 'stone_age', iron_ingot: 'iron_age', gem_diamond: 'diamonds' };
+// 合成类里程碑(2×2 与合成台共用 craftGiveResult)
+const CRAFT_ACHV = { crafting_table: 'workbench', furnace: 'furnace', bread: 'bake_bread' };
+
+function unlockAchv(id) {
+  const a = MACHINES.awardAchievement(achvUnlocked, id);
+  if (!a) return;
+  achvUnlocked.add(id);
+  showAchvToast(a);
+  audio.play('place');
+  markDirtySave();
+  updateAchvBtn();
+}
+
+function updateAchvBtn() {
+  const btn = document.getElementById('btn-achv');
+  if (btn) btn.textContent = '🏆 成就 (' + achvUnlocked.size + '/' + MACHINES.ACHIEVEMENTS.length + ')';
+}
+
+function showAchvToast(a) {
+  const wrap = document.getElementById('achv-toasts');
+  if (!wrap) return;
+  const t = document.createElement('div');
+  t.className = 'achv-toast';
+  const icon = document.createElement('span');
+  icon.className = 'achv-icon';
+  icon.textContent = a.icon;
+  const text = document.createElement('span');
+  text.className = 'achv-text';
+  const sub = document.createElement('b');
+  sub.textContent = '进度已达成!';
+  text.appendChild(sub);
+  text.appendChild(document.createTextNode(a.name));
+  t.appendChild(icon); t.appendChild(text);
+  wrap.appendChild(t);
+  setTimeout(() => t.classList.add('out'), 3600);
+  setTimeout(() => t.remove(), 4300);
+}
+
+// 发现村庄(玩家 24 格内有小屋;每 1 秒探测一次,村格哈希早退开销极小)
+function checkVillageAchv() {
+  if (achvUnlocked.has('find_village')) return;
+  const c0x = Math.floor(playerPos.x / 48), c0z = Math.floor(playerPos.z / 48);
+  for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
+    const hut = villageInCell(c0x + dx, c0z + dz, worldSeed);
+    if (hut && Math.hypot(hut.cx - playerPos.x, hut.cz - playerPos.z) < 24) {
+      unlockAchv('find_village');
+      return;
+    }
+  }
+}
+
+// 成就面板(暂停菜单入口):全清单 + 解锁态 + 计数
+function openAchvPanel() {
+  const panel = document.getElementById('achv-panel');
+  if (!panel) return;
+  panel.classList.remove('hidden');
+  const list = document.getElementById('achv-list');
+  if (list && list.children.length === 0) {
+    for (const a of MACHINES.ACHIEVEMENTS) {
+      const row = document.createElement('div');
+      row.className = 'achv-row';
+      const icon = document.createElement('span');
+      icon.className = 'achv-row-icon';
+      const text = document.createElement('span');
+      text.className = 'achv-row-text';
+      const name = document.createElement('b');
+      name.textContent = a.name;
+      text.appendChild(name);
+      text.appendChild(document.createTextNode(a.desc));
+      row.appendChild(icon); row.appendChild(text);
+      list.appendChild(row);
+    }
+  }
+  document.querySelectorAll('#achv-list .achv-row').forEach((row, i) => {
+    const a = MACHINES.ACHIEVEMENTS[i];
+    row.classList.toggle('done', achvUnlocked.has(a.id));
+    row.querySelector('.achv-row-icon').textContent = achvUnlocked.has(a.id) ? a.icon : '🔒';
+  });
+  const cnt = document.getElementById('achv-count');
+  if (cnt) cnt.textContent = achvUnlocked.size + ' / ' + MACHINES.ACHIEVEMENTS.length;
+}
+
+function closeAchvPanel() {
+  const panel = document.getElementById('achv-panel');
+  if (panel) panel.classList.add('hidden');
 }
 
 // ============================================================
@@ -6351,6 +6478,8 @@ function animate() {
   if (locked) updateFishing(dt);                   // 钓鱼浮标(R29)
   updateWeather(dt);                               // 天气(晴雨随机调度,暂停也推进)
   updateFurnaces(dt);                              // 熔炉冶炼(经典:暂停也持续燃烧)
+  achvVillageT -= dt;                              // 成就:发现村庄节流探测(R34)
+  if (achvVillageT <= 0) { achvVillageT = 1; checkVillageAchv(); }
   if (locked) updateDroppedItems(dt);              // 掉落物(暂停时冻结;每帧仅一次)
   if (locked && settings.mobs) updateMobs(dt);     // 生物(暂停时冻结)
   if (locked) updateArrows(dt);                    // 箭矢(暂停时冻结,避免面板开着被骷髅射中)
@@ -6618,6 +6747,12 @@ function applySave(rec) {
     xpState.points = Math.max(0, Math.floor(rec.xpData.points));
   } else { xpState.level = 0; xpState.points = 0; }
   updateXPBar();
+  // 恢复成就(R34;脏 id 直接忽略,旧档无此字段 = 空集)
+  achvUnlocked.clear();
+  if (Array.isArray(rec.achvData)) {
+    for (const id of rec.achvData) if (MACHINES.ACHV_BY_ID[id]) achvUnlocked.add(id);
+  }
+  updateAchvBtn();
   // 恢复矿车(R26;位置取整到所在铁轨格)
   clearMinecarts();
   if (rec.minecartsData) {
@@ -6936,6 +7071,8 @@ function craftGiveResult(r) {
   putInSlot(currentSlot, res);
   showToast('合成:' + r.name + ' ×' + res.count);
   audio.play('place');
+  const ca = CRAFT_ACHV[res.id];   // 成就:合成里程碑(R34,2×2 与合成台共用此路径)
+  if (ca) unlockAchv(ca);
 }
 
 function clearCraftGrid() {
@@ -7248,6 +7385,7 @@ function buildSaveRecord() {
     minecartsData: minecarts.map(c => ({ x: c.cx, y: Math.round(c.y), z: c.cz })),
     mobsData: mobs.map(mm => ({ t: mm.type, x: Math.round(mm.mesh.position.x * 100) / 100, y: Math.round(mm.mesh.position.y * 100) / 100, z: Math.round(mm.mesh.position.z * 100) / 100, hp: mm.hp, baby: !!mm.baby })),
     xpData: { level: xpState.level, points: xpState.points },
+    achvData: Array.from(achvUnlocked),   // 成就解锁清单(R34)
     doorsData: Array.from(doors.entries()).map(function(e){return [e[0], {x:e[1].x,y:e[1].y,z:e[1].z,type:e[1].type,open:e[1].open,facing:e[1].facing}];}),
     timestamp: Date.now(),
   };

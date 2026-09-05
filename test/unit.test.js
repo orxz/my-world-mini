@@ -15,7 +15,7 @@ const { hash2, hash3, valueNoise2D, valueNoise3D, fbm2D, BIOMES, biomeAt, height
 const { RECIPES, matchRecipe, matchRecipeGrid, breakCost } = require('../craft.js');
 
 // ---- 从 machines.js 模块加载(状态机纯函数:教程/熔炉/天气/存档 schema,R25) ----
-const { TUTORIAL_STEPS, advanceTutorial, furnaceCanSmelt, furnaceTick, weatherNext, cartNextDir, xpToNext, xpGain, rollEnchants, SAVE_SCHEMA_FIELDS, validateSaveRecord } = require('../machines.js');
+const { TUTORIAL_STEPS, advanceTutorial, furnaceCanSmelt, furnaceTick, weatherNext, cartNextDir, xpToNext, xpGain, rollEnchants, ACHIEVEMENTS, ACHV_BY_ID, awardAchievement, SAVE_SCHEMA_FIELDS, validateSaveRecord } = require('../machines.js');
 
 // ---- 从 inventory.js 模块加载(库存/掉落/饥饿/护甲纯函数) ----
 const { STACK_MAX, FOODS, ARMOR_MAX_POINTS, armorReduce, pickupIntoInventory, normalizeHotbar, hungerTick, VILLAGER_TRADES, countInHotbar, consumeFromHotbar, canTrade } = require('../inventory.js');
@@ -656,7 +656,32 @@ test('validateSaveRecord 检出缺失字段(防 R16 类漂移)', () => {
   assert.ok(miss.includes('dayTime'));
   assert.ok(miss.includes('furnacesData'));
   assert.ok(miss.includes('mobsData'));
+  assert.ok(miss.includes('achvData'));   // R34:成就字段纳入 schema
   assert.ok(miss.includes('plazaBuilt'));
+});
+
+// ===== 成就/进度系统(R34) =====
+console.log('\n=== 成就系统(awardAchievement) ===');
+test('ACHIEVEMENTS 清单:id 唯一且字段完整(图标/名称/描述)', () => {
+  const ids = new Set();
+  for (const a of ACHIEVEMENTS) {
+    assert.ok(a.id && !ids.has(a.id), 'id 唯一: ' + a.id);
+    ids.add(a.id);
+    assert.ok(a.icon && a.name && a.desc, '字段完整: ' + a.id);
+  }
+  assert.ok(ACHIEVEMENTS.length >= 12, '覆盖主要里程碑');
+  assert.strictEqual(ids.size, Object.keys(ACHV_BY_ID).length);   // 索引表同步
+});
+test('awardAchievement 首次解锁返回成就对象 / 已解锁返回 null(不重复播报)', () => {
+  const s = new Set();
+  const first = awardAchievement(s, 'get_wood');
+  assert.ok(first && first.name === '获得木头');
+  s.add(first.id);   // 游戏层负责入集(awardAchievement 本身纯函数不变异)
+  assert.strictEqual(awardAchievement(s, 'get_wood'), null);   // 幂等
+});
+test('awardAchievement 未知 id 返回 null(脏存档防御)', () => {
+  assert.strictEqual(awardAchievement(new Set(), 'nope'), null);
+  assert.strictEqual(awardAchievement(new Set(), ''), null);
 });
 
 // ===== 矿车与铁轨(R26) =====

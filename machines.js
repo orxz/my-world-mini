@@ -153,12 +153,42 @@
     return opts;
   }
 
+  // ---- 成就/进度系统(R34):经典里程碑链(顺序即典型进度线) ----
+  // 触发埋点在 game.js(拾取/合成/击杀/钓鱼/繁殖/睡觉/矿车/附魔/交易/发现村庄)
+  const ACHIEVEMENTS = [
+    { id: 'get_wood',   icon: '🪵', name: '获得木头',     desc: '拾取一段原木' },
+    { id: 'workbench',  icon: '🛠️', name: '工作台',       desc: '合成一张合成台' },
+    { id: 'stone_age',  icon: '⛏️', name: '石器时代',     desc: '拾取一块圆石' },
+    { id: 'furnace',    icon: '🔥', name: '热熔炉',       desc: '合成一台熔炉' },
+    { id: 'iron_age',   icon: '🔩', name: '铁器时代',     desc: '获得一枚铁锭' },
+    { id: 'diamonds',   icon: '💎', name: '钻石!',        desc: '获得一颗钻石' },
+    { id: 'kill_zombie',icon: '⚔️', name: '怪物猎人',     desc: '击杀一只僵尸' },
+    { id: 'kill_creeper',icon: '💥', name: '拆弹专家',    desc: '击杀一只苦力怕' },
+    { id: 'bake_bread', icon: '🍞', name: '烤面包',       desc: '合成一个面包' },
+    { id: 'fish',       icon: '🎣', name: '渔夫',         desc: '钓上一条鱼' },
+    { id: 'breed',      icon: '💗', name: '牧场主',       desc: '繁殖出一只幼崽' },
+    { id: 'sleep',      icon: '🛏️', name: '甜美的梦',    desc: '在床上睡到天亮' },
+    { id: 'ride_cart',  icon: '🛒', name: '矿工之旅',     desc: '乘坐一次矿车' },
+    { id: 'enchant',    icon: '✨', name: '附魔师',       desc: '附魔一件装备' },
+    { id: 'trade',      icon: '🤝', name: '交易大师',     desc: '与村民完成一次交易' },
+    { id: 'find_village',icon: '🏘️', name: '发现村庄',    desc: '找到一座村庄小屋' },
+  ];
+  const ACHV_BY_ID = {};
+  for (const a of ACHIEVEMENTS) ACHV_BY_ID[a.id] = a;
+  // 纯判定:未解锁且 id 合法 → 返回该成就对象(游戏层负责入集与播报);否则 null
+  function awardAchievement(unlocked, id) {
+    const a = ACHV_BY_ID[id];
+    if (!a || unlocked.has(id)) return null;
+    return a;
+  }
+
   // ---- 存档 schema(R16 Critical 防漂移:字段清单单一来源) ----
   const SAVE_SCHEMA_FIELDS = [
     'seed', 'dayTime', 'playerPos', 'yaw', 'pitch', 'cameraMode', 'isFlying',
     'playerHP', 'playerHunger', 'hotbar', 'currentSlot', 'modifications',
     'cropTimersData', 'furnacesData', 'chestsData', 'spawnPoint',
-    'armorSlotsData', 'doorsData', 'minecartsData', 'mobsData', 'xpData', 'plazaBuilt', 'timestamp',
+    'armorSlotsData', 'doorsData', 'minecartsData', 'mobsData', 'xpData',
+    'achvData', 'plazaBuilt', 'timestamp',
   ];
   // 返回缺失字段名数组(空数组 = 完整)
   function validateSaveRecord(rec) {
@@ -167,13 +197,13 @@
 
   // 导出(Node 环境)
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { TUTORIAL_STEPS, advanceTutorial, COOK_TIME, SMELT, FUELS, furnaceCanSmelt, furnaceTick, weatherNext, cartNextDir, xpToNext, xpGain, ENCHANT_NAMES, ENCHANT_POOL, rollEnchants, SAVE_SCHEMA_FIELDS, validateSaveRecord };
+    module.exports = { TUTORIAL_STEPS, advanceTutorial, COOK_TIME, SMELT, FUELS, furnaceCanSmelt, furnaceTick, weatherNext, cartNextDir, xpToNext, xpGain, ENCHANT_NAMES, ENCHANT_POOL, rollEnchants, ACHIEVEMENTS, ACHV_BY_ID, awardAchievement, SAVE_SCHEMA_FIELDS, validateSaveRecord };
   }
   // 浏览器:挂到全局
   global.MACHINES = {
     TUTORIAL_STEPS, advanceTutorial, COOK_TIME, SMELT, FUELS, furnaceCanSmelt, furnaceTick,
     weatherNext, cartNextDir, xpToNext, xpGain, ENCHANT_NAMES, ENCHANT_POOL, rollEnchants,
-    SAVE_SCHEMA_FIELDS, validateSaveRecord,
+    ACHIEVEMENTS, ACHV_BY_ID, awardAchievement, SAVE_SCHEMA_FIELDS, validateSaveRecord,
   };
 
 })(typeof window !== 'undefined' ? window : globalThis);

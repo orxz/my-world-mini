@@ -23,7 +23,7 @@
 └───────────────┬─────────────────────────────────────────┘
                 │ <script src> 直引 + onclick 回调
 ┌───────────────▼─────────────────────────────────────────┐
-│  game.js  ── 游戏引擎(20 个模块,~7400 行)             │  引擎层
+│  game.js  ── 游戏引擎(20 个模块,~7500 行)             │  引擎层
 │   渲染 / 物理 / 输入 / 物品 / 视角 / 存档 / 音效 / UI   │
 └───────────────┬─────────────────────────────────────────┘
                 │ 函数调用(hash2/fbm2D/biomeAt/heightAt + CRAFTLIB)
@@ -32,12 +32,12 @@
 │   worldgen:  哈希 / 值噪声 / fbm / 群系 / 高度 / 洞穴 / 村庄小屋 │
 │   craft:     RECIPES / matchRecipe / breakCost                  │
 │   inventory: 拾取堆叠 / 饥饿 / 护甲减伤 / 村民交易表              │
-│   machines:  教程 / 熔炉 / 天气 / 矿车寻路 / 经验 / 附魔 / 存档schema │
+│   machines:  教程 / 熔炉 / 天气 / 矿车寻路 / 经验 / 附魔 / 成就 / 存档schema │
 │   ← 均可单测                                                    │
 └─────────────────────────────────────────────────────────────────┘
                 ▲
 ┌───────────────┴─────────────────────────────────────────┐
-│  test/unit.test.js  ── Node 单元测试(121 项)          │  测试
+│  test/unit.test.js  ── Node 单元测试(124 项)          │  测试
 │    require(worldgen + craft + inventory + machines)    │
 │  test/unit.test.js  ── Node 单元测试(46 项)           │  测试
 │    require('../worldgen.js') + require('../craft.js')   │
@@ -99,6 +99,11 @@ three.min.js  ── Three.js r160(第三方渲染库,内置,离线)
 > 皮革换绿宝石、绿宝石买面包/箭/熟猪排;交易表与 `countInHotbar`/
 > `consumeFromHotbar`/`canTrade` 在 inventory.js 纯函数层;支付不足行置灰,
 > 满栏产物掉落脚边)、
+> **成就系统**(`unlockAchv`/`showAchvToast`/`openAchvPanel`:16 条经典里程碑,
+> 埋点 = 拾取(pickupIntoInventory 包装层)/合成(craftGiveResult)/击杀(hurtMob)/
+> 钓鱼/睡觉/矿车/附魔/交易/繁殖/发现村庄(animate 每秒节流探测);
+> 金色 toast 右上滑入,暂停菜单面板全清单;ACHIEVEMENTS/awardAchievement 在
+> machines.js 纯函数层;achvData 随存档,脏 id 忽略)、
 > **沙砾重力**(`updateFallingBlocks`/`startFallingBlock`,setBlock 写入支撑检查队列,
 > 失去支撑化为下落实体,落地还原为方块)、
 > **破坏裂纹覆盖层**(`createCrackOverlay`,4 阶段程序化裂纹纹理,随破坏进度切换)。
@@ -170,7 +175,7 @@ raycastTarget():
   applySave 对旧档缺失字段 console.warn(防 R16 类字段漂移)
 - **只存种子 + 玩家改动 diff**(非全量方块;出生广场 5.2 万条已知 diff 不落盘,
   读档先重建广场再覆盖用户 diff)→ 新档约 1KB
-- 读档:恢复 seed + modifications + 玩家/生物/矿车/熔炉/箱子/经验状态 →
+- 读档:恢复 seed + modifications + 玩家/生物/矿车/熔炉/箱子/经验/成就状态 →
   `clearWorld` → 重新生成中心区块(自动应用 diff)
 存档记录 = { version, id, name, seed, playerPos, yaw, pitch, cameraMode, isFlying,
              playerHP, dayTime, hotbar, currentSlot,

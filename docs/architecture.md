@@ -23,7 +23,7 @@
 └───────────────┬─────────────────────────────────────────┘
                 │ <script src> 直引 + onclick 回调
 ┌───────────────▼─────────────────────────────────────────┐
-│  game.js  ── 游戏引擎(20 个模块,~8250 行)             │  引擎层
+│  game.js  ── 游戏引擎(20 个模块,~8400 行)             │  引擎层
 │   渲染 / 物理 / 输入 / 物品 / 视角 / 存档 / 音效 / UI   │
 └───────────────┬─────────────────────────────────────────┘
                 │ 函数调用(hash2/fbm2D/biomeAt/heightAt + CRAFTLIB)
@@ -37,7 +37,7 @@
 └─────────────────────────────────────────────────────────────────┘
                 ▲
 ┌───────────────┴─────────────────────────────────────────┐
-│  test/unit.test.js  ── Node 单元测试(138 项)          │  测试
+│  test/unit.test.js  ── Node 单元测试(139 项)          │  测试
 │    require(worldgen + craft + inventory + machines)    │
 │  test/unit.test.js  ── Node 单元测试(46 项)           │  测试
 │    require('../worldgen.js') + require('../craft.js')   │
@@ -113,7 +113,7 @@ three.min.js  ── Three.js r160(第三方渲染库,内置,离线)
 > 每 0.25s BFS 重算驱动铁门自动开闭(手动拒绝);传播算法 machines
 > `redstonePower` 纯函数;登记表 redstoneParts 随 setBlock/diff 桶实时
 > 维护,读档自动重建;拉杆右键切换、元件视线采样一击拆、支撑破坏弹出,R38)、
-> **成就系统**(`unlockAchv`/`showAchvToast`/`openAchvPanel`:21 条经典里程碑,
+> **成就系统**(`unlockAchv`/`showAchvToast`/`openAchvPanel`:22 条经典里程碑,
 > 埋点 = 拾取(pickupIntoInventory 包装层)/合成(craftGiveResult)/击杀(hurtMob)/
 > 钓鱼/睡觉/矿车/附魔/交易/繁殖/发现村庄(animate 每秒节流探测);
 > 金色 toast 右上滑入,暂停菜单面板全清单;ACHIEVEMENTS/awardAchievement 在

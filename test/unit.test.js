@@ -15,7 +15,7 @@ const { hash2, hash3, valueNoise2D, valueNoise3D, fbm2D, BIOMES, biomeAt, height
 const { RECIPES, matchRecipe, matchRecipeGrid, breakCost } = require('../craft.js');
 
 // ---- 从 machines.js 模块加载(状态机纯函数:教程/熔炉/天气/存档 schema,R25) ----
-const { TUTORIAL_STEPS, advanceTutorial, furnaceCanSmelt, furnaceTick, weatherNext, cartNextDir, xpToNext, xpGain, rollEnchants, ACHIEVEMENTS, ACHV_BY_ID, awardAchievement, redstonePower, SAVE_SCHEMA_FIELDS, validateSaveRecord } = require('../machines.js');
+const { TUTORIAL_STEPS, advanceTutorial, SMELT, furnaceCanSmelt, furnaceTick, weatherNext, cartNextDir, xpToNext, xpGain, rollEnchants, ACHIEVEMENTS, ACHV_BY_ID, awardAchievement, redstonePower, SAVE_SCHEMA_FIELDS, validateSaveRecord } = require('../machines.js');
 
 // ---- 从 inventory.js 模块加载(库存/掉落/饥饿/护甲纯函数) ----
 const { STACK_MAX, FOODS, ARMOR_MAX_POINTS, armorReduce, pickupIntoInventory, normalizeHotbar, hungerTick, VILLAGER_TRADES, countInHotbar, consumeFromHotbar, canTrade, DUNGEON_LOOT_TABLE, rollDungeonLoot } = require('../inventory.js');
@@ -926,6 +926,15 @@ test('铁块配方:9 铁锭压缩 / 1 块分解 9 锭(R39)', () => {
   assert.ok(nine && nine.result.id === 'iron_block' && nine.result.kind === 'block', '9 锭 → 铁块');
   const back = matchRecipeGrid([null, { kind: 'block', id: 'iron_block' }, null, null], 2, RECIPES);
   assert.ok(back && back.result.id === 'iron_ingot' && back.count === 9, '铁块 → 9 锭');
+});
+test('糖/蛋糕配方 + 生鸡肉冶炼(R40)', () => {
+  const sugar = matchRecipeGrid([{ kind: 'block', id: 'sugarcane' }, null, null, null], 2, RECIPES);
+  assert.ok(sugar && sugar.result.id === 'sugar' && sugar.result.kind === 'item', '1 甘蔗 → 糖');
+  const cakeGrid = ['sugar', 'sugar', 'egg', 'wheat', 'wheat', 'wheat', null, null, null]
+    .map(x => x === null ? null : { kind: x === 'wheat' || x === 'sugar' || x === 'egg' ? 'item' : 'block', id: x });
+  const cake = matchRecipeGrid(cakeGrid, 3, RECIPES);
+  assert.ok(cake && cake.result.id === 'cake' && cake.result.kind === 'block', '2糖+1蛋+3麦 → 蛋糕');
+  assert.strictEqual(SMELT.raw_chicken.id, 'cooked_chicken');   // 生鸡肉冶炼 → 烤鸡肉
 });
 
 console.log('\n=== 总结 ===');

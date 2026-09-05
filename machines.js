@@ -47,6 +47,7 @@
     porkchop: { kind: 'item', id: 'cooked_porkchop' },
     beef: { kind: 'item', id: 'steak' },
     raw_fish: { kind: 'item', id: 'cooked_fish' },
+    raw_chicken: { kind: 'item', id: 'cooked_chicken' },   // R40
   };
   const FUELS = { coal: 8, wood: 1.5, planks: 1.5, stick: 0.5 };   // 单位:可产能物个数
 
@@ -177,6 +178,7 @@
     { id: 'dungeon_loot',icon: '🗝️', name: '宝箱猎人',     desc: '打开一个地牢战利品箱' },
     { id: 'redstone',   icon: '⚡', name: '电路初成',     desc: '放置一支红石火把' },
     { id: 'golem',      icon: '🤖', name: '铁壁守护',     desc: '用铁块召唤一只铁傀儡' },
+    { id: 'cake',       icon: '🍰', name: '蛋糕时刻',     desc: '吃一片蛋糕' },
   ];
   const ACHV_BY_ID = {};
   for (const a of ACHIEVEMENTS) ACHV_BY_ID[a.id] = a;
@@ -221,7 +223,7 @@
     'playerHP', 'playerHunger', 'hotbar', 'currentSlot', 'modifications',
     'cropTimersData', 'furnacesData', 'chestsData', 'spawnPoint',
     'armorSlotsData', 'doorsData', 'minecartsData', 'mobsData', 'xpData',
-    'achvData', 'plazaBuilt', 'timestamp',
+    'achvData', 'cakesData', 'plazaBuilt', 'timestamp',
   ];
   // 返回缺失字段名数组(空数组 = 完整)
   function validateSaveRecord(rec) {

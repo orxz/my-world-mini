@@ -77,6 +77,10 @@
     { name: '铁块', pattern: ['iron_ingot', 'iron_ingot', 'iron_ingot', 'iron_ingot', 'iron_ingot', 'iron_ingot', 'iron_ingot', 'iron_ingot', 'iron_ingot'], result: { kind: 'block', id: 'iron_block' }, count: 1, shapeless: false },
     // 铁块分解:1 块 → 9 铁锭(经典,R39)
     { name: '铁锭(分解)', pattern: ['iron_block', null, null, null], result: { kind: 'item', id: 'iron_ingot' }, count: 9, shapeless: true },
+    // 糖:1 甘蔗(R40)
+    { name: '糖', pattern: ['sugarcane', null, null, null], result: { kind: 'item', id: 'sugar' }, count: 1, shapeless: true },
+    // 蛋糕:2 糖 + 1 蛋 + 3 小麦(经典配方简化:无奶链,R40)
+    { name: '蛋糕', pattern: ['sugar', 'sugar', 'egg', 'wheat', 'wheat', 'wheat', null, null, null], result: { kind: 'block', id: 'cake' }, count: 1, shapeless: true },
     // 铁轨:6 铁锭 + 1 木棍(经典配方 → 16 节)
     { name: '铁轨', pattern: ['iron_ingot', 'iron_ingot', 'iron_ingot', 'iron_ingot', 'stick', 'iron_ingot', null, null, null], result: { kind: 'block', id: 'rail' }, count: 16, shapeless: false },
     // 矿车:5 铁锭 U 形(经典配方 → 1 辆)

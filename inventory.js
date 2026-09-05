@@ -8,7 +8,7 @@
 
   const STACK_MAX = 64;   // 方块/材料最大堆叠数
   // 食物 → 恢复的饥饿值(右键进食)
-  const FOODS = { porkchop: 8, apple: 4, cooked_porkchop: 12, beef: 6, mutton: 6, steak: 10, bread: 5, raw_fish: 5, cooked_fish: 9 };
+  const FOODS = { porkchop: 8, apple: 4, cooked_porkchop: 12, beef: 6, mutton: 6, steak: 10, bread: 5, raw_fish: 5, cooked_fish: 9, raw_chicken: 2, cooked_chicken: 6 };
   // 护甲减伤(经典):每点护甲 4% 减伤,上限 20 点(钻石全套)= 80%
   const ARMOR_MAX_POINTS = 20;
   const ARMOR_PCT_PER_POINT = 0.04;

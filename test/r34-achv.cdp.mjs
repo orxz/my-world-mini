@@ -244,6 +244,28 @@ async function main() {
   })()`);
   check('铁傀儡构造生成 + 成就「铁壁守护」', golem.golem && golem.structureGone && golem.achv && golem.n === 20, JSON.stringify(golem));
 
+  // ---- 11.10 蛋糕(R40 蛋糕时刻:真实放置 + 真实右键吃一片)----
+  const cake = await evl(`(() => {
+    const px = Math.floor(playerPos.x), gy = Math.floor(playerPos.y) - 1, pz = Math.floor(playerPos.z);
+    for (let dx = -1; dx <= 2; dx++) for (let dy = 1; dy <= 3; dy++) setBlock(px + dx, gy + dy, pz + 2, null);
+    setBlock(px + 2, gy, pz + 2, 'stone');
+    playerPos.set(px + 0.5, gy + 1.9, pz + 2.5); velocity.set(0, 0, 0);
+    hungerState.hunger = 10;
+    for (let i = 0; i < 9; i++) hotbar[i] = null;
+    hotbar[0] = { kind: 'block', id: 'cake', count: 1 }; currentSlot = 0; selectSlot(0);
+    const dx = (px + 2.5) - playerPos.x, dy = (gy + 1.0) - playerPos.y, dz = (pz + 2.5) - playerPos.z;
+    yaw = Math.atan2(-dx, -dz); pitch = Math.asin(dy / Math.hypot(dx, dy, dz));
+    placeBlock();   // 放蛋糕
+    const placed = getBlock(px + 2, gy + 1, pz + 2) === 'cake';
+    // 右键吃一片(瞄蛋糕本体)
+    const dx2 = (px + 2.5) - playerPos.x, dy2 = (gy + 1.5) - playerPos.y, dz2 = (pz + 2.5) - playerPos.z;
+    yaw = Math.atan2(-dx2, -dz2); pitch = Math.asin(dy2 / Math.hypot(dx2, dy2, dz2));
+    placeBlock();
+    const slices = cakes.get(px + 2 + ',' + (gy + 1) + ',' + (pz + 2));
+    return { placed, slices, hunger: hungerState.hunger, achv: achvUnlocked.has('cake'), n: achvUnlocked.size };
+  })()`);
+  check('蛋糕放置+吃片 + 成就「蛋糕时刻」', cake.placed && cake.slices === 5 && cake.hunger === 13 && cake.achv && cake.n === 21, JSON.stringify(cake));
+
   // ---- 12. 繁殖(两只求爱猪 → 幼崽;跟随玩家当前位置生成)----
   const breed = await evl(`(() => {
     clearMobs();

@@ -55,6 +55,7 @@ export default [
       'test/r37-dungeon.cdp.mjs',    // R37 地牢轮 CDP 实机验证(同上)
       'test/r38-redstone.cdp.mjs',   // R38 红石轮 CDP 实机验证(同上)
       'test/r39-golem.cdp.mjs',      // R39 村民繁殖+铁傀儡轮 CDP 实机验证(同上)
+      'test/r40-cake.cdp.mjs',       // R40 蛋糕/糖/蛋链 CDP 实机验证(同上)
     ],
   },
 

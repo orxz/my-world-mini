@@ -54,11 +54,13 @@ const BLOCK_TYPES = {
   lever_on:     { name: '拉杆(开)', top: '#e08030', side: '#d07028', bottom: '#6a6a72', solid: false, tool: 'any', hardness: 0.5 },
   redstone_ore: { name: '红石矿', top: '#888888', side: '#7c7c7c', bottom: '#6e6e6e', solid: true, tool: 'pickaxe', hardness: 3.0 },
   iron_block:  { name: '铁块',   top: '#d8d8e0', side: '#c8c8d2', bottom: '#b8b8c4', solid: true, tool: 'pickaxe', hardness: 5.0 },
+  sugarcane:   { name: '甘蔗',   top: '#7ec850', side: '#6ab840', bottom: '#5aa838', solid: false, tool: 'any', hardness: 0.05 },
+  cake:        { name: '蛋糕',   top: '#f8f0e8', side: '#f0e0d0', bottom: '#d8b890', solid: true, tool: 'any', hardness: 0.5 },
 };
 const HOTBAR_ORDER = ['grass', 'dirt', 'stone', 'wood', 'leaves', 'sand', 'planks', 'brick'];
 
 // 方块数字 id(用于紧凑的 Uint8Array 区块存储)
-const BLOCK_ID = { air: 0, grass: 1, dirt: 2, stone: 3, wood: 4, leaves: 5, sand: 6, planks: 7, brick: 8, water: 9, snow: 10, gravel: 11, wool_red: 12, wool_yellow: 13, wool_white: 14, wool_black: 15, door: 16, door_iron: 17, door_stone: 18, door_gold: 19, door_diamond: 20, crafting_table: 21, cobblestone: 22, coal_ore: 23, iron_ore: 24, diamond_ore: 25, tnt: 26, furnace: 27, glass: 28, bed: 29, chest: 30, ladder: 31, bookshelf: 32, torch: 33, rail: 34, enchanting_table: 35, slime: 36, spawner: 37, redstone: 38, redstone_torch: 39, lever_off: 40, lever_on: 41, redstone_ore: 42, iron_block: 43 };
+const BLOCK_ID = { air: 0, grass: 1, dirt: 2, stone: 3, wood: 4, leaves: 5, sand: 6, planks: 7, brick: 8, water: 9, snow: 10, gravel: 11, wool_red: 12, wool_yellow: 13, wool_white: 14, wool_black: 15, door: 16, door_iron: 17, door_stone: 18, door_gold: 19, door_diamond: 20, crafting_table: 21, cobblestone: 22, coal_ore: 23, iron_ore: 24, diamond_ore: 25, tnt: 26, furnace: 27, glass: 28, bed: 29, chest: 30, ladder: 31, bookshelf: 32, torch: 33, rail: 34, enchanting_table: 35, slime: 36, spawner: 37, redstone: 38, redstone_torch: 39, lever_off: 40, lever_on: 41, redstone_ore: 42, iron_block: 43, sugarcane: 44, cake: 45 };
 const ID_TO_BLOCK = Object.keys(BLOCK_ID);
 
 // ============================================================
@@ -150,8 +152,13 @@ const ITEM_TYPES = {
   bucket:      { name: '铁桶',   color: '#c8c8d0', shape: 'bucket' },
   water_bucket:{ name: '水桶',   color: '#2a8fd6', shape: 'bucket' },
   redstone_dust:{ name: '红石粉', color: '#c03028', shape: 'gem' },
+  sugar:       { name: '糖',     color: '#f0f0f0', shape: 'gem' },
+  egg:         { name: '蛋',     color: '#f0e8d0', shape: 'gem' },
+  raw_chicken: { name: '生鸡肉', color: '#e8c8b0', shape: 'meat' },
+  cooked_chicken:{ name: '烤鸡肉', color: '#c89058', shape: 'meat' },
+  feather:     { name: '羽毛',   color: '#f4f4f4', shape: 'stick' },
 };
-const ITEM_ORDER = ['gem_diamond','gem_gold','gem_emerald','arrow','porkchop','cooked_porkchop','beef','steak','mutton','apple','stick','coal','iron_ingot','leather','book','minecart','string','ender_pearl','wheat','bread','raw_fish','cooked_fish','slime_ball','bucket','water_bucket','redstone_dust'];
+const ITEM_ORDER = ['gem_diamond','gem_gold','gem_emerald','arrow','porkchop','cooked_porkchop','beef','steak','mutton','apple','stick','coal','iron_ingot','leather','book','minecart','string','ender_pearl','wheat','bread','raw_fish','cooked_fish','slime_ball','bucket','water_bucket','redstone_dust','sugar','egg','raw_chicken','cooked_chicken','feather'];
 // 食物表与堆叠上限来自纯函数模块 inventory.js(INVLIB)
 const FOODS = INVLIB.FOODS;
 
@@ -605,6 +612,32 @@ function drawBlockFace(ctx, type, face, s, seedRand) {
       }
       break;
     }
+    case 'sugarcane': {
+      // 甘蔗(R40):透明底 + 数根绿色节节秆(节环高光)
+      ctx.clearRect(0, 0, s, s);
+      const canes = [[-0.22, 0], [0.02, 0.06], [0.24, -0.04]];
+      for (const [fx, off] of canes) {
+        ctx.fillStyle = '#6ab840';
+        ctx.fillRect(Math.floor(s * (fx - 0.045)), Math.floor(s * 0.06), Math.max(2, Math.floor(s * 0.09)), Math.floor(s * 0.9));
+        ctx.fillStyle = '#8ed860';
+        for (let k = 0; k < 4; k++) ctx.fillRect(Math.floor(s * (fx - 0.045)), Math.floor(s * (0.14 + k * 0.22 + off * 0.1)), Math.max(2, Math.floor(s * 0.09)), Math.max(1, Math.floor(s * 0.05)));
+      }
+      break;
+    }
+    case 'cake': {
+      // 蛋糕(R40):白奶油层 + 黄糕体 + 顶面红果点缀
+      ctx.fillStyle = '#d8b890';
+      ctx.fillRect(Math.floor(s * 0.06), Math.floor(s * 0.5), Math.floor(s * 0.88), Math.floor(s * 0.44));
+      ctx.fillStyle = '#f0e0d0';
+      ctx.fillRect(Math.floor(s * 0.1), Math.floor(s * 0.34), Math.floor(s * 0.8), Math.floor(s * 0.2));
+      ctx.fillStyle = '#f8f0e8';
+      ctx.fillRect(Math.floor(s * 0.06), Math.floor(s * 0.12), Math.floor(s * 0.88), Math.floor(s * 0.24));
+      ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 1;
+      ctx.strokeRect(Math.floor(s * 0.06), Math.floor(s * 0.12), Math.floor(s * 0.88), Math.floor(s * 0.82));
+      ctx.fillStyle = '#d03040';
+      for (const fx of [0.22, 0.5, 0.78]) { ctx.beginPath(); ctx.arc(Math.floor(s * fx), Math.floor(s * 0.2), Math.max(1, Math.floor(s * 0.045)), 0, Math.PI * 2); ctx.fill(); }
+      break;
+    }
     case 'redstone_ore': {
       // 红石矿(R38):石底 + 分层红斑(暗圈→红芯→高光)
       ctx.fillStyle = '#7c7c7c';
@@ -810,6 +843,7 @@ const dungeonLootSpots = new Map();
 // 红石元件登记表(R38):chunkKey → Map("x,y,z" → 方块 id);
 // 放置/破坏/拉杆切换走 setBlock 实时更新,区块(重)装载时从 diff 桶扫描登记
 const REDSTONE_FAMILY = { redstone: 1, redstone_torch: 1, lever_off: 1, lever_on: 1 };
+const CANE_ID = 'sugarcane';   // 非固体采样破坏同样覆盖甘蔗(R40)
 const redstoneParts = new Map();
 function registerRedstone(x, y, z, id) {
   const ck = chunkKey(Math.floor(x / CHUNK_SIZE), Math.floor(z / CHUNK_SIZE));
@@ -872,6 +906,22 @@ function generateChunkData(cx, cz) {
 
       // 植被:树由 growTreesInChunk 在区块数据就绪后跨区块种植(generateChunkData 仅生成地形)
       // 这样树叶可跨越区块边界,不会出现半棵树
+
+      // 甘蔗(R40,经典):海岸线自然生成 —— 草/沙岸边 + 邻列是水面,
+      // hash ~10% 一株,1-3 节;生成侧写入(零存档 diff)
+      if (hash2(wx, wz, worldSeed + 811) < 0.10 && height + 1 <= SEA_LEVEL && height + 1 < WORLD_HEIGHT
+          && (b.top === 'grass' || b.top === 'sand')) {
+        let waterAdj = false;
+        for (const [nx, nz] of [[wx + 1, wz], [wx - 1, wz], [wx, wz + 1], [wx, wz - 1]]) {
+          const mtn2 = fbm2D(nx * 0.008, nz * 0.008, worldSeed + 555, 4);
+          const nh = heightAt(nx, nz, worldSeed, biomeAt(nx, nz, worldSeed, mtn2), mtn2);
+          if (nh < height + 1) { waterAdj = true; break; }   // 邻列此层没入水下
+        }
+        if (waterAdj) {
+          const caneH = 1 + Math.floor(hash2(wx, wz, worldSeed + 812) * 3);   // 1-3 节
+          for (let k = 1; k <= caneH && height + k < WORLD_HEIGHT; k++) data[chunkIdx(lx, height + k, lz)] = BLOCK_ID.sugarcane;
+        }
+      }
 
       // 矿石(确定性,复刻经典采矿循环):石头层内按 hash 生成矿点;
       // 煤 1.2% / 铁 0.7%,钻石 0.3% 且仅在 y<12 深层
@@ -2636,6 +2686,8 @@ function clearWorld() {
   dungeonSpawns.clear();        // 地牢登记随区块生成重新登记(R37)
   dungeonLootSpots.clear();
   redstoneParts.clear();        // 红石登记随区块 diff 重新入册(R38)
+  caneTimers.clear();           // 甘蔗计时随存档(R40)
+  cakes.clear();                // 蛋糕片数随存档(R40)
   for (const a of arrows) scene.remove(a);
   arrows.length = 0;
   clearDroppedItems();   // 清掉落物,避免旧世界残留
@@ -3664,6 +3716,13 @@ function breakBlock() {
       if (rs.id === 'redstone') { dropId = 'redstone_dust'; dropKind = 'item'; }
       else if (rs.id === 'lever_on') dropId = 'lever_off';   // 拆下拉杆回到关态
       spawnDroppedItem(rs.x, rs.y, rs.z, dropId, dropN, dropKind);
+      if (rs.id === CANE_ID) {   // 拆一节:上方整柱弹出(经典),柱底计时清理
+        for (let yy = rs.y + 1; getBlock(rs.x, yy, rs.z) === CANE_ID; yy++) {
+          setBlock(rs.x, yy, rs.z, null);
+          spawnDroppedItem(rs.x, yy, rs.z, CANE_ID, 1, 'block');
+        }
+        caneTimers.delete(rs.x + ',' + rs.y + ',' + rs.z);
+      }
       tutEvent('break', 1);
       markDirtySave();
       return;
@@ -3701,6 +3760,16 @@ function breakBlock() {
   if (getBlock(t.x, t.y + 1, t.z) === 'torch') {
     setBlock(t.x, t.y + 1, t.z, null);
     spawnDroppedItem(t.x, t.y + 1, t.z, 'torch', 1, 'block');
+  }
+  // 甘蔗附着(R40):支撑被拆,整柱甘蔗弹出
+  {
+    let yy = t.y + 1;
+    while (getBlock(t.x, yy, t.z) === CANE_ID) {
+      setBlock(t.x, yy, t.z, null);
+      spawnDroppedItem(t.x, yy, t.z, CANE_ID, 1, 'block');
+      yy++;
+    }
+    if (yy > t.y + 1) caneTimers.delete(t.x + ',' + (t.y + 1) + ',' + t.z);
   }
   // 红石元件附着(R38):支撑被拆,上方元件一并弹出
   {
@@ -3820,7 +3889,7 @@ function placeBlock() {
     // 喂食繁殖(R29):手持小麦右键猪/牛/羊(村民不吃麦,走上面的交易)
     if (item0 && item0.kind === 'item' && item0.id === 'wheat') {
       const mobHit0 = raycastMob(3.5);
-      if (mobHit0 && (mobHit0.type === 'pig' || mobHit0.type === 'cow' || mobHit0.type === 'sheep')) { feedAnimal(mobHit0, item0); return; }
+      if (mobHit0 && (mobHit0.type === 'pig' || mobHit0.type === 'cow' || mobHit0.type === 'sheep' || mobHit0.type === 'chicken')) { feedAnimal(mobHit0, item0); return; }
     }
     // 铁桶(R36):空桶舀水/水桶放水(优先于交互方块 —— 经典持桶点方块即倒水)
     if (item0 && item0.kind === 'item' && (item0.id === 'bucket' || item0.id === 'water_bucket')) { useBucket(item0); return; }
@@ -3850,6 +3919,7 @@ function placeBlock() {
     if (hitType === 'furnace') { openFurnacePanel(tHit.x, tHit.y, tHit.z); return; }
     if (hitType === 'bed') { trySleep(tHit.x, tHit.y, tHit.z); return; }
     if (hitType === 'chest') { openChestPanel(tHit.x, tHit.y, tHit.z); return; }
+    if (hitType === 'cake') { eatCakeSlice(tHit.x, tHit.y, tHit.z); return; }
     // 拉杆(R38):命中面的相邻格是拉杆 → 右键切换开/关(双 id 方块,存档天然记录)
     const lx = tHit.x + Math.round(tHit.normal.x), ly = tHit.y + Math.round(tHit.normal.y), lz = tHit.z + Math.round(tHit.normal.z);
     const lb = getBlock(lx, ly, lz);
@@ -3901,6 +3971,14 @@ function placeBlock() {
   if ((selectedType === 'redstone' || selectedType === 'redstone_torch' || selectedType === 'lever_off') && !isSolidAt(nx, ny - 1, nz)) {
     showToast('红石元件需要放在固体方块上面'); return;
   }
+  // 甘蔗(R40):需草/沙/土上且四向邻水(经典水边种植)
+  if (selectedType === 'sugarcane') {
+    const under = getBlock(nx, ny - 1, nz);
+    const okUnder = under === 'grass' || under === 'sand' || under === 'dirt';
+    const waterAdj = getBlock(nx + 1, ny - 1, nz) === 'water' || getBlock(nx - 1, ny - 1, nz) === 'water'
+      || getBlock(nx, ny - 1, nz + 1) === 'water' || getBlock(nx, ny - 1, nz - 1) === 'water';
+    if (!okUnder || !waterAdj) { showToast('甘蔗要种在水边的草地/沙地上'); return; }
+  }
   if (selectedType !== 'ladder' && overlapsPlayer(nx, ny, nz)) { showToast('挡住自己了,换个方向'); return; }
   if (selectedType && selectedType.indexOf('door') === 0) {
     const facing = Math.abs(Math.sin(yaw)) > 0.5 ? 1 : 0;
@@ -3921,6 +3999,7 @@ function placeBlock() {
     markDirtySave();
     consumeSelected();
     if (placedType === 'redstone_torch') unlockAchv('redstone');   // 成就:电路初成(R38)
+    if (placedType === 'sugarcane') caneTimers.set(nx + ',' + ny + ',' + nz, Date.now());   // 45s 长一节(R40)
   }
 }
 
@@ -4131,7 +4210,7 @@ function raycastRedstone(maxDist) {
   for (let t = 0.3; t <= (maxDist || 4); t += 0.2) {
     const x = Math.floor(playerPos.x + dx * t), y = Math.floor(playerPos.y + dy * t), z = Math.floor(playerPos.z + dz * t);
     const b = getBlock(x, y, z);
-    if (b && REDSTONE_FAMILY[b]) return { x, y, z, id: b };
+    if (b && (REDSTONE_FAMILY[b] || b === CANE_ID)) return { x, y, z, id: b };
     if (b && BLOCK_TYPES[b] && BLOCK_TYPES[b].solid) return null;   // 先撞墙
   }
   return null;
@@ -4400,6 +4479,7 @@ const MOB_DEFS = {
   villager: { hp: 20, hostile: false },    // R33:村庄 NPC,右键交易(绿宝石经济)
   slime:    { hp: 16, hostile: true },     // R35:跳跃移动,死亡分裂(大→中→小)
   golem:    { hp: 100, hostile: false },   // R39:铁傀儡,村庄守护(构造生成)
+  chicken:  { hp: 4,  hostile: false },   // R40:被动生物,产蛋+小麦繁殖
 };
 function countHostiles() {
   let n = 0;
@@ -4486,6 +4566,7 @@ function spawnMob(x, groundY, z, type, opts) {
     : t === 'villager' ? buildVillagerMesh()
     : t === 'slime' ? buildSlimeMesh()
     : t === 'golem' ? buildGolemMesh()
+    : t === 'chicken' ? buildChickenMesh()
     : buildPigMesh();
   mesh.position.set(x, groundY + 0.45, z);   // 身体中心离地 0.45
   scene.add(mesh);
@@ -4926,6 +5007,43 @@ function buildSlimeMesh() {
   return g;
 }
 
+// 鸡模型(R40):白身 + 黄喙 + 红髯 + 黄腿 + 两侧翅
+function buildChickenMesh() {
+  const g = new THREE.Group();
+  const bodyMat = new THREE.MeshLambertMaterial({ color: 0xf4f4f0 });
+  const beakMat = new THREE.MeshLambertMaterial({ color: 0xe8a020 });
+  const wattleMat = new THREE.MeshLambertMaterial({ color: 0xd03040 });
+  const legMat = new THREE.MeshLambertMaterial({ color: 0xe8a020 });
+  const eyeMat = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.4, 0.55), bodyMat);
+  body.position.y = 0.45;
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.3, 0.24), bodyMat);
+  head.position.set(0, 0.72, -0.3);
+  const beak = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.09, 0.14), beakMat);
+  beak.position.set(0, 0.7, -0.48);
+  const wattle = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.12, 0.06), wattleMat);
+  wattle.position.set(0, 0.58, -0.44);
+  const eyeL = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.05, 0.02), eyeMat);
+  eyeL.position.set(-0.08, 0.76, -0.42);
+  const eyeR = eyeL.clone(); eyeR.position.x = 0.08;
+  const wingL = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.26, 0.36), bodyMat);
+  wingL.position.set(-0.24, 0.46, 0.04);
+  const wingR = wingL.clone(); wingR.position.x = 0.24;
+  const legGroups = [];
+  const mkLeg = (lx) => {
+    const lg = new THREE.Group();
+    const m = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.26, 0.05), legMat);
+    m.position.y = -0.13;
+    lg.add(m);
+    lg.position.set(lx, 0.26, 0.06);
+    legGroups.push(lg);
+    return lg;
+  };
+  g.add(body, head, beak, wattle, eyeL, eyeR, wingL, wingR, mkLeg(-0.09), mkLeg(0.09));
+  g.userData = { legs: legGroups, mats: [bodyMat, beakMat, wattleMat, legMat], baseColors: [0xf4f4f0, 0xe8a020, 0xd03040, 0xe8a020] };
+  return g;
+}
+
 // 铁傀儡模型(R39):2.4 格高铁块人形 —— 宽躯干 + 小头 + 垂肩长臂 + 短腿
 function buildGolemMesh() {
   const g = new THREE.Group();
@@ -5041,9 +5159,9 @@ function trySpawnMob() {
         break;
       }
       if (mobs.length >= MOB_CAP) break;
-      // 被动生物池:猪 40% / 牛 30% / 羊 30%
+      // 被动生物池:猪 40% / 牛 25% / 羊 22% / 鸡 13%(R40)
       const pr = Math.random();
-      spawnMob(wx, y + 1, wz, pr < 0.4 ? 'pig' : pr < 0.7 ? 'cow' : 'sheep');
+      spawnMob(wx, y + 1, wz, pr < 0.4 ? 'pig' : pr < 0.65 ? 'cow' : pr < 0.87 ? 'sheep' : 'chicken');
     }
     break;   // 只看地表第一个非空气方块
   }
@@ -5622,7 +5740,7 @@ function updateFishing(dt) {
 // 动物繁殖(R29):手持小麦右键牛/羊/猪喂食 → 求爱模式(红心),
 // 两只会合 → 产幼崽(0.55 缩放,60 秒长大);生育冷却 60 秒
 // ============================================================
-const MOB_CN = { pig: '猪', cow: '牛', sheep: '羊', villager: '村民' };
+const MOB_CN = { pig: '猪', cow: '牛', sheep: '羊', villager: '村民', chicken: '鸡' };
 function countPassives() {
   let n = 0;
   for (const m of mobs) if (!MOB_DEFS[m.type].hostile) n++;
@@ -5721,6 +5839,16 @@ function updateMobs(dt) {
         m.growT -= dt;
         if (m.growT <= 0) { m.baby = false; m.mesh.scale.setScalar(1); }
       }
+      // 产蛋(R40):每 90-180 秒下一枚蛋(经典 5-10 分钟的游戏节奏缩短)
+      if (m.type === 'chicken' && !m.baby) {
+        if (m.eggT === undefined) m.eggT = 90 + Math.random() * 90;
+        m.eggT -= dt;
+        if (m.eggT <= 0) {
+          m.eggT = 90 + Math.random() * 90;
+          spawnDroppedItem(m.mesh.position.x - 0.5, m.mesh.position.y - 0.2, m.mesh.position.z - 0.5, 'egg', 1, 'item');
+          spawnParticles(m.mesh.position.x, m.mesh.position.y - 0.2, m.mesh.position.z, 0xf0e8d0, 4);
+        }
+      }
       // 剪毛恢复(R35):45 秒后羊毛长回
       if (m.sheared) {
         m.shearT -= dt;
@@ -5757,6 +5885,8 @@ function updateMobs(dt) {
     }
     if (m.type === 'pig') {
       wanderStep(m, dt, 1.3, 0.65);
+    } else if (m.type === 'chicken') {
+      wanderStep(m, dt, 1.1, 0.6);
     } else if (m.type === 'cow' || m.type === 'sheep') {
       wanderStep(m, dt, 1.1, 0.6);
     } else if (m.type === 'villager') {
@@ -5953,6 +6083,7 @@ function hurtMob(m, dmg, kx, kz, silent) {
     if (m.type === 'pig') dropAt('porkchop', 'item', 1 + (Math.random() < 0.5 ? 1 : 0));
     else if (m.type === 'cow') { dropAt('beef', 'item', 1 + (Math.random() < 0.5 ? 1 : 0)); dropAt('leather', 'item', 1); }
     else if (m.type === 'sheep') { dropAt('mutton', 'item', 1 + (Math.random() < 0.5 ? 1 : 0)); if (!m.sheared) dropAt('wool_white', 'block', 1); }   // 剪过的羊不再掉毛(R35)
+    else if (m.type === 'chicken') { dropAt('raw_chicken', 'item', 1); dropAt('feather', 'item', Math.random() < 0.5 ? 2 : 1); }   // R40
     else if (m.type === 'skeleton') dropAt('arrow', 'item', Math.random() < 0.7 ? 2 : 1);
     else if (m.type === 'spider') dropAt('string', 'item', Math.random() < 0.5 ? 2 : 1);
     else if (m.type === 'enderman' && Math.random() < 0.6) dropAt('ender_pearl', 'item', 1);
@@ -6321,6 +6452,37 @@ function clearChests() {
   chestOpen = null;
   const panel = document.getElementById('chest-panel');
   if (panel) panel.classList.add('hidden');
+}
+
+// ============================================================
+// 蛋糕(R40):放置后右键逐片进食(6 片,每片 +3 饥饿;经典 7 片简化),
+// 吃完方块消失;剩余片数 cakesData 随存档
+// ============================================================
+function getCakeSlices(x, y, z) {
+  const key = x + ',' + y + ',' + z;
+  if (!cakes.has(key)) cakes.set(key, 6);
+  return cakes.get(key);
+}
+function eatCakeSlice(x, y, z) {
+  swingHoldItem();
+  if (hungerState.hunger >= 20) { showToast('已经很饱了'); return; }
+  const key = x + ',' + y + ',' + z;
+  let n = getCakeSlices(x, y, z);
+  hungerState.hunger = Math.min(20, hungerState.hunger + 3);
+  updateHungerBar();
+  n--;
+  audio.play('eat');
+  unlockAchv('cake');   // 成就:蛋糕时刻(R40)
+  if (n <= 0) {
+    cakes.delete(key);
+    setBlock(x, y, z, null);
+    spawnParticles(x + 0.5, y + 0.5, z + 0.5, 0xf8f0e8, 6);
+    showToast('🍰 蛋糕吃完了');
+  } else {
+    cakes.set(key, n);
+    showToast('🍰 吃了一片蛋糕(饥饿 +3,还剩 ' + n + ' 片)');
+  }
+  markDirtySave();
 }
 
 // ============================================================
@@ -7188,6 +7350,7 @@ function animate() {
   if (locked) updateFishing(dt);                   // 钓鱼浮标(R29)
   updateWeather(dt);                               // 天气(晴雨随机调度,暂停也推进)
   updateFurnaces(dt);                              // 熔炉冶炼(经典:暂停也持续燃烧)
+  updateCanes();                                   // 甘蔗生长(绝对时间判定,R40)
   achvVillageT -= dt;                              // 成就:发现村庄节流探测(R34)
   if (achvVillageT <= 0) { achvVillageT = 1; checkVillageAchv(); }
   if (locked) updateSpawners(dt);                  // 地牢刷怪笼(暂停时冻结,R37)
@@ -7349,6 +7512,8 @@ function animate() {
 // 种植:手里拿 snow,对草地右键 → 幼嫩小麦(记录时间);60秒成熟(snow→leaves)
 // ============================================================
 const cropTimers = new Map();
+const caneTimers = new Map();   // 甘蔗生长计时(R40,绝对时间戳,随存档)
+const cakes = new Map();        // 蛋糕剩余片数(R40):key "x,y,z" → 1-6
 function tryPlantCrop(nx, ny, nz) {
   if (selectedType !== 'snow') return false;
   if (getBlock(nx, ny - 1, nz) !== 'grass') return false;
@@ -7368,6 +7533,23 @@ function updateCrops() {
     // 等玩家回访再判定;成熟标记保留(R29):cropTimers 里的 leaves 条目 = 成熟麦田
     else if (b === null && !chunks.has(chunkKey(Math.floor(x / CHUNK_SIZE), Math.floor(z / CHUNK_SIZE)))) continue;
     else if (b !== 'snow' && b !== 'leaves') cropTimers.delete(key);
+  }
+}
+
+// 甘蔗生长(R40):种下 45s 长一节,最多 3 节(经典);未加载区块保留计时
+function updateCanes() {
+  const now = Date.now();
+  for (const [key, t0] of caneTimers.entries()) {
+    if (now - t0 < 45000) continue;
+    const [x, y, z] = key.split(',').map(Number);
+    if (getBlock(x, y, z) !== 'sugarcane') { caneTimers.delete(key); continue; }
+    if (!chunks.has(chunkKey(Math.floor(x / CHUNK_SIZE), Math.floor(z / CHUNK_SIZE)))) continue;
+    let h = 0;
+    while (getBlock(x, y + h, z) === 'sugarcane' && h < 4) h++;
+    if (h < 3 && !getBlock(x, y + h, z)) {
+      setBlock(x, y + h, z, 'sugarcane');
+      caneTimers.set(key, now);   // 下一节再等 45s
+    }
   }
 }
 
@@ -7465,6 +7647,11 @@ function applySave(rec) {
     for (const id of rec.achvData) if (MACHINES.ACHV_BY_ID[id]) achvUnlocked.add(id);
   }
   updateAchvBtn();
+  // 恢复蛋糕片数(R40;旧档无字段 = 全 6 片由 getCakeSlices 惰性补)
+  cakes.clear();
+  if (Array.isArray(rec.cakesData)) {
+    for (const [k, n] of rec.cakesData) cakes.set(k, Math.max(1, Math.min(6, n | 0)));
+  }
   // 恢复矿车(R26;位置取整到所在铁轨格)
   clearMinecarts();
   if (rec.minecartsData) {
@@ -7814,7 +8001,7 @@ function openTablePanel() {
   if (closeBtn) closeBtn.onclick = closeTablePanel;
   // 目录循环列表:方块 + 材料物品(矿石/圆石/木棍等,按 kind 区分图标)
   const catalog = HOTBAR_ORDER.map(id => ({ kind: 'block', id }))
-    .concat(['water', 'snow', 'gravel', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'sand', 'bed', 'chest', 'ladder', 'bookshelf', 'wool_red', 'wool_white', 'torch', 'rail', 'enchanting_table', 'slime', 'redstone', 'redstone_torch', 'lever_off', 'iron_block'].map(id => ({ kind: 'block', id })))
+    .concat(['water', 'snow', 'gravel', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'sand', 'bed', 'chest', 'ladder', 'bookshelf', 'wool_red', 'wool_white', 'torch', 'rail', 'enchanting_table', 'slime', 'redstone', 'redstone_torch', 'lever_off', 'iron_block', 'sugarcane', 'cake'].map(id => ({ kind: 'block', id })))
     .concat(['leather', 'book'].map(id => ({ kind: 'item', id })))
     .concat(['gem_gold', 'gem_diamond', 'gem_emerald', 'arrow', 'stick', 'coal', 'iron_ingot'].map(id => ({ kind: 'item', id })));
   document.querySelectorAll('#table-grid .inv-cell').forEach((cell, i) => {
@@ -8099,6 +8286,7 @@ function buildSaveRecord() {
     mobsData: mobs.map(mm => ({ t: mm.type, x: Math.round(mm.mesh.position.x * 100) / 100, y: Math.round(mm.mesh.position.y * 100) / 100, z: Math.round(mm.mesh.position.z * 100) / 100, hp: mm.hp, baby: !!mm.baby, s: mm.type === 'slime' ? mm.slimeSize : undefined })),
     xpData: { level: xpState.level, points: xpState.points },
     achvData: Array.from(achvUnlocked),   // 成就解锁清单(R34)
+    cakesData: Array.from(cakes.entries()),   // 蛋糕剩余片数(R40)
     doorsData: Array.from(doors.entries()).map(function(e){return [e[0], {x:e[1].x,y:e[1].y,z:e[1].z,type:e[1].type,open:e[1].open,facing:e[1].facing}];}),
     timestamp: Date.now(),
   };

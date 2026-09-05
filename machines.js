@@ -174,6 +174,7 @@
     { id: 'find_village',icon: '🏘️', name: '发现村庄',    desc: '找到一座村庄小屋' },
     { id: 'kill_slime',  icon: '🟢', name: '黏糊糊',       desc: '击碎一只小史莱姆' },
     { id: 'bucket',      icon: '🪣', name: '桶装玩意',     desc: '用铁桶装一次水' },
+    { id: 'dungeon_loot',icon: '🗝️', name: '宝箱猎人',     desc: '打开一个地牢战利品箱' },
   ];
   const ACHV_BY_ID = {};
   for (const a of ACHIEVEMENTS) ACHV_BY_ID[a.id] = a;

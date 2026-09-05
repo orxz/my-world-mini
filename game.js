@@ -47,11 +47,12 @@ const BLOCK_TYPES = {
   enchanting_table: { name: '附魔台', top: '#2a1a3a', side: '#1a1024', bottom: '#1a1024', solid: true, tool: 'pickaxe', hardness: 3 },
   bookshelf:    { name: '书架',   top: '#a0763a', side: '#96682e', bottom: '#8a5f28', solid: true, tool: 'axe', hardness: 1.5 },
   slime:        { name: '黏液块', top: '#6fc05a', side: '#5eae4c', bottom: '#4f9c40', solid: true, tool: 'any', hardness: 0.4 },
+  spawner:      { name: '刷怪笼', top: '#2a2a33', side: '#232330', bottom: '#2a2a33', solid: true, tool: 'pickaxe', hardness: 5 },
 };
 const HOTBAR_ORDER = ['grass', 'dirt', 'stone', 'wood', 'leaves', 'sand', 'planks', 'brick'];
 
 // 方块数字 id(用于紧凑的 Uint8Array 区块存储)
-const BLOCK_ID = { air: 0, grass: 1, dirt: 2, stone: 3, wood: 4, leaves: 5, sand: 6, planks: 7, brick: 8, water: 9, snow: 10, gravel: 11, wool_red: 12, wool_yellow: 13, wool_white: 14, wool_black: 15, door: 16, door_iron: 17, door_stone: 18, door_gold: 19, door_diamond: 20, crafting_table: 21, cobblestone: 22, coal_ore: 23, iron_ore: 24, diamond_ore: 25, tnt: 26, furnace: 27, glass: 28, bed: 29, chest: 30, ladder: 31, bookshelf: 32, torch: 33, rail: 34, enchanting_table: 35, slime: 36 };
+const BLOCK_ID = { air: 0, grass: 1, dirt: 2, stone: 3, wood: 4, leaves: 5, sand: 6, planks: 7, brick: 8, water: 9, snow: 10, gravel: 11, wool_red: 12, wool_yellow: 13, wool_white: 14, wool_black: 15, door: 16, door_iron: 17, door_stone: 18, door_gold: 19, door_diamond: 20, crafting_table: 21, cobblestone: 22, coal_ore: 23, iron_ore: 24, diamond_ore: 25, tnt: 26, furnace: 27, glass: 28, bed: 29, chest: 30, ladder: 31, bookshelf: 32, torch: 33, rail: 34, enchanting_table: 35, slime: 36, spawner: 37 };
 const ID_TO_BLOCK = Object.keys(BLOCK_ID);
 
 // ============================================================
@@ -530,6 +531,22 @@ function drawBlockFace(ctx, type, face, s, seedRand) {
       ctx.fillRect(Math.floor(s * 0.6), Math.floor(s * 0.62), Math.max(1, Math.floor(s * 0.07)), Math.max(1, Math.floor(s * 0.07)));
       break;
     }
+    case 'spawner': {
+      // 刷怪笼(R37):深色笼格(横竖栏杆)+ 内部暗红芯 + 四角铆钉
+      ctx.clearRect(0, 0, s, s);
+      ctx.fillStyle = '#232330';
+      ctx.fillRect(0, 0, s, s);
+      ctx.fillStyle = '#3a3a48';
+      for (let i = 0; i < 4; i++) ctx.fillRect(0, Math.floor(s * (0.14 + i * 0.24)), s, Math.max(1, Math.floor(s * 0.07)));
+      for (let i = 0; i < 4; i++) ctx.fillRect(Math.floor(s * (0.14 + i * 0.24)), 0, Math.max(1, Math.floor(s * 0.07)), s);
+      ctx.strokeStyle = '#4a4a5a'; ctx.lineWidth = 2;
+      ctx.strokeRect(1, 1, s - 2, s - 2);
+      ctx.fillStyle = 'rgba(200,60,30,0.45)';   // 笼芯暗火
+      ctx.fillRect(Math.floor(s * 0.36), Math.floor(s * 0.36), Math.floor(s * 0.28), Math.floor(s * 0.28));
+      ctx.fillStyle = 'rgba(255,120,50,0.35)';
+      ctx.fillRect(Math.floor(s * 0.42), Math.floor(s * 0.42), Math.floor(s * 0.16), Math.floor(s * 0.16));
+      break;
+    }
     case 'tnt': {
       // TNT:红底 + 白色中带 + 深色字样点
       noise(20);
@@ -713,6 +730,10 @@ const dirtyChunks = new Set();
 // 村庄小屋的生成侧火把(R31):chunkKey -> [[x,y,z],...];随区块生成登记,
 // 不进 modifications(零存档成本),作为光照引擎的额外光源
 const villageTorches = new Map();
+// 地牢登记表(R37,生成侧写入时登记;chunkKey → 数组):
+// dungeonSpawns 刷怪笼 {x,y,z,mob} / dungeonLootSpots 战利品箱 {x,y,z}
+const dungeonSpawns = new Map();
+const dungeonLootSpots = new Map();
 
 function chunkKey(cx, cz) { return `${cx},${cz}`; }
 function blockKey(x, y, z) { return `${x},${y},${z}`; }
@@ -785,6 +806,45 @@ function generateChunkData(cx, cz) {
           const cid = data[idx2];
           if (cid === 0 || cid === WATER_ID) continue;
           if (caveAt(wx, y, wz, worldSeed)) data[idx2] = 0;
+        }
+      }
+    }
+  }
+
+  // 地牢(R37):确定性生成侧结构(石室+刷怪笼+战利品箱),先于村庄写入;
+  // 覆盖洞穴空气保证石室完整;玩家 diff 在其后应用(挖掉的笼自然为 null)
+  {
+    const dc0 = Math.floor(ox / 64) - 1, dc1 = Math.floor((ox + 15) / 64) + 1;
+    const dn0 = Math.floor(oz / 64) - 1, dn1 = Math.floor((oz + 15) / 64) + 1;
+    const ck = chunkKey(cx, cz);
+    for (let dcx = dc0; dcx <= dc1; dcx++) for (let dcz = dn0; dcz <= dn1; dcz++) {
+      const dg = dungeonInCell(dcx, dcz, worldSeed);
+      if (!dg) continue;
+      const gx0 = dg.cx - 3, gz0 = dg.cz - 3;
+      for (let lx = 0; lx < 7; lx++) for (let lz = 0; lz < 7; lz++) {
+        const wx2 = gx0 + lx, wz2 = gz0 + lz;
+        const bx = wx2 - ox, bz = wz2 - oz;
+        if (bx < 0 || bx > 15 || bz < 0 || bz > 15) continue;
+        for (let rel = 0; rel <= 4; rel++) {
+          const y = dg.floor + rel;
+          if (y < 1 || y >= WORLD_HEIGHT) continue;
+          const t = dungeonBlockAt(lx, lz, rel, dg, worldSeed);
+          const idx3 = chunkIdx(bx, y, bz);
+          if (t) {
+            data[idx3] = BLOCK_ID[t];
+            if (t === 'spawner') {
+              let arr = dungeonSpawns.get(ck);
+              if (!arr) { arr = []; dungeonSpawns.set(ck, arr); }
+              if (!arr.some(e => e.x === wx2 && e.y === y && e.z === wz2)) arr.push({ x: wx2, y, z: wz2, mob: dg.mob });
+            }
+            if (t === 'chest') {
+              let arr = dungeonLootSpots.get(ck);
+              if (!arr) { arr = []; dungeonLootSpots.set(ck, arr); }
+              if (!arr.some(e => e.x === wx2 && e.y === y && e.z === wz2)) arr.push({ x: wx2, y, z: wz2 });
+            }
+          } else {
+            data[idx3] = 0;   // 室内空气
+          }
         }
       }
     }
@@ -2470,6 +2530,8 @@ function clearWorld() {
   plazaBlocks.clear();          // 广场已知 diff 随世界重置(重建时重新登记)
   worldPlazaBuilt = false;
   villageTorches.clear();       // 村庄火把随区块生成重新登记(R31)
+  dungeonSpawns.clear();        // 地牢登记随区块生成重新登记(R37)
+  dungeonLootSpots.clear();
   for (const a of arrows) scene.remove(a);
   arrows.length = 0;
   clearDroppedItems();   // 清掉落物,避免旧世界残留
@@ -3558,13 +3620,14 @@ function breakBlock() {
   else if (type === 'coal_ore') { dropType = 'coal'; dropKind = 'item'; dropCount = 1 + (Math.random() < 0.3 ? 1 : 0); }
   else if (type === 'diamond_ore') { dropType = 'gem_diamond'; dropKind = 'item'; }
   else if (type === 'leaves' && Math.random() < 0.15) { dropType = 'apple'; dropKind = 'item'; }
+  else if (type === 'spawner') { dropType = null; }   // 刷怪笼破坏无掉落(经典,R37)
   // 成熟麦田(R29):麦子格上仍有种植计时 → 收获小麦(计时即成熟标记)
   if (type === 'leaves' && cropTimers.has(blockKey(t.x, t.y, t.z))) {
     cropTimers.delete(blockKey(t.x, t.y, t.z));
     spawnDroppedItem(t.x, t.y, t.z, 'wheat', 1, 'item');
     markDirtySave();
   }
-  spawnDroppedItem(t.x, t.y, t.z, dropType, dropCount, dropKind);
+  if (dropType) spawnDroppedItem(t.x, t.y, t.z, dropType, dropCount, dropKind);
   breakProgress = 0; breakTargetKey = null;
   hideBreakOverlay();
   // 交互减噪:破坏不再逐次 toast(粒子/音效/裂纹已是充分反馈)
@@ -5837,6 +5900,9 @@ function getChest(x, y, z) {
 function openChestPanel(x, y, z) {
   chestOpen = blockKey(x, y, z);
   const c = getChest(x, y, z);
+  // 地牢战利品(R37):首次打开的生成侧箱子按确定性 hash 填充(零存档 diff;
+  // 打开后内容经 chestsData 持久化,同箱重开/读档后开箱内容一致)
+  if (!c.slots.some(s => s) && isDungeonLootSpot(x, y, z)) fillDungeonLoot(c);
   const panel = document.getElementById('chest-panel');
   if (!panel) return;
   panel.classList.remove('hidden');
@@ -5900,6 +5966,61 @@ function clearChests() {
   chestOpen = null;
   const panel = document.getElementById('chest-panel');
   if (panel) panel.classList.add('hidden');
+}
+
+// ============================================================
+// 地牢(R37):石室 + 刷怪笼 + 战利品箱(确定性生成侧结构,零存档 diff)
+// 结构函数在 worldgen.js;此处是战利品填充与刷怪笼行为
+// ============================================================
+function isDungeonLootSpot(x, y, z) {
+  const ck = chunkKey(Math.floor(x / CHUNK_SIZE), Math.floor(z / CHUNK_SIZE));
+  const arr = dungeonLootSpots.get(ck);
+  return !!(arr && arr.some(e => e.x === x && e.y === y && e.z === z));
+}
+function fillDungeonLoot(c) {
+  // 确定性:同种子同位置永远同内容(rand 由世界坐标+种子派生,不掺 Math.random)
+  let i = 0;
+  const rand = () => hash3(c.x * 31 + (i++), c.y * 7 + (i * 3), c.z * 13, worldSeed + 5150);
+  c.slots = INVLIB.rollDungeonLoot(rand);
+  markDirtySave();
+  unlockAchv('dungeon_loot');   // 成就:宝箱猎人(R37)
+  showToast('🗝️ 地牢战利品箱!');
+}
+
+// 刷怪笼行为(经典):玩家 16 格内显示笼内火粒;12 格内周期在笼旁空位生成
+// 对应怪(每笼 8 格内同类 ≤3);笼被挖掉即失效(getBlock 校验)
+let spawnerTimer = 0;
+function updateSpawners(dt) {
+  spawnerTimer -= dt;
+  if (spawnerTimer > 0) return;
+  spawnerTimer = 2;
+  for (const arr of dungeonSpawns.values()) {
+    for (const s of arr) {
+      if (getBlock(s.x, s.y, s.z) !== 'spawner') continue;
+      const dx = s.x + 0.5 - playerPos.x, dy = s.y + 0.5 - playerPos.y, dz = s.z + 0.5 - playerPos.z;
+      const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (d > 16) continue;
+      spawnParticles(s.x + 0.5, s.y + 1.1, s.z + 0.5, 0xff8830, 2);   // 笼内火粒
+      if (d >= 12 || !settings.mobs || tutorial.active) continue;
+      let near = 0;
+      for (const m of mobs) {
+        if (m.type !== s.mob) continue;
+        const mdx = m.mesh.position.x - s.x - 0.5, mdz = m.mesh.position.z - s.z - 0.5;
+        if (mdx * mdx + mdz * mdz < 64) near++;
+      }
+      if (near >= 3) continue;
+      // 笼旁同层空位(支撑=石室地板 rel0,头部净空 1 格)
+      const offs = [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [1, 0, 1], [-1, 0, -1]];
+      for (const [ox2, oy2, oz2] of offs) {
+        const bx = s.x + ox2, by = s.y + oy2, bz = s.z + oz2;
+        if (!getBlock(bx, by, bz) && !getBlock(bx, by + 1, bz) && isSolidAt(bx, by - 1, bz)) {
+          spawnMob(bx + 0.5, by, bz + 0.5, s.mob);
+          spawnParticles(bx + 0.5, by + 1, bz + 0.5, 0xff8830, 6);
+          break;
+        }
+      }
+    }
+  }
 }
 
 // ============================================================
@@ -6714,6 +6835,7 @@ function animate() {
   updateFurnaces(dt);                              // 熔炉冶炼(经典:暂停也持续燃烧)
   achvVillageT -= dt;                              // 成就:发现村庄节流探测(R34)
   if (achvVillageT <= 0) { achvVillageT = 1; checkVillageAchv(); }
+  if (locked) updateSpawners(dt);                  // 地牢刷怪笼(暂停时冻结,R37)
   if (locked) updateDroppedItems(dt);              // 掉落物(暂停时冻结;每帧仅一次)
   if (locked && settings.mobs) updateMobs(dt);     // 生物(暂停时冻结)
   if (locked) updateArrows(dt);                    // 箭矢(暂停时冻结,避免面板开着被骷髅射中)

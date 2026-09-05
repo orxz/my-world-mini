@@ -190,6 +190,24 @@ async function main() {
   })()`);
   check('铁桶舀水 + 成就「桶装玩意」', bucket.gone && bucket.id === 'water_bucket' && bucket.achv && bucket.n === 17, JSON.stringify(bucket));
 
+  // ---- 11.7 地牢战利品箱(R37 宝箱猎人:找地牢 → 邻近落位 → 真实 openChestPanel)----
+  const dg = await evl(`(() => { for (let cx=-4;cx<=4;cx++) for (let cz=-4;cz<=4;cz++){ const d=dungeonInCell(cx,cz,worldSeed); if(d) return d; } })()`);
+  await evl(`(() => {
+    const mtn = fbm2D((${dg.cx} + 14) * 0.008, ${dg.cz} * 0.008, worldSeed + 555, 4);
+    const gh = heightAt(${dg.cx} + 14, ${dg.cz}, worldSeed, biomeAt(${dg.cx} + 14, ${dg.cz}, worldSeed, mtn), mtn);
+    playerPos.set(${dg.cx} + 14.5, gh + 4, ${dg.cz} + 0.5);
+    velocity.set(0, 0, 0); isFlying = false;
+  })()`);
+  await sleep(2600);   // 等地牢所在区块加载
+  const lootAchv = await evl(`(() => {
+    openChestPanel(${dg.cx - 2}, ${dg.floor + 1}, ${dg.cz - 2});
+    const c = chests.get(blockKey(${dg.cx - 2}, ${dg.floor + 1}, ${dg.cz - 2}));
+    const n = c.slots.filter(Boolean).length;
+    closeChestPanel();
+    return { n, achv: achvUnlocked.has('dungeon_loot'), total: achvUnlocked.size };
+  })()`);
+  check('地牢战利品箱 + 成就「宝箱猎人」', !!dg && lootAchv.n >= 3 && lootAchv.n <= 5 && lootAchv.achv && lootAchv.total === 18, JSON.stringify({ ...lootAchv, dg: !!dg }));
+
   // ---- 12. 繁殖(两只求爱猪 → 幼崽;跟随玩家当前位置生成)----
   const breed = await evl(`(() => {
     clearMobs();

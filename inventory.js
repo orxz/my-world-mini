@@ -144,11 +144,42 @@
     return !!trade && countInHotbar(hotbar, trade.give.id) >= trade.give.n;
   }
 
+  // ---- 地牢战利品(R37):确定性 roll(rand 注入,同输入同输出) ----
+  // 表按经典地牢箱加权;每箱 3-5 条,不重复;放入 27 格的前几个偶数格
+  const DUNGEON_LOOT_TABLE = [
+    { id: 'iron_ingot',  kind: 'item', min: 1, max: 4, w: 3 },
+    { id: 'gem_gold',    kind: 'item', min: 1, max: 3, w: 2 },
+    { id: 'bread',       kind: 'item', min: 1, max: 2, w: 3 },
+    { id: 'gem_emerald', kind: 'item', min: 1, max: 2, w: 2 },
+    { id: 'arrow',       kind: 'item', min: 2, max: 8, w: 3 },
+    { id: 'string',      kind: 'item', min: 1, max: 3, w: 2 },
+    { id: 'gem_diamond', kind: 'item', min: 1, max: 1, w: 1 },
+    { id: 'bucket',      kind: 'item', min: 1, max: 1, w: 1 },
+  ];
+  function rollDungeonLoot(rand) {
+    const n = 3 + Math.floor(rand(0) * 3);   // 3-5 条
+    const slots = new Array(27).fill(null);
+    const used = [];
+    for (let k = 0; k < n; k++) {
+      const avail = DUNGEON_LOOT_TABLE.filter(e => used.indexOf(e.id) < 0);
+      if (!avail.length) break;
+      let total = 0;
+      for (const e of avail) total += e.w;
+      let r = rand(k + 1) * total;
+      let pick = avail[avail.length - 1];
+      for (const e of avail) { r -= e.w; if (r <= 0) { pick = e; break; } }
+      used.push(pick.id);
+      const count = pick.min + Math.floor(rand(k + 11) * (pick.max - pick.min + 1));
+      slots[k * 2] = { kind: pick.kind, id: pick.id, count: Math.max(1, count) };
+    }
+    return slots;
+  }
+
   // 导出(Node 环境)
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { STACK_MAX, FOODS, ARMOR_MAX_POINTS, ARMOR_PCT_PER_POINT, armorReduce, pickupIntoInventory, normalizeHotbar, hungerTick, VILLAGER_TRADES, countInHotbar, consumeFromHotbar, canTrade };
+    module.exports = { STACK_MAX, FOODS, ARMOR_MAX_POINTS, ARMOR_PCT_PER_POINT, armorReduce, pickupIntoInventory, normalizeHotbar, hungerTick, VILLAGER_TRADES, countInHotbar, consumeFromHotbar, canTrade, DUNGEON_LOOT_TABLE, rollDungeonLoot };
   }
   // 浏览器:挂到全局
-  global.INVLIB = { STACK_MAX, FOODS, ARMOR_MAX_POINTS, ARMOR_PCT_PER_POINT, armorReduce, pickupIntoInventory, normalizeHotbar, hungerTick, VILLAGER_TRADES, countInHotbar, consumeFromHotbar, canTrade };
+  global.INVLIB = { STACK_MAX, FOODS, ARMOR_MAX_POINTS, ARMOR_PCT_PER_POINT, armorReduce, pickupIntoInventory, normalizeHotbar, hungerTick, VILLAGER_TRADES, countInHotbar, consumeFromHotbar, canTrade, DUNGEON_LOOT_TABLE, rollDungeonLoot };
 
 })(typeof window !== 'undefined' ? window : globalThis);

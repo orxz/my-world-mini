@@ -9,7 +9,7 @@
 const assert = require('assert');
 
 // ---- 从 worldgen.js 模块加载(单一数据源,不再手抄) ----
-const { hash2, hash3, valueNoise2D, valueNoise3D, fbm2D, BIOMES, biomeAt, heightAt, caveAt, villageInCell, hutBlockAt } = require('../worldgen.js');
+const { hash2, hash3, valueNoise2D, valueNoise3D, fbm2D, BIOMES, biomeAt, heightAt, caveAt, villageInCell, hutBlockAt, dungeonInCell, dungeonBlockAt } = require('../worldgen.js');
 
 // ---- 从 craft.js 模块加载(合成/破坏计算的单一数据源) ----
 const { RECIPES, matchRecipe, matchRecipeGrid, breakCost } = require('../craft.js');
@@ -18,7 +18,7 @@ const { RECIPES, matchRecipe, matchRecipeGrid, breakCost } = require('../craft.j
 const { TUTORIAL_STEPS, advanceTutorial, furnaceCanSmelt, furnaceTick, weatherNext, cartNextDir, xpToNext, xpGain, rollEnchants, ACHIEVEMENTS, ACHV_BY_ID, awardAchievement, SAVE_SCHEMA_FIELDS, validateSaveRecord } = require('../machines.js');
 
 // ---- 从 inventory.js 模块加载(库存/掉落/饥饿/护甲纯函数) ----
-const { STACK_MAX, FOODS, ARMOR_MAX_POINTS, armorReduce, pickupIntoInventory, normalizeHotbar, hungerTick, VILLAGER_TRADES, countInHotbar, consumeFromHotbar, canTrade } = require('../inventory.js');
+const { STACK_MAX, FOODS, ARMOR_MAX_POINTS, armorReduce, pickupIntoInventory, normalizeHotbar, hungerTick, VILLAGER_TRADES, countInHotbar, consumeFromHotbar, canTrade, DUNGEON_LOOT_TABLE, rollDungeonLoot } = require('../inventory.js');
 
 // ---- 测试用例 ----
 let passed = 0, failed = 0;
@@ -815,6 +815,67 @@ test('hutBlockAt 布局:地基/地板/墙/门洞/窗/火把/箱子/屋顶', () =
   assert.strictEqual(hutBlockAt(1, 1, 3), null);          // 室内空气
   assert.strictEqual(hutBlockAt(2, 2, 5), 'wood');        // 屋顶
   assert.strictEqual(hutBlockAt(2, 2, 6), null);          // 屋顶之上无物
+});
+
+// ===== 地牢(R37) =====
+console.log('\n=== 地牢(dungeonInCell/dungeonBlockAt) ===');
+test('dungeonInCell 确定性 + 广场保护区排除', () => {
+  let found = null;
+  for (let x = -4; x <= 4 && !found; x++) for (let z = -4; z <= 4; z++) {
+    const d = dungeonInCell(x, z, 12345);
+    if (d) { found = d; break; }
+  }
+  assert.ok(found, '±4 格内找得到地牢');
+  assert.ok(['zombie', 'skeleton', 'spider'].includes(found.mob), '怪种合法');
+  assert.ok(found.chests >= 1 && found.chests <= 2, '箱子 1-2 个');
+  assert.ok(found.floor >= 8 && found.floor <= 12, '地下浅层');
+  // 同种子同格恒等
+  const again = dungeonInCell(2, 2, 12345);
+  assert.deepStrictEqual(dungeonInCell(2, 2, 12345), again);
+});
+test('dungeonInCell 保护区:中心 ±44 内不生成', () => {
+  // 扫描出的所有地牢中心都应在广场保护区之外或为 null
+  for (let x = -3; x <= 3; x++) for (let z = -3; z <= 3; z++) {
+    const d = dungeonInCell(x, z, 999);
+    if (d) assert.ok(d.cx <= -44 || d.cx >= 44 || d.cz <= -44 || d.cz >= 44, '不在保护区内');
+  }
+});
+test('dungeonBlockAt 布局:地板/顶/墙/笼/箱/室内', () => {
+  const dg = { cx: 100, cz: -200, floor: 10, mob: 'zombie', chests: 2 };
+  assert.strictEqual(dungeonBlockAt(3, 3, 0, dg, 12345), 'cobblestone');   // 地板
+  assert.strictEqual(dungeonBlockAt(3, 3, 4, dg, 12345), 'brick');          // 顶(内部)
+  assert.strictEqual(dungeonBlockAt(0, 0, 4, dg, 12345), 'stone');          // 顶(边缘)
+  const wall = dungeonBlockAt(0, 3, 2, dg, 12345);                          // 边墙:圆石或砖
+  assert.ok(wall === 'cobblestone' || wall === 'brick', '墙材质');
+  assert.strictEqual(dungeonBlockAt(3, 3, 1, dg, 12345), 'spawner');        // 中央刷怪笼
+  assert.strictEqual(dungeonBlockAt(1, 1, 1, dg, 12345), 'chest');          // 角箱 A
+  assert.strictEqual(dungeonBlockAt(5, 5, 1, dg, 12345), 'chest');          // 角箱 B(chests=2)
+  assert.strictEqual(dungeonBlockAt(2, 2, 2, dg, 12345), null);             // 室内空气
+  const dg1 = { cx: 100, cz: -200, floor: 10, mob: 'zombie', chests: 1 };
+  assert.strictEqual(dungeonBlockAt(5, 5, 1, dg1, 12345), null);            // 单箱地牢无角箱 B
+});
+
+console.log('\n=== 地牢战利品(rollDungeonLoot) ===');
+test('rollDungeonLoot:3-5 条、id 合法、不重复、count 在区间', () => {
+  // 固定序列注入(确定性验证)
+  let i = 0;
+  const seq = [0.5, 0.3, 0.9, 0.1, 0.6, 0.2, 0.8, 0.4, 0.7, 0.05, 0.45, 0.95, 0.25, 0.65, 0.85];
+  const rand = () => seq[i++ % seq.length];
+  const slots = rollDungeonLoot(rand);
+  const items = slots.filter(Boolean);
+  assert.ok(items.length >= 3 && items.length <= 5, '条目 3-5: ' + items.length);
+  const ids = items.map(it => it.id);
+  assert.strictEqual(new Set(ids).size, ids.length, '不重复');
+  for (const it of items) {
+    const def = DUNGEON_LOOT_TABLE.find(e => e.id === it.id);
+    assert.ok(def, 'id 在表内: ' + it.id);
+    assert.ok(it.count >= def.min && it.count <= def.max, 'count 区间');
+    assert.strictEqual(it.kind, def.kind);
+  }
+});
+test('rollDungeonLoot 确定性(同序列同输出)', () => {
+  const mk = () => { let i = 0; const seq = [0.5, 0.3, 0.9, 0.1, 0.6, 0.2, 0.8, 0.4]; return () => seq[i++ % seq.length]; };
+  assert.deepStrictEqual(rollDungeonLoot(mk()), rollDungeonLoot(mk()));
 });
 
 console.log('\n=== 总结 ===');

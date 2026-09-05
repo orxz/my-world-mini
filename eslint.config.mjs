@@ -28,6 +28,8 @@ const WORLDGEN_GLOBALS = {
   caveAt: 'readonly',
   villageInCell: 'readonly',
   hutBlockAt: 'readonly',
+  dungeonInCell: 'readonly',
+  dungeonBlockAt: 'readonly',
 };
 
 // craft.js 在浏览器以 <script> 加载后挂到全局的命名空间(game.js 直接调用)
@@ -50,6 +52,7 @@ export default [
       'test/r34-achv.cdp.mjs',       // R34 成就轮 CDP 实机验证(同上)
       'test/r35-slime.cdp.mjs',      // R35 史莱姆+剪刀轮 CDP 实机验证(同上)
       'test/r36-bucket.cdp.mjs',     // R36 铁桶与水轮 CDP 实机验证(同上)
+      'test/r37-dungeon.cdp.mjs',    // R37 地牢轮 CDP 实机验证(同上)
     ],
   },
 

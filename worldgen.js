@@ -164,12 +164,47 @@
     return null;
   }
 
+  // ---- 地牢(R37):确定性生成侧结构(石室+刷怪笼+战利品箱),零存档 diff ----
+  const DUNGEON_CELL = 64;   // 地牢格边长(7×7 石室不跨格)
+  // 地牢格判定:~35% 格子有地牢;广场保护区(±44)不生成;
+  // 顶板埋深 ≥2(顶上至少两层岩层)且不泡海水;floor 8..12(地下浅层)
+  function dungeonInCell(dcx, dcz, seed) {
+    if (hash2(dcx, dcz, seed + 733) > 0.35) return null;
+    const ox = 8 + Math.floor(hash2(dcx, dcz, seed + 734) * (DUNGEON_CELL - 16));
+    const oz = 8 + Math.floor(hash2(dcx, dcz, seed + 735) * (DUNGEON_CELL - 16));
+    const cx = dcx * DUNGEON_CELL + ox, cz = dcz * DUNGEON_CELL + oz;
+    if (cx > -44 && cx < 44 && cz > -44 && cz < 44) return null;   // 出生广场保护区
+    const floor = 8 + Math.floor(hash2(dcx, dcz, seed + 736) * 5);
+    const mtn = fbm2D(cx * 0.008, cz * 0.008, seed + 555, 4);
+    const surf = heightAt(cx, cz, seed, mtn);   // 注意:第 4 参是 preMtn(误传 biome 会吞掉山体抬升)
+    if (surf < floor + 6 || surf <= 13) return null;   // 埋深不足 / 海床下
+    const hr = hash2(dcx, dcz, seed + 737);
+    const mob = hr < 0.4 ? 'zombie' : hr < 0.75 ? 'skeleton' : 'spider';
+    const chests = hr > 0.5 ? 2 : 1;
+    return { cx, cz, floor, mob, chests };
+  }
+  // 石室局部方块(7×7,lx/lz ∈ 0..6;rel ∈ 0..4 = 地板..顶):
+  // 0=圆石地板 / 4=顶(边石中砖) / 边墙圆石(砖点缀,世界坐标 hash) /
+  // 中央刷怪笼 + 角箱(按 dg.chests 放 1-2 个)/ 其余室内空气
+  function dungeonBlockAt(lx, lz, rel, dg, seed) {
+    const per = lx === 0 || lx === 6 || lz === 0 || lz === 6;
+    if (rel === 0) return 'cobblestone';
+    if (rel === 4) return per ? 'stone' : 'brick';
+    if (per) return hash3(dg.cx - 3 + lx, rel, dg.cz - 3 + lz, seed + 738) < 0.25 ? 'brick' : 'cobblestone';
+    if (rel === 1) {
+      if (lx === 3 && lz === 3) return 'spawner';
+      if (lx === 1 && lz === 1) return 'chest';
+      if (dg.chests >= 2 && lx === 5 && lz === 5) return 'chest';
+    }
+    return null;
+  }
+
   // 导出(Node 环境)
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { hash2, hash3, valueNoise2D, valueNoise3D, fbm2D, BIOMES, biomeAt, heightAt, caveAt, villageInCell, hutBlockAt };
+    module.exports = { hash2, hash3, valueNoise2D, valueNoise3D, fbm2D, BIOMES, biomeAt, heightAt, caveAt, villageInCell, hutBlockAt, dungeonInCell, dungeonBlockAt };
   }
   // 浏览器:挂到全局
-  global.WORLDGEN = { hash2, hash3, valueNoise2D, valueNoise3D, fbm2D, BIOMES, biomeAt, heightAt, caveAt, villageInCell, hutBlockAt };
+  global.WORLDGEN = { hash2, hash3, valueNoise2D, valueNoise3D, fbm2D, BIOMES, biomeAt, heightAt, caveAt, villageInCell, hutBlockAt, dungeonInCell, dungeonBlockAt };
   // 同时保持全局函数名(game.js 直接调用)
   global.hash2 = hash2;
   global.hash3 = hash3;
@@ -182,5 +217,7 @@
   global.caveAt = caveAt;
   global.villageInCell = villageInCell;
   global.hutBlockAt = hutBlockAt;
+  global.dungeonInCell = dungeonInCell;
+  global.dungeonBlockAt = dungeonBlockAt;
 
 })(typeof window !== 'undefined' ? window : globalThis);

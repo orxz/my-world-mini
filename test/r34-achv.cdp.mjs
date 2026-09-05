@@ -266,6 +266,31 @@ async function main() {
   })()`);
   check('蛋糕放置+吃片 + 成就「蛋糕时刻」', cake.placed && cake.slices === 5 && cake.hunger === 13 && cake.achv && cake.n === 21, JSON.stringify(cake));
 
+  // ---- 11.11 活塞(R42 精密机械:火把+线+活塞真实放置 → tick 伸出推石)----
+  const piston = await evl(`(() => {
+    const px = Math.floor(playerPos.x), gy = Math.floor(playerPos.y) - 1, pz = Math.floor(playerPos.z);
+    for (let dx = -1; dx <= 6; dx++) setBlock(px + dx, gy, pz + 2, 'stone');   // 显式地板(地形起伏兜底)
+    for (let dx = -1; dx <= 5; dx++) for (let dy = 1; dy <= 4; dy++) setBlock(px + dx, gy + dy, pz + 2, null);
+    setBlock(px + 2, gy + 1, pz + 2, 'redstone_torch');   // 与线同层(水平相邻供能)
+    setBlock(px + 3, gy + 1, pz + 2, 'redstone');
+    setBlock(px + 4, gy + 1, pz + 2, 'redstone');
+    setBlock(px + 6, gy + 1, pz + 2, 'stone');   // 待推方块
+    playerPos.set(px + 0.5, gy + 1.9, pz + 2.5); velocity.set(0, 0, 0);
+    yaw = -Math.PI / 2;   // 朝 +x 放活塞(facing 东)
+    for (let i = 0; i < 9; i++) hotbar[i] = null;
+    hotbar[0] = { kind: 'block', id: 'piston', count: 1 }; currentSlot = 0; selectSlot(0);
+    const dx = (px + 5.5) - playerPos.x, dy = (gy + 1.05) - playerPos.y, dz = (pz + 2.5) - playerPos.z;   // 瞄顶面上方 0.05:交点落进目标格(DDA 边界平局)
+    yaw = Math.atan2(-dx, -dz); pitch = Math.asin(dy / Math.hypot(dx, dy, dz));
+    placeBlock();
+    const placed = getBlock(px + 5, gy + 1, pz + 2) === 'piston';
+    const facing = pistons.get((px + 5) + ',' + (gy + 1) + ',' + (pz + 2));
+    redstoneTimer = 0; updateRedstone(0);
+    const ext = getBlock(px + 5, gy + 1, pz + 2) === 'piston_ext';
+    const pushed = getBlock(px + 7, gy + 1, pz + 2) === 'stone';
+    return { placed, facing, ext, pushed, achv: achvUnlocked.has('piston'), n: achvUnlocked.size };
+  })()`);
+  check('活塞激活推动 + 成就「精密机械」', piston.placed && piston.facing === 0 && piston.ext && piston.pushed && piston.achv && piston.n === 22, JSON.stringify(piston));
+
   // ---- 12. 繁殖(两只求爱猪 → 幼崽;跟随玩家当前位置生成)----
   const breed = await evl(`(() => {
     clearMobs();

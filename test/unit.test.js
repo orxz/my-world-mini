@@ -947,6 +947,13 @@ test('建筑方块配方:台阶/楼梯/栅栏(R41)', () => {
   const fence = matchRecipeGrid(g3(['planks', 'stick', 'planks', 'planks', 'stick', 'planks', null, null, null]), 3, RECIPES);
   assert.ok(fence && fence.result.id === 'fence' && fence.count === 3, '4 板 2 棍 → 3 栅栏');
 });
+test('红石扩展配方:中继器/活塞(R42)', () => {
+  const mk = (id, kind) => ({ kind, id });
+  const rep = matchRecipeGrid([mk('redstone_torch', 'block'), mk('stone', 'block'), mk('redstone_torch', 'block'), mk('stone', 'block'), mk('stone', 'block'), mk('stone', 'block'), null, null, null], 3, RECIPES);
+  assert.ok(rep && rep.result.id === 'repeater_off', '2 火把 + 3 石 → 中继器(关)');
+  const pist = matchRecipeGrid([mk('planks', 'block'), mk('planks', 'block'), mk('planks', 'block'), mk('cobblestone', 'block'), mk('iron_ingot', 'item'), mk('cobblestone', 'block'), mk('cobblestone', 'block'), mk('redstone_dust', 'item'), mk('cobblestone', 'block')], 3, RECIPES);
+  assert.ok(pist && pist.result.id === 'piston', '3 板 4 圆石 1 铁 1 粉 → 活塞');
+});
 
 console.log('\n=== 总结 ===');
 console.log(`通过: ${passed}/${passed+failed}`);

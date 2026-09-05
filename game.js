@@ -61,11 +61,15 @@ const BLOCK_TYPES = {
   stairs_planks:{ name: '木楼梯', top: '#b08243', side: '#a0763a', bottom: '#8a6430', solid: true, tool: 'axe', hardness: 1.0, stair: true },
   stairs_cobble:{ name: '石楼梯', top: '#828282', side: '#7a7a7a', bottom: '#6f6f6f', solid: true, tool: 'pickaxe', hardness: 2.0, stair: true },
   fence:       { name: '栅栏',   top: '#a0763a', side: '#96702f', bottom: '#8a6430', solid: true, tool: 'axe', hardness: 1.5, fence: true },
+  repeater_off:{ name: '中继器(关)', top: '#a8a8a0', side: '#98988f', bottom: '#88887f', solid: false, tool: 'any', hardness: 0.5 },
+  repeater_on: { name: '中继器(开)', top: '#e05040', side: '#c04030', bottom: '#88887f', solid: false, tool: 'any', hardness: 0.5 },
+  piston:      { name: '活塞',   top: '#b08243', side: '#96702f', bottom: '#8a6430', solid: true, tool: 'any', hardness: 1.5 },
+  piston_ext:  { name: '活塞(伸出)', top: '#c8c8d2', side: '#a0763a', bottom: '#8a6430', solid: true, tool: 'any', hardness: 1.5 },
 };
 const HOTBAR_ORDER = ['grass', 'dirt', 'stone', 'wood', 'leaves', 'sand', 'planks', 'brick'];
 
 // 方块数字 id(用于紧凑的 Uint8Array 区块存储)
-const BLOCK_ID = { air: 0, grass: 1, dirt: 2, stone: 3, wood: 4, leaves: 5, sand: 6, planks: 7, brick: 8, water: 9, snow: 10, gravel: 11, wool_red: 12, wool_yellow: 13, wool_white: 14, wool_black: 15, door: 16, door_iron: 17, door_stone: 18, door_gold: 19, door_diamond: 20, crafting_table: 21, cobblestone: 22, coal_ore: 23, iron_ore: 24, diamond_ore: 25, tnt: 26, furnace: 27, glass: 28, bed: 29, chest: 30, ladder: 31, bookshelf: 32, torch: 33, rail: 34, enchanting_table: 35, slime: 36, spawner: 37, redstone: 38, redstone_torch: 39, lever_off: 40, lever_on: 41, redstone_ore: 42, iron_block: 43, sugarcane: 44, cake: 45, slab_planks: 46, slab_cobble: 47, stairs_planks: 48, stairs_cobble: 49, fence: 50 };
+const BLOCK_ID = { air: 0, grass: 1, dirt: 2, stone: 3, wood: 4, leaves: 5, sand: 6, planks: 7, brick: 8, water: 9, snow: 10, gravel: 11, wool_red: 12, wool_yellow: 13, wool_white: 14, wool_black: 15, door: 16, door_iron: 17, door_stone: 18, door_gold: 19, door_diamond: 20, crafting_table: 21, cobblestone: 22, coal_ore: 23, iron_ore: 24, diamond_ore: 25, tnt: 26, furnace: 27, glass: 28, bed: 29, chest: 30, ladder: 31, bookshelf: 32, torch: 33, rail: 34, enchanting_table: 35, slime: 36, spawner: 37, redstone: 38, redstone_torch: 39, lever_off: 40, lever_on: 41, redstone_ore: 42, iron_block: 43, sugarcane: 44, cake: 45, slab_planks: 46, slab_cobble: 47, stairs_planks: 48, stairs_cobble: 49, fence: 50, repeater_off: 51, repeater_on: 52, piston: 53, piston_ext: 54 };
 const ID_TO_BLOCK = Object.keys(BLOCK_ID);
 
 // ============================================================
@@ -675,6 +679,46 @@ function drawBlockFace(ctx, type, face, s, seedRand) {
       ctx.beginPath(); ctx.moveTo(0, Math.floor(s * 0.5)); ctx.lineTo(s, Math.floor(s * 0.5)); ctx.stroke();
       break;
     }
+    case 'repeater_off':
+    case 'repeater_on': {
+      // 中继器(R42):石底座 + 前后两支小火把(开态亮红发光)
+      const on = type === 'repeater_on';
+      ctx.clearRect(0, 0, s, s);
+      ctx.fillStyle = on ? '#c8b8a8' : '#98988f';
+      ctx.fillRect(Math.floor(s * 0.08), Math.floor(s * 0.3), Math.floor(s * 0.84), Math.floor(s * 0.62));
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      ctx.fillRect(Math.floor(s * 0.08), Math.floor(s * 0.3), Math.floor(s * 0.84), Math.max(1, Math.floor(s * 0.06)));
+      const torchCol = on ? '#ff5040' : '#7a3a30';
+      for (const fx of [0.26, 0.62]) {
+        ctx.fillStyle = '#8a6430';
+        ctx.fillRect(Math.floor(s * fx), Math.floor(s * 0.5), Math.max(2, Math.floor(s * 0.1)), Math.floor(s * 0.34));
+        ctx.fillStyle = torchCol;
+        ctx.fillRect(Math.floor(s * (fx - 0.02)), Math.floor(s * 0.34), Math.floor(s * 0.14), Math.floor(s * 0.18));
+        if (on) { ctx.fillStyle = '#ffd0c0'; ctx.fillRect(Math.floor(s * (fx + 0.01)), Math.floor(s * 0.37), Math.floor(s * 0.07), Math.floor(s * 0.08)); }
+      }
+      break;
+    }
+    case 'piston':
+    case 'piston_ext': {
+      // 活塞(R42):木板框 + 铁芯;伸出态顶面带推出杆(浅灰杆+深框)
+      const ext = type === 'piston_ext';
+      ctx.fillStyle = '#96702f';
+      ctx.fillRect(0, 0, s, s);
+      ctx.fillStyle = '#a0763a';
+      for (let i = 0; i < 4; i++) ctx.fillRect(0, Math.floor(s * (0.08 + i * 0.24)), s, Math.max(1, Math.floor(s * 0.08)));
+      const core = face === 'top' || face === 'bottom';
+      if (ext) {
+        // 伸出态:顶面 = 木质推出头;侧面 = 杆
+        if (core) { ctx.fillStyle = '#b08243'; ctx.fillRect(Math.floor(s * 0.1), Math.floor(s * 0.1), Math.floor(s * 0.8), Math.floor(s * 0.8)); ctx.strokeStyle = '#6e4f2a'; ctx.lineWidth = 2; ctx.strokeRect(Math.floor(s * 0.1) + 1, Math.floor(s * 0.1) + 1, Math.floor(s * 0.8) - 2, Math.floor(s * 0.8) - 2); }
+        else { ctx.fillStyle = '#c8c8d2'; ctx.fillRect(Math.floor(s * 0.38), Math.floor(s * 0.06), Math.floor(s * 0.24), Math.floor(s * 0.9)); ctx.fillStyle = '#9a9aa8'; ctx.fillRect(Math.floor(s * 0.52), Math.floor(s * 0.06), Math.floor(s * 0.1), Math.floor(s * 0.9)); }
+      } else if (core) {
+        ctx.fillStyle = '#c8c8d2';
+        ctx.fillRect(Math.floor(s * 0.24), Math.floor(s * 0.24), Math.floor(s * 0.52), Math.floor(s * 0.52));
+        ctx.fillStyle = '#8a6a20';
+        ctx.fillRect(Math.floor(s * 0.4), Math.floor(s * 0.4), Math.floor(s * 0.2), Math.floor(s * 0.2));
+      }
+      break;
+    }
     case 'redstone_ore': {
       // 红石矿(R38):石底 + 分层红斑(暗圈→红芯→高光)
       ctx.fillStyle = '#7c7c7c';
@@ -879,7 +923,9 @@ const dungeonSpawns = new Map();
 const dungeonLootSpots = new Map();
 // 红石元件登记表(R38):chunkKey → Map("x,y,z" → 方块 id);
 // 放置/破坏/拉杆切换走 setBlock 实时更新,区块(重)装载时从 diff 桶扫描登记
-const REDSTONE_FAMILY = { redstone: 1, redstone_torch: 1, lever_off: 1, lever_on: 1 };
+const REDSTONE_FAMILY = { redstone: 1, redstone_torch: 1, lever_off: 1, lever_on: 1, repeater_off: 1, repeater_on: 1, piston: 1, piston_ext: 1 };   // R42 +中继器/活塞(登记/采样破坏共用)
+const pistons = new Map();        // 活塞朝向(R42):key "x,y,z" → facing(0:+x 1:-x 2:+z 3:-z)
+const repeaterTimers = new Map(); // 中继器导通延迟(R42):key → 导通时刻(Date.now)
 const CANE_ID = 'sugarcane';   // 非固体采样破坏同样覆盖甘蔗(R40)
 const redstoneParts = new Map();
 function registerRedstone(x, y, z, id) {
@@ -1236,6 +1282,9 @@ function setBlock(x, y, z, type) {
   else unregisterRedstone(x, y, z);   // 幂等:非红石格删除无副作用
   // 铁傀儡构造检测(R39):放下铁块时若构成 T 形结构 → 生成(内部递归 setBlock 无害)
   if (type === 'iron_block') trySpawnGolem(x, y, z);
+  // 活塞朝向维护(R42):伸出/收回只是 id 切换,朝向存于 Map 天然保留;
+  // 方块被彻底移除时清登记(被推动的活塞朝向重置为默认,边缘情况可接受)
+  if (!type) pistons.delete(x + ',' + y + ',' + z);
   // 相邻 chunk 在边界时也需重建(面剔除跨边界)
   if (lx === 0) markChunkDirty(cx - 1, cz);
   if (lx === CHUNK_SIZE - 1) markChunkDirty(cx + 1, cz);
@@ -2726,6 +2775,8 @@ function clearWorld() {
   redstoneParts.clear();        // 红石登记随区块 diff 重新入册(R38)
   caneTimers.clear();           // 甘蔗计时随存档(R40)
   cakes.clear();                // 蛋糕片数随存档(R40)
+  pistons.clear();              // 活塞朝向随存档(R42)
+  repeaterTimers.clear();       // 中继器延迟计时(R42)
   for (const a of arrows) scene.remove(a);
   arrows.length = 0;
   clearDroppedItems();   // 清掉落物,避免旧世界残留
@@ -3753,6 +3804,9 @@ function breakBlock() {
       let dropId = rs.id, dropKind = 'block', dropN = 1;
       if (rs.id === 'redstone') { dropId = 'redstone_dust'; dropKind = 'item'; }
       else if (rs.id === 'lever_on') dropId = 'lever_off';   // 拆下拉杆回到关态
+      else if (rs.id === 'repeater_on') dropId = 'repeater_off';   // 开态中继器拆回关态(R42)
+      else if (rs.id === 'piston_ext') { dropId = 'piston'; pistons.delete(rs.x + ',' + rs.y + ',' + rs.z); }
+      else if (rs.id === 'piston') pistons.delete(rs.x + ',' + rs.y + ',' + rs.z);
       spawnDroppedItem(rs.x, rs.y, rs.z, dropId, dropN, dropKind);
       if (rs.id === CANE_ID) {   // 拆一节:上方整柱弹出(经典),柱底计时清理
         for (let yy = rs.y + 1; getBlock(rs.x, yy, rs.z) === CANE_ID; yy++) {
@@ -4038,6 +4092,12 @@ function placeBlock() {
     consumeSelected();
     if (placedType === 'redstone_torch') unlockAchv('redstone');   // 成就:电路初成(R38)
     if (placedType === 'sugarcane') caneTimers.set(nx + ',' + ny + ',' + nz, Date.now());   // 45s 长一节(R40)
+    if (placedType === 'piston') {   // 朝向 = 玩家水平视线方向(R42)
+      const dirx = -Math.sin(yaw), dirz = -Math.cos(yaw);
+      const facing = Math.abs(dirx) > Math.abs(dirz) ? (dirx > 0 ? 0 : 1) : (dirz > 0 ? 2 : 3);
+      pistons.set(nx + ',' + ny + ',' + nz, facing);
+      showToast('活塞朝向:' + ['东', '西', '南', '北'][facing]);
+    }
   }
 }
 
@@ -4221,11 +4281,56 @@ function updateRedstone(dt) {
       const [x, y, z] = key.split(',').map(Number);
       if (getBlock(x, y, z) !== id) continue;   // 残留登记(已破坏/未加载)跳过
       if (id === 'redstone') wires.add(key);
-      else if (id === 'redstone_torch') sources.push({ key, p: 15 });
-      else if (id === 'lever_on') sources.push({ key, p: 15 });
+      else if (id === 'redstone_torch' || id === 'lever_on' || id === 'repeater_on') sources.push({ key, p: 15 });   // repeater_on 信号拉满重发(R42)
     }
   }
   const power = MACHINES.redstonePower(wires, sources);
+  // ---- 中继器(R42):输入侧(四向邻格)有功率 → 延迟 0.5s 后导通拉满;
+  //      无输入 → 立即断开。双向简化(经典为单向,无朝向存储)
+  const now = Date.now();
+  for (const m of redstoneParts.values()) {
+    for (const [key, id] of m) {
+      if (id !== 'repeater_off' && id !== 'repeater_on') continue;
+      const [x, y, z] = key.split(',').map(Number);
+      if (getBlock(x, y, z) !== id) continue;
+      // 输入判定:开态中继器须排除自身电源重算(否则自身输出回灌输入 → 永不断开的自锁)
+      const powerIn = (id === 'repeater_on')
+        ? MACHINES.redstonePower(wires, sources.filter(sc => sc.key !== key))
+        : power;
+      let input = false;
+      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        if ((powerIn.get((x + dx) + ',' + y + ',' + (z + dz)) || 0) > 0) { input = true; break; }
+      }
+      if (id === 'repeater_off' && input) {
+        if (!repeaterTimers.has(key)) repeaterTimers.set(key, now + 500);   // 延迟半秒
+      } else if (id === 'repeater_off' && !input) {
+        repeaterTimers.delete(key);
+      } else if (id === 'repeater_on' && !input) {
+        repeaterTimers.delete(key);
+        setBlock(x, y, z, 'repeater_off');
+      }
+    }
+  }
+  for (const [key, deadline] of repeaterTimers.entries()) {
+    if (now < deadline) continue;
+    const [x, y, z] = key.split(',').map(Number);
+    if (getBlock(x, y, z) === 'repeater_off') { setBlock(x, y, z, 'repeater_on'); spawnParticles(x + 0.5, y + 0.4, z + 0.5, 0xe05040, 3); }
+    repeaterTimers.delete(key);
+  }
+  // ---- 活塞(R42):四向 + 上方充能 → 伸出(推动链);断能 → 收回(方块留在原地)
+  for (const m of redstoneParts.values()) {
+    for (const [key, id] of m) {
+      if (id !== 'piston' && id !== 'piston_ext') continue;
+      const [x, y, z] = key.split(',').map(Number);
+      if (getBlock(x, y, z) !== id) continue;
+      let powered = false;
+      for (const [dx, dy2, dz] of [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, 0, 1], [0, 0, -1]]) {
+        if ((power.get((x + dx) + ',' + (y + dy2) + ',' + (z + dz)) || 0) > 0) { powered = true; break; }
+      }
+      if (powered && id === 'piston') pistonExtend(x, y, z);
+      else if (!powered && id === 'piston_ext') pistonRetract(x, y, z);
+    }
+  }
   // 执行器:铁门(两格门体,任一格四向相邻充能即开)
   for (const d of doors.values()) {
     if (d.type !== 'door_iron') continue;
@@ -4240,6 +4345,56 @@ function updateRedstone(dt) {
       audio.play('step');
     }
   }
+}
+
+// ---- 活塞推动(R42) ----
+const PISTON_FACING = [[1, 0], [-1, 0], [0, 1], [0, -1]];   // 0:+x 1:-x 2:+z 3:-z
+const PISTON_IMMOVABLE = { chest: 1, furnace: 1, spawner: 1, cake: 1, bed: 1, enchanting_table: 1 };   // 容器/多方块不可推(经典)
+function pistonFacingOf(x, y, z) {
+  const f = pistons.get(x + ',' + y + ',' + z);
+  return (f === undefined) ? 0 : f;
+}
+function pistonExtend(x, y, z) {
+  const [fx, fz] = PISTON_FACING[pistonFacingOf(x, y, z)];
+  // 前方链扫描:空气=链止;非固体非空气=被推掉(pop);固体=入链;
+  // 链 >12 或遇不可推方块(含间接)→ 不动作(经典)
+  const chain = [];
+  let cx = x + fx, cz = z + fz;
+  while (chain.length <= 12) {
+    const b = getBlock(cx, y, cz);
+    if (!b) break;
+    if (PISTON_IMMOVABLE[b]) return false;
+    if (!BLOCK_TYPES[b] || !BLOCK_TYPES[b].solid) {
+      // 非固体元件被推掉(经典 pop):掉落物后该格为空,链止于此
+      setBlock(cx, y, cz, null);
+      let dropId = b, dropKind = 'block';
+      if (b === 'redstone') { dropId = 'redstone_dust'; dropKind = 'item'; }
+      else if (b === 'lever_on') dropId = 'lever_off';
+      else if (b === 'repeater_on') dropId = 'repeater_off';
+      else if (b === 'sugarcane') { dropId = 'sugarcane'; }
+      spawnDroppedItem(cx, y, cz, dropId, 1, dropKind);
+      break;
+    }
+    chain.push([cx, cz]);
+    cx += fx; cz += fz;
+  }
+  if (chain.length > 12) return false;   // 超过 12 格推不动(经典)
+  // 链尾 → 链首逐格前移(先移后清,避免覆盖)
+  for (let i = chain.length - 1; i >= 0; i--) {
+    const [ax, az] = chain[i];
+    const b = getBlock(ax, y, az);
+    setBlock(ax + fx, y, az + fz, b);
+    setBlock(ax, y, az, null);
+  }
+  setBlock(x, y, z, 'piston_ext');
+  spawnParticles(x + 0.5 + fx, y + 0.5, z + 0.5 + fz, 0xc8c8d2, 5);
+  audio.play('place');
+  unlockAchv('piston');   // 成就:精密机械(R42)
+  return true;
+}
+function pistonRetract(x, y, z) {
+  setBlock(x, y, z, 'piston');   // 收回(普通活塞:被推方块留在原地)
+  audio.play('break');
 }
 
 // 红石元件直接破坏(R38):非固体元件射线穿不中 —— 沿视线采样最先命中的元件格
@@ -7729,6 +7884,11 @@ function applySave(rec) {
   if (Array.isArray(rec.cakesData)) {
     for (const [k, n] of rec.cakesData) cakes.set(k, Math.max(1, Math.min(6, n | 0)));
   }
+  // 恢复活塞朝向(R42;脏数据防御:朝向 0-3)
+  pistons.clear();
+  if (Array.isArray(rec.pistonsData)) {
+    for (const [k, f] of rec.pistonsData) if (typeof k === 'string' && Number.isInteger(f) && f >= 0 && f <= 3) pistons.set(k, f);
+  }
   // 恢复矿车(R26;位置取整到所在铁轨格)
   clearMinecarts();
   if (rec.minecartsData) {
@@ -8078,7 +8238,7 @@ function openTablePanel() {
   if (closeBtn) closeBtn.onclick = closeTablePanel;
   // 目录循环列表:方块 + 材料物品(矿石/圆石/木棍等,按 kind 区分图标)
   const catalog = HOTBAR_ORDER.map(id => ({ kind: 'block', id }))
-    .concat(['water', 'snow', 'gravel', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'sand', 'bed', 'chest', 'ladder', 'bookshelf', 'wool_red', 'wool_white', 'torch', 'rail', 'enchanting_table', 'slime', 'redstone', 'redstone_torch', 'lever_off', 'iron_block', 'sugarcane', 'cake', 'slab_planks', 'slab_cobble', 'stairs_planks', 'stairs_cobble', 'fence'].map(id => ({ kind: 'block', id })))
+    .concat(['water', 'snow', 'gravel', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'sand', 'bed', 'chest', 'ladder', 'bookshelf', 'wool_red', 'wool_white', 'torch', 'rail', 'enchanting_table', 'slime', 'redstone', 'redstone_torch', 'lever_off', 'iron_block', 'sugarcane', 'cake', 'slab_planks', 'slab_cobble', 'stairs_planks', 'stairs_cobble', 'fence', 'repeater_off', 'piston'].map(id => ({ kind: 'block', id })))
     .concat(['leather', 'book'].map(id => ({ kind: 'item', id })))
     .concat(['gem_gold', 'gem_diamond', 'gem_emerald', 'arrow', 'stick', 'coal', 'iron_ingot'].map(id => ({ kind: 'item', id })));
   document.querySelectorAll('#table-grid .inv-cell').forEach((cell, i) => {
@@ -8364,6 +8524,7 @@ function buildSaveRecord() {
     xpData: { level: xpState.level, points: xpState.points },
     achvData: Array.from(achvUnlocked),   // 成就解锁清单(R34)
     cakesData: Array.from(cakes.entries()),   // 蛋糕剩余片数(R40)
+    pistonsData: Array.from(pistons.entries()),   // 活塞朝向(R42)
     doorsData: Array.from(doors.entries()).map(function(e){return [e[0], {x:e[1].x,y:e[1].y,z:e[1].z,type:e[1].type,open:e[1].open,facing:e[1].facing}];}),
     timestamp: Date.now(),
   };

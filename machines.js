@@ -179,6 +179,7 @@
     { id: 'redstone',   icon: '⚡', name: '电路初成',     desc: '放置一支红石火把' },
     { id: 'golem',      icon: '🤖', name: '铁壁守护',     desc: '用铁块召唤一只铁傀儡' },
     { id: 'cake',       icon: '🍰', name: '蛋糕时刻',     desc: '吃一片蛋糕' },
+    { id: 'piston',     icon: '⚙️', name: '精密机械',     desc: '用红石激活一只活塞' },
   ];
   const ACHV_BY_ID = {};
   for (const a of ACHIEVEMENTS) ACHV_BY_ID[a.id] = a;
@@ -223,7 +224,7 @@
     'playerHP', 'playerHunger', 'hotbar', 'currentSlot', 'modifications',
     'cropTimersData', 'furnacesData', 'chestsData', 'spawnPoint',
     'armorSlotsData', 'doorsData', 'minecartsData', 'mobsData', 'xpData',
-    'achvData', 'cakesData', 'plazaBuilt', 'timestamp',
+    'achvData', 'cakesData', 'pistonsData', 'plazaBuilt', 'timestamp',
   ];
   // 返回缺失字段名数组(空数组 = 完整)
   function validateSaveRecord(rec) {

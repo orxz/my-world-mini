@@ -92,6 +92,10 @@
     { name: '石楼梯', pattern: ['cobblestone', null, null, 'cobblestone', 'cobblestone', null, 'cobblestone', 'cobblestone', 'cobblestone'], result: { kind: 'block', id: 'stairs_cobble' }, count: 4, shapeless: false },
     // 栅栏:4 木板 + 2 木棍 → 3(经典)
     { name: '栅栏', pattern: ['planks', 'stick', 'planks', 'planks', 'stick', 'planks', null, null, null], result: { kind: 'block', id: 'fence' }, count: 3, shapeless: false },
+    // 中继器:2 红石火把 + 3 石头(经典,R42;信号延长/延迟)
+    { name: '中继器', pattern: ['redstone_torch', 'stone', 'redstone_torch', 'stone', 'stone', 'stone', null, null, null], result: { kind: 'block', id: 'repeater_off' }, count: 1, shapeless: false },
+    // 活塞:3 木板 + 4 圆石 + 1 铁锭 + 1 红石粉(经典,R42)
+    { name: '活塞', pattern: ['planks', 'planks', 'planks', 'cobblestone', 'iron_ingot', 'cobblestone', 'cobblestone', 'redstone_dust', 'cobblestone'], result: { kind: 'block', id: 'piston' }, count: 1, shapeless: false },
     // 铁轨:6 铁锭 + 1 木棍(经典配方 → 16 节)
     { name: '铁轨', pattern: ['iron_ingot', 'iron_ingot', 'iron_ingot', 'iron_ingot', 'stick', 'iron_ingot', null, null, null], result: { kind: 'block', id: 'rail' }, count: 16, shapeless: false },
     // 矿车:5 铁锭 U 形(经典配方 → 1 辆)

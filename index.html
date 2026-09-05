@@ -73,6 +73,18 @@
     .slot canvas { width: 22px; height: 22px; }
     #hotbar { gap: 1px; }
   }
+  /* 移动端打磨(R43):成就 toast 避让右上角「≡」暂停按钮;面板紧凑 */
+  @media (max-width: 640px) {
+    #achv-toasts { top: 54px !important; right: 8px !important; }   /* !important:压过后文同特异性基础规则 */
+    .achv-toast { min-width: 190px; padding: 7px 10px; }
+    .achv-toast .achv-icon { font-size: 22px; }
+    .achv-toast .achv-text { font-size: 12px; }
+    .pause-card { max-height: 86vh; overflow-y: auto; padding: 14px 10px; }
+    .menu-btn { padding: 8px 10px; font-size: 13px; }
+    #trade-panel, #chest-panel, #furnace-panel { max-width: 94vw; }
+    #achv-panel .pause-card { min-width: 300px; max-width: 94vw; }
+    .achv-row { padding: 6px 8px; }
+  }
 
   /* 信息面板 */
   #info {
@@ -400,6 +412,8 @@
   <div id="touch-jump" style="position:fixed;right:30px;bottom:180px;width:60px;height:60px;background:rgba(255,255,255,0.2);border:2px solid rgba(255,255,255,0.4);border-radius:30px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:24px;z-index:20;touch-action:none;">⬆</div>
   <div id="touch-break" style="position:fixed;right:100px;bottom:120px;width:60px;height:60px;background:rgba(220,80,80,0.3);border:2px solid rgba(255,100,100,0.5);border-radius:30px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;z-index:20;touch-action:none;">挖</div>
   <div id="touch-place" style="position:fixed;right:30px;bottom:120px;width:60px;height:60px;background:rgba(80,180,80,0.3);border:2px solid rgba(100,200,100,0.5);border-radius:30px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;z-index:20;touch-action:none;">放</div>
+  <!-- ≡ 暂停按钮(R43 打磨:此前 README 宣称但未实现 —— 触屏无入口打开暂停菜单) -->
+  <div id="touch-pause" style="position:fixed;top:10px;right:10px;width:44px;height:40px;background:rgba(0,0,0,0.35);border:2px solid rgba(255,255,255,0.4);border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;z-index:21;touch-action:none;cursor:pointer;">≡</div>
 </div>
 
 <!-- 护甲条(生命条上方,无护甲时隐藏) -->
@@ -644,6 +658,6 @@
 <script src="inventory.js?v=20260925"></script>
 <script src="machines.js?v=20260929"></script>
 <script src="three.min.js?v=r160"></script>
-<script src="game.js?v=20260929"></script>
+<script src="game.js?v=20260930"></script>
 </body>
 </html>

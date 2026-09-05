@@ -58,6 +58,7 @@ export default [
       'test/r40-cake.cdp.mjs',       // R40 蛋糕/糖/蛋链 CDP 实机验证(同上)
       'test/r41-build.cdp.mjs',      // R41 建筑方块轮 CDP 实机验证(同上)
       'test/r42-piston.cdp.mjs',     // R42 红石扩展轮 CDP 实机验证(同上)
+      'test/r43-polish.cdp.mjs',     // R43 打磨轮 CDP 实机验证(同上)
     ],
   },
 

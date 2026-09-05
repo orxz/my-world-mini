@@ -370,7 +370,7 @@ test('饥饿:归零 → 每 4 秒 1 次饥饿伤害信号', () => {
   assert.ok(starve >= 1, '应触发饥饿伤害');
 });
 test('饥饿:进食恢复由调用方处理(FOODS 表)', () => {
-  assert.strictEqual(FOODS.cooked_porkchop, 12);
+  assert.strictEqual(FOODS.cooked_porkchop, 10);   // R43 平衡:12→10(经典收敛)
   assert.strictEqual(FOODS.porkchop, 8);
   assert.strictEqual(FOODS.apple, 4);
 });

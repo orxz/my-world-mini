@@ -3678,6 +3678,18 @@ function setupInput() {
     camera.updateProjectionMatrix();
     renderer.setSize(innerWidth, innerHeight);
   });
+
+  // ≡ 暂停按钮(R43 打磨):触屏打开暂停菜单(保存/设置/存档管理入口)。
+  // 绑定放在 isTouch 之外:按钮仅在触屏显示,桌面隐藏;统一绑定便于测试
+  const pauseBtn = document.getElementById('touch-pause');
+  if (pauseBtn) {
+    const openPauseFromTouch = () => {
+      const pm = document.getElementById('pause-menu');
+      if (pm && pm.classList.contains('hidden')) pm.classList.remove('hidden');
+    };
+    pauseBtn.addEventListener('touchstart', (e) => { e.preventDefault(); openPauseFromTouch(); }, { passive: false });
+    pauseBtn.addEventListener('click', openPauseFromTouch);
+  }
 }
 
 // ============================================================
@@ -4018,7 +4030,7 @@ function placeBlock() {
     if (lb === 'lever_off' || lb === 'lever_on') {
       setBlock(lx, ly, lz, lb === 'lever_off' ? 'lever_on' : 'lever_off');
       showToast(lb === 'lever_off' ? '🕹️ 拉杆:开' : '🕹️ 拉杆:关');
-      audio.play('place');
+      audio.play('click');
       swingHoldItem();
       return;
     }
@@ -4314,7 +4326,7 @@ function updateRedstone(dt) {
   for (const [key, deadline] of repeaterTimers.entries()) {
     if (now < deadline) continue;
     const [x, y, z] = key.split(',').map(Number);
-    if (getBlock(x, y, z) === 'repeater_off') { setBlock(x, y, z, 'repeater_on'); spawnParticles(x + 0.5, y + 0.4, z + 0.5, 0xe05040, 3); }
+    if (getBlock(x, y, z) === 'repeater_off') { setBlock(x, y, z, 'repeater_on'); spawnParticles(x + 0.5, y + 0.4, z + 0.5, 0xe05040, 3); audio.play('click'); }
     repeaterTimers.delete(key);
   }
   // ---- 活塞(R42):四向 + 上方充能 → 伸出(推动链);断能 → 收回(方块留在原地)
@@ -4373,6 +4385,7 @@ function pistonExtend(x, y, z) {
       else if (b === 'repeater_on') dropId = 'repeater_off';
       else if (b === 'sugarcane') { dropId = 'sugarcane'; }
       spawnDroppedItem(cx, y, cz, dropId, 1, dropKind);
+      audio.play('pop');
       break;
     }
     chain.push([cx, cz]);
@@ -5083,7 +5096,7 @@ function useBucket(item) {
         setBlock(x, y, z, null);
         bucketSwapItem('water_bucket');
         showToast('🪣 装满一桶水');
-        audio.play('place');
+        audio.play('splash');
         unlockAchv('bucket');   // 成就:桶装玩意(R36)
         return;
       }
@@ -5100,7 +5113,7 @@ function useBucket(item) {
   setBlock(nx, ny, nz, 'water');
   bucketSwapItem('bucket');
   showToast('🪣 倒出水(可游泳 · 可再舀取)');
-  audio.play('place');
+  audio.play('splash');
 }
 
 // 剪羊毛(R35):手持剪刀右键羊 → 掉 1-3 白羊毛 + 模型换粉皮;45 秒长回
@@ -5789,8 +5802,8 @@ function updateXPOrbs(dt) {
     const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
     if (d < 1.2) {   // 吸收
       const gained = MACHINES.xpGain(xpState, o.value);
-      if (gained > 0) showToast('⭐ 升级!经验等级 ' + xpState.level);
-      audio.play('place');
+      audio.play('xp');   // 经验吸收清脆音(R43)
+      if (gained > 0) { showToast('⭐ 升级!经验等级 ' + xpState.level); audio.play('levelup'); }
       updateXPBar();
       markDirtySave();
       scene.remove(o.mesh);
@@ -6040,6 +6053,7 @@ function updateMobs(dt) {
           m.eggT = 90 + Math.random() * 90;
           spawnDroppedItem(m.mesh.position.x - 0.5, m.mesh.position.y - 0.2, m.mesh.position.z - 0.5, 'egg', 1, 'item');
           spawnParticles(m.mesh.position.x, m.mesh.position.y - 0.2, m.mesh.position.z, 0xf0e8d0, 4);
+          audio.play('pop');
         }
       }
       // 剪毛恢复(R35):45 秒后羊毛长回
@@ -8375,6 +8389,12 @@ const audio = {
       case 'zombie':  this._tone('sawtooth', 95, 0.32, 0.2, t); this._tone('sawtooth', 72, 0.3, 0.16, t + 0.18); break;
       case 'fuse':    this._noise(0.9, 5200, 0.28, t); break;
       case 'explode': this._noise(0.5, 280, 0.75, t); this._tone('sawtooth', 55, 0.4, 0.35, t); break;
+      // ---- 打磨轮扩充(R43) ----
+      case 'pop':     this._sweep(900, 300, 0.07, t); this._tone('sine', 520, 0.05, 0.18, t + 0.02); break;            // 弹出:产蛋/活塞 pop
+      case 'xp':      this._tone('sine', 880, 0.09, 0.2, t); this._tone('sine', 1320, 0.12, 0.16, t + 0.06); break;    // 经验吸收(清脆双音)
+      case 'levelup': this._tone('triangle', 523, 0.12, 0.25, t); this._tone('triangle', 659, 0.12, 0.25, t + 0.1); this._tone('triangle', 784, 0.2, 0.28, t + 0.2); break;   // 升级琶音
+      case 'splash':  this._noise(0.28, 900, 0.35, t); this._tone('sine', 300, 0.15, 0.15, t + 0.03); break;           // 舀水/倒水
+      case 'click':   this._noise(0.03, 2600, 0.3, t); this._tone('square', 1200, 0.03, 0.12, t); break;               // 拉杆/中继器机械咔哒
     }
   },
   _tone(wave, freq, dur, gain, t0) {

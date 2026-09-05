@@ -56,11 +56,16 @@ const BLOCK_TYPES = {
   iron_block:  { name: '铁块',   top: '#d8d8e0', side: '#c8c8d2', bottom: '#b8b8c4', solid: true, tool: 'pickaxe', hardness: 5.0 },
   sugarcane:   { name: '甘蔗',   top: '#7ec850', side: '#6ab840', bottom: '#5aa838', solid: false, tool: 'any', hardness: 0.05 },
   cake:        { name: '蛋糕',   top: '#f8f0e8', side: '#f0e0d0', bottom: '#d8b890', solid: true, tool: 'any', hardness: 0.5 },
+  slab_planks: { name: '木台阶', top: '#b08243', side: '#a0763a', bottom: '#8a6430', solid: true, tool: 'axe', hardness: 1.0, slab: true },
+  slab_cobble: { name: '石台阶', top: '#828282', side: '#7a7a7a', bottom: '#6f6f6f', solid: true, tool: 'pickaxe', hardness: 2.0, slab: true },
+  stairs_planks:{ name: '木楼梯', top: '#b08243', side: '#a0763a', bottom: '#8a6430', solid: true, tool: 'axe', hardness: 1.0, stair: true },
+  stairs_cobble:{ name: '石楼梯', top: '#828282', side: '#7a7a7a', bottom: '#6f6f6f', solid: true, tool: 'pickaxe', hardness: 2.0, stair: true },
+  fence:       { name: '栅栏',   top: '#a0763a', side: '#96702f', bottom: '#8a6430', solid: true, tool: 'axe', hardness: 1.5, fence: true },
 };
 const HOTBAR_ORDER = ['grass', 'dirt', 'stone', 'wood', 'leaves', 'sand', 'planks', 'brick'];
 
 // 方块数字 id(用于紧凑的 Uint8Array 区块存储)
-const BLOCK_ID = { air: 0, grass: 1, dirt: 2, stone: 3, wood: 4, leaves: 5, sand: 6, planks: 7, brick: 8, water: 9, snow: 10, gravel: 11, wool_red: 12, wool_yellow: 13, wool_white: 14, wool_black: 15, door: 16, door_iron: 17, door_stone: 18, door_gold: 19, door_diamond: 20, crafting_table: 21, cobblestone: 22, coal_ore: 23, iron_ore: 24, diamond_ore: 25, tnt: 26, furnace: 27, glass: 28, bed: 29, chest: 30, ladder: 31, bookshelf: 32, torch: 33, rail: 34, enchanting_table: 35, slime: 36, spawner: 37, redstone: 38, redstone_torch: 39, lever_off: 40, lever_on: 41, redstone_ore: 42, iron_block: 43, sugarcane: 44, cake: 45 };
+const BLOCK_ID = { air: 0, grass: 1, dirt: 2, stone: 3, wood: 4, leaves: 5, sand: 6, planks: 7, brick: 8, water: 9, snow: 10, gravel: 11, wool_red: 12, wool_yellow: 13, wool_white: 14, wool_black: 15, door: 16, door_iron: 17, door_stone: 18, door_gold: 19, door_diamond: 20, crafting_table: 21, cobblestone: 22, coal_ore: 23, iron_ore: 24, diamond_ore: 25, tnt: 26, furnace: 27, glass: 28, bed: 29, chest: 30, ladder: 31, bookshelf: 32, torch: 33, rail: 34, enchanting_table: 35, slime: 36, spawner: 37, redstone: 38, redstone_torch: 39, lever_off: 40, lever_on: 41, redstone_ore: 42, iron_block: 43, sugarcane: 44, cake: 45, slab_planks: 46, slab_cobble: 47, stairs_planks: 48, stairs_cobble: 49, fence: 50 };
 const ID_TO_BLOCK = Object.keys(BLOCK_ID);
 
 // ============================================================
@@ -638,6 +643,38 @@ function drawBlockFace(ctx, type, face, s, seedRand) {
       for (const fx of [0.22, 0.5, 0.78]) { ctx.beginPath(); ctx.arc(Math.floor(s * fx), Math.floor(s * 0.2), Math.max(1, Math.floor(s * 0.045)), 0, Math.PI * 2); ctx.fill(); }
       break;
     }
+    case 'fence': {
+      // 栅栏(R41):透明底 + 中柱 + 上下双横栏(alphaTest 镂空)
+      ctx.clearRect(0, 0, s, s);
+      const wood = '#96702f', woodHi = '#a0763a';
+      ctx.fillStyle = wood;
+      ctx.fillRect(Math.floor(s * 0.42), 0, Math.floor(s * 0.16), s);   // 中柱
+      ctx.fillStyle = woodHi;
+      ctx.fillRect(Math.floor(s * 0.42), 0, Math.floor(s * 0.06), s);   // 柱高光
+      for (const fy of [0.18, 0.66]) {   // 双横栏
+        ctx.fillStyle = wood;
+        ctx.fillRect(0, Math.floor(s * fy), s, Math.max(2, Math.floor(s * 0.1)));
+        ctx.fillStyle = woodHi;
+        ctx.fillRect(0, Math.floor(s * fy), s, Math.max(1, Math.floor(s * 0.035)));
+      }
+      break;
+    }
+    case 'stairs_planks':
+    case 'stairs_cobble': {
+      // 楼梯(R41):底半实心 + 上半靠一侧的台阶(侧面阶梯纹理;顶/底面纯色)
+      const wood = type === 'stairs_planks';
+      ctx.fillStyle = wood ? '#a0763a' : '#7a7a7a';
+      ctx.fillRect(0, 0, s, s);
+      if (face === 'side') {
+        ctx.fillStyle = wood ? '#8a6430' : '#6f6f6f';
+        ctx.fillRect(0, 0, Math.floor(s * 0.5), Math.floor(s * 0.5));   // 台阶暗面(左上)
+        ctx.fillStyle = 'rgba(0,0,0,0.25)';
+        ctx.fillRect(Math.floor(s * 0.5), 0, Math.max(1, Math.floor(s * 0.04)), Math.floor(s * 0.5));   // 台阶立沿
+      }
+      ctx.strokeStyle = 'rgba(0,0,0,0.18)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(0, Math.floor(s * 0.5)); ctx.lineTo(s, Math.floor(s * 0.5)); ctx.stroke();
+      break;
+    }
     case 'redstone_ore': {
       // 红石矿(R38):石底 + 分层红斑(暗圈→红芯→高光)
       ctx.fillStyle = '#7c7c7c';
@@ -799,8 +836,8 @@ function makeBlockMaterials(type) {
     const lm = M(side); lm.transparent = true; lm.alphaTest = 0.1;
     return [lm, lm.clone(), M(top), M(bottom), lm.clone(), lm.clone()];
   }
-  if (type === 'torch') {
-    // 火把:透明贴图(手持/图标用,与树叶同款 alphaTest)
+  if (type === 'torch' || type === 'fence') {
+    // 火把/栅栏:透明贴图(镂空,alphaTest;R41 栅栏接入)
     const tm = M(side); tm.transparent = true; tm.alphaTest = 0.1;
     return [tm, tm.clone(), M(top), M(bottom), tm.clone(), tm.clone()];
   }
@@ -1453,8 +1490,9 @@ function buildChunkMesh(ch) {
           }
           const col = shade * skyV;
           const start = tgtP.length / 3;
+          const hScale = (BLOCK_TYPES[type] && BLOCK_TYPES[type].slab) ? 0.5 : 1;   // 半砖半高(R41)
           for (let k = 0; k < 4; k++) {
-            tgtP.push(wx + base[k][0], y + base[k][1], wz + base[k][2]);
+            tgtP.push(wx + base[k][0], y + base[k][1] * hScale, wz + base[k][2]);
             tgtN.push(F.n[0], F.n[1], F.n[2]);
             tgtU.push(faceUV[k * 2], faceUV[k * 2 + 1]);
             if (!isWater) colors.push(col, col, col);
@@ -5932,8 +5970,11 @@ function updateMobs(dt) {
     const dlen = Math.hypot(dirx, dirz);
     if (dlen > 0.01 && m.onGround) {
       const ax = p.x + dirx / dlen * 0.5, az = p.z + dirz / dlen * 0.5;
-      if (isSolidAt(Math.floor(ax), footY, Math.floor(az)) || isSolidAt(Math.floor(ax), midY, Math.floor(az))) {
-        if (Math.random() < 0.5) m.vy = 7.2;
+      const fbx = getBlock(Math.floor(ax), footY, Math.floor(az)) || getBlock(Math.floor(ax), midY, Math.floor(az));
+      if (fbx && BLOCK_TYPES[fbx] && BLOCK_TYPES[fbx].solid) {
+        // 栅栏(R41):生物不越栏(1.5 格),只会转向;其余方块照旧半数跳
+        if (fbx === 'fence') { m.yaw += Math.PI * (0.5 + Math.random()); m.turnT = 1 + Math.random() * 2; }
+        else if (Math.random() < 0.5) m.vy = 7.2;
         else { m.yaw += Math.PI * (0.5 + Math.random()); m.turnT = 1 + Math.random() * 2; }
       }
     }
@@ -7019,21 +7060,57 @@ function moveAxis(axis, delta, r, H) {
   for (let x = minX; x <= maxX; x++)
     for (let y = minY; y <= maxY; y++)
       for (let z = minZ; z <= maxZ; z++) {
-        if (!isSolidAt(x, y, z)) continue;
+        const b = getBlock(x, y, z);
+        if (!b || !BLOCK_TYPES[b] || !BLOCK_TYPES[b].solid) continue;
+        const bt = BLOCK_TYPES[b];
+        if (axis === 'y') {
+          if (delta > 0) { playerPos.y = y - H * 0.5 - 1e-4; }
+          else {
+            // 半砖(R41):落在半高 0.5;普通方块落满高 1
+            const landTop = bt.slab ? 0.5 : 1;
+            playerPos.y = y + landTop + H * 0.5 + 1e-4; onGround = true;
+          }
+          velocity.y = 0; return;
+        }
+        // ---- 水平轴:step-assist 与栅栏(R41)----
+        const feet = py - H * 0.5;
+        // 楼梯:着地走入 → 自动上一格(经典免跳攀爬);上方 2 格净空
+        if (bt.stair && onGround && feet >= y - 0.01 && !isSolidAt(x, y + 1, z) && !isSolidAt(x, y + 2, z)) {
+          playerPos.y = y + 1 + H * 0.5 + 1e-4;
+          continue;   // 登顶后本格不再视为阻挡
+        }
+        // 半砖:脚在其底面以上 → 半高踏上(行走/下落皆可);上方 1 格净空
+        if (bt.slab && feet >= y - 0.01 && !isSolidAt(x, y + 1, z)) {
+          playerPos.y = y + 0.5 + H * 0.5 + 1e-4; onGround = true;
+          continue;
+        }
         if (axis === 'x') {
           if (delta > 0) playerPos.x = x - r - 1e-4;
           else playerPos.x = x + 1 + r + 1e-4;
           velocity.x = 0; return;
-        } else if (axis === 'z') {
+        } else {
           if (delta > 0) playerPos.z = z - r - 1e-4;
           else playerPos.z = z + 1 + r + 1e-4;
           velocity.z = 0; return;
-        } else {
-          if (delta > 0) { playerPos.y = y - H * 0.5 - 1e-4; }
-          else { playerPos.y = y + 1 + H * 0.5 + 1e-4; onGround = true; }
-          velocity.y = 0; return;
         }
       }
+  // 栅栏防跳(R41):身体未与栅栏格重叠(跳跃中)时,前进方向前沿列
+  // 若是栅栏且脚低于栅栏顶 → 阻挡。碰撞高 1.7(本作跳跃顶点 ≈1.56,
+  // 取 > 顶点确保任何起跳都越不过;经典 1.5 格对 1.25 跳同理)
+  if (axis === 'x' || axis === 'z') {
+    const feet = py - H * 0.5;
+    const dir = delta > 0 ? 1 : -1;
+    const ex = axis === 'x' ? px + dir * (r + 0.08) : px;
+    const ez = axis === 'z' ? pz + dir * (r + 0.08) : pz;
+    const fy = Math.floor(feet + 0.01);
+    for (const yy of [fy - 1, fy, fy + 1]) {   // 含脚下一格:跳跃中脚已越过栅栏格顶但仍在碰撞高度内
+      if (getBlock(Math.floor(ex), yy, Math.floor(ez)) === 'fence' && feet < yy + 1.7) {
+        if (axis === 'x') { playerPos.x -= delta; velocity.x = 0; }
+        else { playerPos.z -= delta; velocity.z = 0; }
+        return;
+      }
+    }
+  }
 }
 
 // 水中检测
@@ -8001,7 +8078,7 @@ function openTablePanel() {
   if (closeBtn) closeBtn.onclick = closeTablePanel;
   // 目录循环列表:方块 + 材料物品(矿石/圆石/木棍等,按 kind 区分图标)
   const catalog = HOTBAR_ORDER.map(id => ({ kind: 'block', id }))
-    .concat(['water', 'snow', 'gravel', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'sand', 'bed', 'chest', 'ladder', 'bookshelf', 'wool_red', 'wool_white', 'torch', 'rail', 'enchanting_table', 'slime', 'redstone', 'redstone_torch', 'lever_off', 'iron_block', 'sugarcane', 'cake'].map(id => ({ kind: 'block', id })))
+    .concat(['water', 'snow', 'gravel', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'sand', 'bed', 'chest', 'ladder', 'bookshelf', 'wool_red', 'wool_white', 'torch', 'rail', 'enchanting_table', 'slime', 'redstone', 'redstone_torch', 'lever_off', 'iron_block', 'sugarcane', 'cake', 'slab_planks', 'slab_cobble', 'stairs_planks', 'stairs_cobble', 'fence'].map(id => ({ kind: 'block', id })))
     .concat(['leather', 'book'].map(id => ({ kind: 'item', id })))
     .concat(['gem_gold', 'gem_diamond', 'gem_emerald', 'arrow', 'stick', 'coal', 'iron_ingot'].map(id => ({ kind: 'item', id })));
   document.querySelectorAll('#table-grid .inv-cell').forEach((cell, i) => {

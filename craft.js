@@ -81,6 +81,17 @@
     { name: '糖', pattern: ['sugarcane', null, null, null], result: { kind: 'item', id: 'sugar' }, count: 1, shapeless: true },
     // 蛋糕:2 糖 + 1 蛋 + 3 小麦(经典配方简化:无奶链,R40)
     { name: '蛋糕', pattern: ['sugar', 'sugar', 'egg', 'wheat', 'wheat', 'wheat', null, null, null], result: { kind: 'block', id: 'cake' }, count: 1, shapeless: true },
+    // ---- 建筑方块(R41)----
+    // 木台阶:3 木板一排 → 6(经典)
+    { name: '木台阶', pattern: ['planks', 'planks', 'planks', null, null, null, null, null, null], result: { kind: 'block', id: 'slab_planks' }, count: 6, shapeless: false },
+    // 石台阶:3 圆石一排 → 6(经典)
+    { name: '石台阶', pattern: ['cobblestone', 'cobblestone', 'cobblestone', null, null, null, null, null, null], result: { kind: 'block', id: 'slab_cobble' }, count: 6, shapeless: false },
+    // 木楼梯:6 木板阶梯形 → 4(经典)
+    { name: '木楼梯', pattern: ['planks', null, null, 'planks', 'planks', null, 'planks', 'planks', 'planks'], result: { kind: 'block', id: 'stairs_planks' }, count: 4, shapeless: false },
+    // 石楼梯:6 圆石阶梯形 → 4(经典)
+    { name: '石楼梯', pattern: ['cobblestone', null, null, 'cobblestone', 'cobblestone', null, 'cobblestone', 'cobblestone', 'cobblestone'], result: { kind: 'block', id: 'stairs_cobble' }, count: 4, shapeless: false },
+    // 栅栏:4 木板 + 2 木棍 → 3(经典)
+    { name: '栅栏', pattern: ['planks', 'stick', 'planks', 'planks', 'stick', 'planks', null, null, null], result: { kind: 'block', id: 'fence' }, count: 3, shapeless: false },
     // 铁轨:6 铁锭 + 1 木棍(经典配方 → 16 节)
     { name: '铁轨', pattern: ['iron_ingot', 'iron_ingot', 'iron_ingot', 'iron_ingot', 'stick', 'iron_ingot', null, null, null], result: { kind: 'block', id: 'rail' }, count: 16, shapeless: false },
     // 矿车:5 铁锭 U 形(经典配方 → 1 辆)

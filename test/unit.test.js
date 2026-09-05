@@ -936,6 +936,17 @@ test('糖/蛋糕配方 + 生鸡肉冶炼(R40)', () => {
   assert.ok(cake && cake.result.id === 'cake' && cake.result.kind === 'block', '2糖+1蛋+3麦 → 蛋糕');
   assert.strictEqual(SMELT.raw_chicken.id, 'cooked_chicken');   // 生鸡肉冶炼 → 烤鸡肉
 });
+test('建筑方块配方:台阶/楼梯/栅栏(R41)', () => {
+  const g3 = (ids) => ids.map(x => x === null ? null : { kind: x === 'stick' ? 'item' : 'block', id: x });
+  const slabP = matchRecipeGrid(g3(['planks', 'planks', 'planks', null, null, null, null, null, null]), 3, RECIPES);
+  assert.ok(slabP && slabP.result.id === 'slab_planks' && slabP.count === 6, '3 木板 → 6 木台阶');
+  const slabC = matchRecipeGrid(g3(['cobblestone', 'cobblestone', 'cobblestone', null, null, null, null, null, null]), 3, RECIPES);
+  assert.ok(slabC && slabC.result.id === 'slab_cobble' && slabC.count === 6, '3 圆石 → 6 石台阶');
+  const stP = matchRecipeGrid(g3(['planks', null, null, 'planks', 'planks', null, 'planks', 'planks', 'planks']), 3, RECIPES);
+  assert.ok(stP && stP.result.id === 'stairs_planks' && stP.count === 4, '阶梯形木板 → 4 木楼梯');
+  const fence = matchRecipeGrid(g3(['planks', 'stick', 'planks', 'planks', 'stick', 'planks', null, null, null]), 3, RECIPES);
+  assert.ok(fence && fence.result.id === 'fence' && fence.count === 3, '4 板 2 棍 → 3 栅栏');
+});
 
 console.log('\n=== 总结 ===');
 console.log(`通过: ${passed}/${passed+failed}`);

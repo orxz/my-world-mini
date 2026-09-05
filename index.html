@@ -240,8 +240,8 @@
 #armor-bar .armoricon.half  { filter: grayscale(0.5) brightness(0.8); }
 #armor-bar .armoricon.empty { filter: grayscale(1) brightness(0.4); }
 /* 经验条(R28):热栏上方居中,绿色进度 + 等级数字 */
-#xp-bar { position: fixed; left: 50%; transform: translateX(-50%); bottom: 76px; width: 262px; height: 6px; background: rgba(0,0,0,0.55); border: 1px solid #2a2a2a; z-index: 10; }
-#xp-fill { height: 100%; width: 0%; background: linear-gradient(#9fe86a, #4fa826); transition: width .2s; }
+#xp-bar { position: fixed; left: 50%; transform: translateX(-50%); bottom: 76px; width: 262px; height: 8px; background: rgba(0,0,0,0.55); border: 1px solid #2a2a2a; z-index: 10; }
+#xp-fill { height: 100%; width: 0%; background: linear-gradient(#b8f47e, #56c02c); transition: width .2s; }
 #xp-level { position: absolute; right: -32px; top: -7px; color: #8ef24a; font-size: 13px; font-weight: bold; text-shadow: 1px 1px 1px #000; }
 
   /* 合成台 3×3 面板(经典 MC 灰岩面板) */
@@ -292,7 +292,7 @@
     animation: panelIn .18s ease-out;
   }
   #trade-panel h3 { font-size: 18px; margin-bottom: 4px; color: #3F3F3F; text-shadow: 1px 1px 0 #DBDBDB; }
-  #trade-list { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; max-height: 430px; overflow-y: auto; }
+  #trade-list { margin-top: 12px; display: flex; flex-direction: column; gap: 4px; max-height: 430px; overflow-y: auto; }
   .trade-row {
     display: flex; align-items: center; gap: 12px; padding: 5px 8px; cursor: pointer;
     background: #8B8B8B; border: 2px solid;
@@ -300,7 +300,7 @@
   }
   .trade-row:hover { background: #a0a0a4; }
   .trade-row.locked { opacity: 0.45; filter: grayscale(0.6); }
-  .trade-cell { width: 46px; height: 46px; }
+  .trade-cell { width: 42px; height: 42px; }
   .trade-cell canvas { width: 32px; height: 32px; }
   .trade-arrow { font-size: 18px; color: #2F2F2F; }
 
@@ -409,9 +409,9 @@
   <div id="joystick" style="position:fixed;left:30px;bottom:120px;width:120px;height:120px;background:rgba(255,255,255,0.15);border:2px solid rgba(255,255,255,0.3);border-radius:60px;z-index:20;touch-action:none;">
     <div id="joystick-knob" style="position:absolute;left:40px;top:40px;width:40px;height:40px;background:rgba(255,255,255,0.4);border-radius:20px;"></div>
   </div>
-  <div id="touch-jump" style="position:fixed;right:30px;bottom:180px;width:60px;height:60px;background:rgba(255,255,255,0.2);border:2px solid rgba(255,255,255,0.4);border-radius:30px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:24px;z-index:20;touch-action:none;">⬆</div>
-  <div id="touch-break" style="position:fixed;right:100px;bottom:120px;width:60px;height:60px;background:rgba(220,80,80,0.3);border:2px solid rgba(255,100,100,0.5);border-radius:30px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;z-index:20;touch-action:none;">挖</div>
-  <div id="touch-place" style="position:fixed;right:30px;bottom:120px;width:60px;height:60px;background:rgba(80,180,80,0.3);border:2px solid rgba(100,200,100,0.5);border-radius:30px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;z-index:20;touch-action:none;">放</div>
+  <div id="touch-jump" style="position:fixed;right:30px;bottom:206px;width:60px;height:60px;background:rgba(255,255,255,0.2);border:2px solid rgba(255,255,255,0.4);border-radius:30px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:24px;z-index:20;touch-action:none;">⬆</div>
+  <div id="touch-break" style="position:fixed;right:100px;bottom:146px;width:60px;height:60px;background:rgba(220,80,80,0.3);border:2px solid rgba(255,100,100,0.5);border-radius:30px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;z-index:20;touch-action:none;">挖</div>
+  <div id="touch-place" style="position:fixed;right:30px;bottom:146px;width:60px;height:60px;background:rgba(80,180,80,0.3);border:2px solid rgba(100,200,100,0.5);border-radius:30px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;z-index:20;touch-action:none;">放</div>
   <!-- ≡ 暂停按钮(R43 打磨:此前 README 宣称但未实现 —— 触屏无入口打开暂停菜单) -->
   <div id="touch-pause" style="position:fixed;top:10px;right:10px;width:44px;height:40px;background:rgba(0,0,0,0.35);border:2px solid rgba(255,255,255,0.4);border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;z-index:21;touch-action:none;cursor:pointer;">≡</div>
 </div>
@@ -447,8 +447,12 @@
     <b>移动:</b> <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> &nbsp; <b>跳跃:</b> <kbd>空格</kbd> &nbsp; <b>下蹲/悬停:</b> <kbd>Shift</kbd><br>
     <b>视角:</b> 鼠标 &nbsp; <b>破坏:</b> 左键(连击) &nbsp; <b>放置/交互:</b> 右键 &nbsp; <b>丢弃:</b> <kbd>Q</kbd><br>
     <b>快捷栏:</b> <kbd>1</kbd>-<kbd>9</kbd> / 滚轮 &nbsp; <b>背包/合成:</b> <kbd>E</kbd> &nbsp; <b>切视角:</b> <kbd>F5</kbd> &nbsp; <b>暂停:</b> <kbd>Esc</kbd><br>
-    <b>飞行:</b> 双击空格 &nbsp; <b>右键交互:</b> 合成台(3×3)/熔炉/箱子/床(睡觉)/TNT(点燃)<br>
-    <b>生存:</b> 挖矿→合成→烧炼;夜晚有怪,睡觉跳早晨;死亡掉落物品可回拾
+    <b>飞行:</b> 双击空格 &nbsp; <b>右键交互:</b> 合成台(3×3)/熔炉/箱子/床(睡觉)/TNT(点燃)/拉杆/蛋糕(吃一片)<br>
+    <b>生存:</b> 挖矿→合成→烧炼;夜晚有怪,睡觉跳早晨;死亡掉落物品可回拾<br>
+    <b>进阶:</b> 村民右键交易(面包可喂村民繁殖) · 剪刀剪羊毛 · 小麦喂动物繁殖 · 钓鱼 · 桶舀水倒水 · 鸡会下蛋 · 海岸有甘蔗(→糖→蛋糕)<br>
+    <b>装备:</b> 护甲右键穿上减伤 · 盾右键格挡 · 经验球自动吸收 · 附魔台消耗等级附魔 · 击杀掉经验<br>
+    <b>红石:</b> 红石火把/拉杆供能 → 红石线传 15 格(中继器延时+拉满)→ 铁门自动开 / 活塞推方块 · 楼梯台阶免跳攀爬 · 栅栏拦人拦怪<br>
+    <b>探索:</b> 地下有地牢(刷怪笼+宝箱) · 铁块 T 形召唤铁傀儡守村 · 矿车沿铁轨通勤 · 暂停菜单查看成就进度
   </div>
 </div>
 
@@ -573,10 +577,13 @@
     <button id="btn-controls" class="menu-btn">操作说明</button>
     <div id="pause-controls" class="controls hidden">
       <b>基础:</b> WASD 移动 · 空格跳/双击飞行 · Shift 下蹲/梯上悬停 · Q 丢弃整组 · F5 切视角<br>
-      <b>方块:</b> 左键连击破坏(用对工具更快) · 右键放置 · 破坏掉落物走近自动拾取<br>
-      <b>右键交互:</b> 合成台→3×3合成 · 熔炉→冶炼(铁矿→铁锭/沙→玻璃) · 箱子→27格储物 · 床→夜间睡觉跳早晨+设重生点 · TNT→点燃快跑<br>
-      <b>生存:</b> 挖圆石做熔炉/合成台 · 砍树做床 · 猪排烤熟回饥饿 · 梯子空格上爬 · 手持食物右键进食<br>
-      <b>战斗:</b> 剑近战(空挥不耗耐久) · 弓远程(需箭,骷髅掉箭) · 怪物夜间刷新、白天燃烧 · 死亡掉落物品回原地拾回
+      <b>方块:</b> 左键连击破坏(用对工具更快) · 右键放置 · 掉落物走近自动拾取 · 楼梯/台阶走上免跳 · 栅栏拦人拦怪(跳不过)<br>
+      <b>右键交互:</b> 合成台(3×3) · 熔炉(冶炼) · 箱子(27格) · 床(睡觉跳早晨+设重生点) · TNT(点燃) · 拉杆(开关) · 蛋糕(逐片吃) · 村民(交易;手持面包=喂食繁殖)<br>
+      <b>生存:</b> 砍树→合成台→镐→圆石→熔炉烧铁 · 猪排/鸡肉烤熟回饥饿 · 小麦喂猪牛羊鸡繁殖 · 剪刀剪羊毛 · 海岸甘蔗→糖→蛋糕(2糖1蛋3麦) · 鸡自动下蛋 · 桶舀水/倒水 · 钓竿甩竿收鱼<br>
+      <b>装备:</b> 护甲右键穿上(减伤) · 盾格挡 · 击杀吸经验升级 · 附魔台消耗等级附魔(锋利/效率/保护/耐久/力量)<br>
+      <b>红石:</b> 火把/拉杆(右键开关)供能 15 → 红石线逐格衰减 → 中继器延时半秒+信号拉满 → 铁门自动开关 / 活塞推方块(≤12格);铁门只能红石驱动<br>
+      <b>战斗:</b> 剑近战(空挥不耗耐久) · 弓远程(需箭) · 怪物夜间刷新、白天燃烧 · 铁傀儡守村(铁块 T 形:竖4+侧臂) · 死亡掉落回原地拾回<br>
+      <b>探索:</b> 地牢(石室+刷怪笼+宝箱,挖墙进入) · 村庄(小屋+村民≤2,可繁殖) · 矿车+铁轨通勤 · 史莱姆分裂掉黏液球(黏液块弹跳) · 暂停菜单🏆看成就(23 项)
     </div>
   </div>
 </div>
@@ -658,6 +665,6 @@
 <script src="inventory.js?v=20260925"></script>
 <script src="machines.js?v=20260929"></script>
 <script src="three.min.js?v=r160"></script>
-<script src="game.js?v=20260930"></script>
+<script src="game.js?v=20260932"></script>
 </body>
 </html>

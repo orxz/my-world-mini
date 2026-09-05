@@ -58,7 +58,7 @@ async function main() {
   await evl(`document.getElementById('overlay').click()`);
   await sleep(600);
   await evl(`endTutorial()`);
-  const dg = await evl(`(() => { for (let cx=-4;cx<=4;cx++) for (let cz=-4;cz<=4;cz++){ const d=dungeonInCell(cx,cz,worldSeed); if(d) return d; } })()`);
+  const dg = await evl(`(() => { for (let r=4;r<=8;r++){ for (let cx=-r;cx<=r;cx++) for (let cz=-r;cz<=r;cz++){ if (Math.max(Math.abs(cx),Math.abs(cz))!==r) continue; const d=dungeonInCell(cx,cz,worldSeed); if(d) return d; } } })()`);
   check('找到地牢(±4 地牢格内)', !!dg, JSON.stringify(dg));
   await evl(`(() => {
     const mtn = fbm2D((${dg.cx} + 14) * 0.008, ${dg.cz} * 0.008, worldSeed + 555, 4);

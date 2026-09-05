@@ -53,11 +53,12 @@ const BLOCK_TYPES = {
   lever_off:    { name: '拉杆(关)', top: '#8a8a92', side: '#7a7a82', bottom: '#6a6a72', solid: false, tool: 'any', hardness: 0.5 },
   lever_on:     { name: '拉杆(开)', top: '#e08030', side: '#d07028', bottom: '#6a6a72', solid: false, tool: 'any', hardness: 0.5 },
   redstone_ore: { name: '红石矿', top: '#888888', side: '#7c7c7c', bottom: '#6e6e6e', solid: true, tool: 'pickaxe', hardness: 3.0 },
+  iron_block:  { name: '铁块',   top: '#d8d8e0', side: '#c8c8d2', bottom: '#b8b8c4', solid: true, tool: 'pickaxe', hardness: 5.0 },
 };
 const HOTBAR_ORDER = ['grass', 'dirt', 'stone', 'wood', 'leaves', 'sand', 'planks', 'brick'];
 
 // 方块数字 id(用于紧凑的 Uint8Array 区块存储)
-const BLOCK_ID = { air: 0, grass: 1, dirt: 2, stone: 3, wood: 4, leaves: 5, sand: 6, planks: 7, brick: 8, water: 9, snow: 10, gravel: 11, wool_red: 12, wool_yellow: 13, wool_white: 14, wool_black: 15, door: 16, door_iron: 17, door_stone: 18, door_gold: 19, door_diamond: 20, crafting_table: 21, cobblestone: 22, coal_ore: 23, iron_ore: 24, diamond_ore: 25, tnt: 26, furnace: 27, glass: 28, bed: 29, chest: 30, ladder: 31, bookshelf: 32, torch: 33, rail: 34, enchanting_table: 35, slime: 36, spawner: 37, redstone: 38, redstone_torch: 39, lever_off: 40, lever_on: 41, redstone_ore: 42 };
+const BLOCK_ID = { air: 0, grass: 1, dirt: 2, stone: 3, wood: 4, leaves: 5, sand: 6, planks: 7, brick: 8, water: 9, snow: 10, gravel: 11, wool_red: 12, wool_yellow: 13, wool_white: 14, wool_black: 15, door: 16, door_iron: 17, door_stone: 18, door_gold: 19, door_diamond: 20, crafting_table: 21, cobblestone: 22, coal_ore: 23, iron_ore: 24, diamond_ore: 25, tnt: 26, furnace: 27, glass: 28, bed: 29, chest: 30, ladder: 31, bookshelf: 32, torch: 33, rail: 34, enchanting_table: 35, slime: 36, spawner: 37, redstone: 38, redstone_torch: 39, lever_off: 40, lever_on: 41, redstone_ore: 42, iron_block: 43 };
 const ID_TO_BLOCK = Object.keys(BLOCK_ID);
 
 // ============================================================
@@ -1146,6 +1147,8 @@ function setBlock(x, y, z, type) {
   // 红石元件登记表实时更新(R38):放入/拉杆切换 upsert,清空则移除登记
   if (type && REDSTONE_FAMILY[type]) registerRedstone(x, y, z, type);
   else unregisterRedstone(x, y, z);   // 幂等:非红石格删除无副作用
+  // 铁傀儡构造检测(R39):放下铁块时若构成 T 形结构 → 生成(内部递归 setBlock 无害)
+  if (type === 'iron_block') trySpawnGolem(x, y, z);
   // 相邻 chunk 在边界时也需重建(面剔除跨边界)
   if (lx === 0) markChunkDirty(cx - 1, cz);
   if (lx === CHUNK_SIZE - 1) markChunkDirty(cx + 1, cz);
@@ -3799,10 +3802,15 @@ function placeBlock() {
       mountCart(lookCart);
       return;
     }
-    // 村民交易(R33):右键村民开交易面板(优先于工具/进食,经典)
+    // 村民交易(R33):右键村民 —— 手持面包=喂食繁殖(R39),幼崽不开面板,否则开交易
     {
       const mobHitV = raycastMob(3.5);
-      if (mobHitV && mobHitV.type === 'villager') { openTradePanel(mobHitV); return; }
+      if (mobHitV && mobHitV.type === 'villager') {
+        if (mobHitV.baby) { showToast('村民幼崽只想玩耍'); return; }
+        if (item0 && item0.kind === 'item' && item0.id === 'bread') { feedVillager(mobHitV, item0); return; }
+        openTradePanel(mobHitV);
+        return;
+      }
       // 剪羊毛(R35):手持剪刀右键羊
       if (mobHitV && mobHitV.type === 'sheep' && item0 && item0.kind === 'tool' && item0.id === 'shears') {
         shearSheep(mobHitV, item0);
@@ -4391,6 +4399,7 @@ const MOB_DEFS = {
   enderman: { hp: 40, hostile: false },    // R27:中立,被注视/被攻击才激怒
   villager: { hp: 20, hostile: false },    // R33:村庄 NPC,右键交易(绿宝石经济)
   slime:    { hp: 16, hostile: true },     // R35:跳跃移动,死亡分裂(大→中→小)
+  golem:    { hp: 100, hostile: false },   // R39:铁傀儡,村庄守护(构造生成)
 };
 function countHostiles() {
   let n = 0;
@@ -4476,6 +4485,7 @@ function spawnMob(x, groundY, z, type, opts) {
     : t === 'sheep' ? buildSheepMesh()
     : t === 'villager' ? buildVillagerMesh()
     : t === 'slime' ? buildSlimeMesh()
+    : t === 'golem' ? buildGolemMesh()
     : buildPigMesh();
   mesh.position.set(x, groundY + 0.45, z);   // 身体中心离地 0.45
   scene.add(mesh);
@@ -4914,6 +4924,84 @@ function buildSlimeMesh() {
   g.add(body, inner, eyeL, eyeR, mouth);
   g.userData = { legs: [], mats: [gelMat, innerMat], baseColors: [0x6fc05a, 0x4a9c3c] };
   return g;
+}
+
+// 铁傀儡模型(R39):2.4 格高铁块人形 —— 宽躯干 + 小头 + 垂肩长臂 + 短腿
+function buildGolemMesh() {
+  const g = new THREE.Group();
+  const ironMat = new THREE.MeshLambertMaterial({ color: 0xc8c8d2 });
+  const ironDark = new THREE.MeshLambertMaterial({ color: 0x9a9aa8 });
+  const mossMat = new THREE.MeshLambertMaterial({ color: 0x5e8a4c });   // 胸口苔痕(经典)
+  const eyeMat = new THREE.MeshLambertMaterial({ color: 0xd05030 });
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.85, 1.05, 0.5), ironMat);
+  torso.position.y = 1.35;
+  const moss = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.3, 0.06), mossMat);
+  moss.position.set(-0.08, 1.3, -0.27);
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.42, 0.42), ironDark);
+  head.position.y = 2.1;
+  const eyeL = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.09, 0.03), eyeMat);
+  eyeL.position.set(-0.1, 2.12, -0.22);
+  const eyeR = eyeL.clone();
+  eyeR.position.x = 0.1;
+  const nose = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.14, 0.05), ironMat);
+  nose.position.set(0, 2.04, -0.24);
+  const arms = [];
+  const mkArm = (side) => {
+    const a = new THREE.Group();
+    const m = new THREE.Mesh(new THREE.BoxGeometry(0.26, 1.15, 0.3), ironMat);
+    m.position.y = -0.58;
+    a.add(m);
+    a.position.set(side * 0.56, 1.78, 0);
+    arms.push(a);
+    return a;
+  };
+  const legGroups = [];
+  const mkLeg = (side) => {
+    const lg = new THREE.Group();
+    const m = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.8, 0.3), ironDark);
+    m.position.y = -0.4;
+    lg.add(m);
+    lg.position.set(side * 0.22, 0.82, 0);
+    legGroups.push(lg);
+    return lg;
+  };
+  g.add(torso, moss, head, eyeL, eyeR, nose, mkArm(-1), mkArm(1), mkLeg(-1), mkLeg(1));
+  g.userData = { legs: legGroups, arms, mats: [ironMat, ironDark, mossMat], baseColors: [0xc8c8d2, 0x9a9aa8, 0x5e8a4c] };
+  return g;
+}
+
+// 铁傀儡构造生成(R39,经典 T 形简化;放下铁块时检测两种完成形态):
+//  形态 A(头位收尾):下方竖 3 身体 + 臂已在第二格侧邻
+//  形态 B(臂位收尾):相邻柱已竖 4(身体 3+头),本次放下的是侧臂 ——
+//  玩家从侧面即可完成(从下方瞄不到顶面,B 是主路径)
+function trySpawnGolem(x, y, z) {
+  if (getBlock(x, y, z) !== 'iron_block') return false;
+  const all = (cells) => cells.every(([cx, cy, cz]) => getBlock(cx, cy, cz) === 'iron_block');
+  const build = (cells) => {   // 移除结构 + 原地生成(首格为柱底)
+    for (const [cx, cy, cz] of cells) setBlock(cx, cy, cz, null);
+    spawnMob(cells[0][0] + 0.5, cells[0][1] + 1, cells[0][2] + 0.5, 'golem');
+    spawnParticles(cells[0][0] + 0.5, cells[0][1] + 1.5, cells[0][2] + 0.5, 0xd8d8e0, 16);
+    audio.play('place');
+    showToast('🤖 铁傀儡苏醒了!(村庄守护,攻击敌对生物)');
+    unlockAchv('golem');   // 成就:铁壁守护(R39)
+  };
+  // 形态 A:头位收尾
+  if (all([[x, y - 1, z], [x, y - 2, z], [x, y - 3, z]])) {
+    const arm = [[x - 1, y - 2, z], [x + 1, y - 2, z], [x, y - 2, z - 1], [x, y - 2, z + 1]].find(c => getBlock(c[0], c[1], c[2]) === 'iron_block');
+    if (arm) {
+      build([[x, y - 3, z], [x, y - 2, z], [x, y - 1, z], [x, y, z], arm]);
+      return true;
+    }
+  }
+  // 形态 B:臂位收尾(四向邻柱竖 4,本次为第二格侧臂)
+  for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const cx = x + dx, cz = z + dz;
+    if (all([[cx, y - 1, cz], [cx, y, cz], [cx, y + 1, cz], [cx, y + 2, cz]])) {
+      build([[cx, y - 1, cz], [cx, y, cz], [cx, y + 1, cz], [cx, y + 2, cz], [x, y, z]]);
+      return true;
+    }
+  }
+  return false;
 }
 
 function removeMob(i) {
@@ -5534,7 +5622,7 @@ function updateFishing(dt) {
 // 动物繁殖(R29):手持小麦右键牛/羊/猪喂食 → 求爱模式(红心),
 // 两只会合 → 产幼崽(0.55 缩放,60 秒长大);生育冷却 60 秒
 // ============================================================
-const MOB_CN = { pig: '猪', cow: '牛', sheep: '羊' };
+const MOB_CN = { pig: '猪', cow: '牛', sheep: '羊', villager: '村民' };
 function countPassives() {
   let n = 0;
   for (const m of mobs) if (!MOB_DEFS[m.type].hostile) n++;
@@ -5551,6 +5639,22 @@ function feedAnimal(m, item) {
   refreshHotbarSlot(currentSlot);
   spawnParticles(m.mesh.position.x, m.mesh.position.y + 0.6, m.mesh.position.z, 0xff5a8a, 6);
   showToast('💗 ' + (MOB_CN[m.type] || m.type) + ' 进入求爱模式(再喂一只同类)');
+}
+
+// 村民喂食繁殖(R39,经典吃面包):求爱 30s,两只村民会合产崽;
+// 村内(家屋 24 格)村民 ≥6 时拒绝(人满为患)
+function feedVillager(m, item) {
+  swingHoldItem();
+  if (m.baby) { showToast('村民幼崽只想玩耍(长大再喂)'); return; }
+  if (m.breedCd > 0) { showToast('他最近刚有宝宝,歇一歇'); return; }
+  if (m.loveT > 0) { showToast('已在求爱中(再喂一位村民)'); return; }
+  if (m.home && countVillagersNear(m.home.x, m.home.z) >= 6) { showToast('村里人满为患(≤6)'); return; }
+  m.loveT = 30;
+  item.count = (item.count || 1) - 1;
+  if (item.count <= 0) hotbar[currentSlot] = null;
+  refreshHotbarSlot(currentSlot);
+  spawnParticles(m.mesh.position.x, m.mesh.position.y + 0.6, m.mesh.position.z, 0xff5a8a, 6);
+  showToast('💗 村民进入求爱模式(手持面包再喂一位)');
 }
 
 // 夜间在距玩家 ≥12 格处生成敌对生物(僵尸 65% / 苦力怕 35%);关闭怪物或昼夜循环 = 和平模式
@@ -5681,6 +5785,8 @@ function updateMobs(dt) {
       if (skeletonAI(m, dt, distP)) continue;
     } else if (m.type === 'slime') {
       slimeAI(m, dt, distP);
+    } else if (m.type === 'golem') {
+      golemAI(m, dt, distP);
     } else if (creeperAI(m, dt, distP)) {
       continue;
     }
@@ -5785,6 +5891,47 @@ function slimeAI(m, dt, distP) {
   return false;
 }
 
+// ---- 铁傀儡 AI(R39):村庄守护 —— 12 格内敌对生物优先追击(伤 10 击退),
+//      无敌时慢逛守村;被玩家攻击后反击 15 秒(伤 7,经典) ----
+function golemAI(m, dt, distP) {
+  m.attackCd -= dt;
+  if (m.angered) {
+    m.angerT -= dt;
+    if (m.angerT <= 0) { m.angered = false; }
+    else {
+      m.yaw = faceYaw(m);
+      m.speed = 2.0;
+      if (distP < 1.8 && m.attackCd <= 0) {
+        m.attackCd = 1.2;
+        damagePlayer(7, 'combat');
+        velocity.y = 5;   // 大力击飞(经典)
+      }
+      return false;
+    }
+  }
+  // 守护:找 12 格内最近的敌对生物
+  let tgt = null, bd = 12;
+  for (const o of mobs) {
+    if (o === m || !MOB_DEFS[o.type] || !MOB_DEFS[o.type].hostile) continue;
+    const dx = o.mesh.position.x - m.mesh.position.x, dz = o.mesh.position.z - m.mesh.position.z;
+    const d = Math.hypot(dx, dz);
+    if (d < bd) { bd = d; tgt = o; }
+  }
+  if (tgt) {
+    const dx = tgt.mesh.position.x - m.mesh.position.x, dz = tgt.mesh.position.z - m.mesh.position.z;
+    m.yaw = Math.atan2(-dx, -dz);
+    m.speed = 2.0;
+    if (bd < 1.9 && m.attackCd <= 0) {
+      m.attackCd = 1.0;
+      hurtMob(tgt, 10, dx / Math.max(0.01, bd), dz / Math.max(0.01, bd));
+      spawnParticles(tgt.mesh.position.x, tgt.mesh.position.y + 0.5, tgt.mesh.position.z, 0xd8d8e0, 5);
+    }
+  } else {
+    wanderStep(m, dt, 0.8, 0.4);
+  }
+  return false;
+}
+
 function hurtMob(m, dmg, kx, kz, silent) {
   m.hp -= dmg;
   m.hurtT = 0.25;
@@ -5792,13 +5939,15 @@ function hurtMob(m, dmg, kx, kz, silent) {
   if (m.type === 'enderman') { m.angered = true; m.tpT = 0.35; }
   // 村民被攻击 → 转身逃跑(经典:不还手)
   if (m.type === 'villager') m.fleeT = 5;
+  // 铁傀儡被玩家攻击 → 反击 15 秒(经典,R39)
+  if (m.type === 'golem') { m.angered = true; m.angerT = 15; }
   m.kvx += kx * 6; m.kvz += kz * 6; m.vy = 4;
   const mats = m.mesh.userData.mats;
   for (let k = 0; k < mats.length; k++) mats[k].color.setHex(0xd05a5a);
   if (!silent) audio.play(m.type === 'zombie' ? 'zombie' : m.type === 'creeper' ? 'hurt' : 'pig');
   if (m.hp <= 0) {
     const p = m.mesh.position;
-    spawnParticles(p.x - 0.5, p.y - 0.5, p.z - 0.5, m.type === 'pig' ? 0xeba3a9 : m.type === 'cow' ? 0x6b4a2f : m.type === 'sheep' ? 0xe8e8e4 : m.type === 'spider' ? 0x2a2a30 : m.type === 'enderman' ? 0x7a4a9a : m.type === 'villager' ? 0x7a5a3a : m.type === 'slime' ? 0x6fc05a : 0x7a9a7a, 12);
+    spawnParticles(p.x - 0.5, p.y - 0.5, p.z - 0.5, m.type === 'pig' ? 0xeba3a9 : m.type === 'cow' ? 0x6b4a2f : m.type === 'sheep' ? 0xe8e8e4 : m.type === 'spider' ? 0x2a2a30 : m.type === 'enderman' ? 0x7a4a9a : m.type === 'villager' ? 0x7a5a3a : m.type === 'slime' ? 0x6fc05a : m.type === 'golem' ? 0xc8c8d2 : 0x7a9a7a, 12);
     // 经典掉落(按生物类型)
     const dropAt = (id, kind, count) => spawnDroppedItem(p.x - 0.5, p.y - 0.2, p.z - 0.5, id, count, kind);
     if (m.type === 'pig') dropAt('porkchop', 'item', 1 + (Math.random() < 0.5 ? 1 : 0));
@@ -5817,13 +5966,14 @@ function hurtMob(m, dmg, kx, kz, silent) {
         spawnParticles(p.x, p.y, p.z, 0x6fc05a, 10);
       } else if (Math.random() < 0.75) dropAt('slime_ball', 'item', Math.random() < 0.35 ? 2 : 1);
     }
-    // 经验球(R28):敌对 5(末影人 10)/被动 1-3
-    spawnXPOrbs(p.x, p.y, p.z, MOB_DEFS[m.type].hostile ? (m.type === 'enderman' ? 10 : 5) : 1 + (Math.random() * 3 | 0));
+    else if (m.type === 'golem') dropAt('iron_ingot', 'item', 3 + (Math.random() * 3 | 0));   // 铁傀儡:铁锭 3-5(经典,R39)
+    // 经验球(R28):敌对 5(末影人 10)/被动 1-3;铁傀儡 0(经典,R39)
+    spawnXPOrbs(p.x, p.y, p.z, m.type === 'golem' ? 0 : MOB_DEFS[m.type].hostile ? (m.type === 'enderman' ? 10 : 5) : 1 + (Math.random() * 3 | 0));
     if (m.type === 'zombie') unlockAchv('kill_zombie');       // 成就:怪物猎人(R34)
     else if (m.type === 'creeper') unlockAchv('kill_creeper'); // 成就:拆弹专家
     else if (m.type === 'slime' && m.slimeSize === 0) unlockAchv('kill_slime');   // 成就:黏糊糊(R35)
     killMob(m);
-    showToast(m.type === 'zombie' ? '🧟 击倒了僵尸' : m.type === 'creeper' ? '💥 击倒了苦力怕' : m.type === 'skeleton' ? '💀 击倒了骷髅' : m.type === 'spider' ? '🕷 击倒了蜘蛛' : m.type === 'enderman' ? '🟣 击倒了末影人' : m.type === 'villager' ? '🧑‍🌾 村民倒下了…(他什么也没掉落)' : m.type === 'slime' ? '🟢 击碎了' + ['小', '中', '大'][m.slimeSize] + '史莱姆' : m.type === 'cow' ? '🐮 击倒了牛' : m.type === 'sheep' ? '🐑 击倒了羊' : '🐷 击倒了猪');
+    showToast(m.type === 'zombie' ? '🧟 击倒了僵尸' : m.type === 'creeper' ? '💥 击倒了苦力怕' : m.type === 'skeleton' ? '💀 击倒了骷髅' : m.type === 'spider' ? '🕷 击倒了蜘蛛' : m.type === 'enderman' ? '🟣 击倒了末影人' : m.type === 'villager' ? '🧑‍🌾 村民倒下了…(他什么也没掉落)' : m.type === 'slime' ? '🟢 击碎了' + ['小', '中', '大'][m.slimeSize] + '史莱姆' : m.type === 'golem' ? '🤖 铁傀儡倒下了…' : m.type === 'cow' ? '🐮 击倒了牛' : m.type === 'sheep' ? '🐑 击倒了羊' : '🐷 击倒了猪');
   }
 }
 
@@ -7664,7 +7814,7 @@ function openTablePanel() {
   if (closeBtn) closeBtn.onclick = closeTablePanel;
   // 目录循环列表:方块 + 材料物品(矿石/圆石/木棍等,按 kind 区分图标)
   const catalog = HOTBAR_ORDER.map(id => ({ kind: 'block', id }))
-    .concat(['water', 'snow', 'gravel', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'sand', 'bed', 'chest', 'ladder', 'bookshelf', 'wool_red', 'wool_white', 'torch', 'rail', 'enchanting_table', 'slime', 'redstone', 'redstone_torch', 'lever_off'].map(id => ({ kind: 'block', id })))
+    .concat(['water', 'snow', 'gravel', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'sand', 'bed', 'chest', 'ladder', 'bookshelf', 'wool_red', 'wool_white', 'torch', 'rail', 'enchanting_table', 'slime', 'redstone', 'redstone_torch', 'lever_off', 'iron_block'].map(id => ({ kind: 'block', id })))
     .concat(['leather', 'book'].map(id => ({ kind: 'item', id })))
     .concat(['gem_gold', 'gem_diamond', 'gem_emerald', 'arrow', 'stick', 'coal', 'iron_ingot'].map(id => ({ kind: 'item', id })));
   document.querySelectorAll('#table-grid .inv-cell').forEach((cell, i) => {

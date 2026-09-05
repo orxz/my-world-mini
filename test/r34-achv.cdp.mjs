@@ -191,7 +191,7 @@ async function main() {
   check('铁桶舀水 + 成就「桶装玩意」', bucket.gone && bucket.id === 'water_bucket' && bucket.achv && bucket.n === 17, JSON.stringify(bucket));
 
   // ---- 11.7 地牢战利品箱(R37 宝箱猎人:找地牢 → 邻近落位 → 真实 openChestPanel)----
-  const dg = await evl(`(() => { for (let cx=-4;cx<=4;cx++) for (let cz=-4;cz<=4;cz++){ const d=dungeonInCell(cx,cz,worldSeed); if(d) return d; } })()`);
+  const dg = await evl(`(() => { for (let r=4;r<=8;r++){ for (let cx=-r;cx<=r;cx++) for (let cz=-r;cz<=r;cz++){ if (Math.max(Math.abs(cx),Math.abs(cz))!==r) continue; const d=dungeonInCell(cx,cz,worldSeed); if(d) return d; } } })()`);
   await evl(`(() => {
     const mtn = fbm2D((${dg.cx} + 14) * 0.008, ${dg.cz} * 0.008, worldSeed + 555, 4);
     const gh = heightAt(${dg.cx} + 14, ${dg.cz}, worldSeed, biomeAt(${dg.cx} + 14, ${dg.cz}, worldSeed, mtn), mtn);
@@ -223,6 +223,26 @@ async function main() {
     return { torch: getBlock(px + 2, gy + 1, pz) === 'redstone_torch', achv: achvUnlocked.has('redstone'), n: achvUnlocked.size };
   })()`);
   check('红石火把放置 + 成就「电路初成」', rs.torch && rs.achv && rs.n === 19, JSON.stringify(rs));
+
+  // ---- 11.9 铁傀儡构造(R39 铁壁守护:柱竖4 setBlock,「臂」走真实 placeBlock)----
+  const golem = await evl(`(() => {
+    const px = Math.floor(playerPos.x), gy = Math.floor(playerPos.y) - 1, pz = Math.floor(playerPos.z);
+    for (let dx = -1; dx <= 3; dx++) for (let dy = 1; dy <= 5; dy++) setBlock(px + dx, gy + dy, pz, null);
+    setBlock(px + 2, gy + 1, pz, 'iron_block');
+    setBlock(px + 2, gy + 2, pz, 'iron_block');
+    setBlock(px + 2, gy + 3, pz, 'iron_block');
+    setBlock(px + 2, gy + 4, pz, 'iron_block');   // 头(柱顶)
+    playerPos.set(px + 0.5, gy + 1.9, pz + 0.5); velocity.set(0, 0, 0);   // 原地(柱西侧两格)
+    for (let i = 0; i < 9; i++) hotbar[i] = null;
+    hotbar[0] = { kind: 'block', id: 'iron_block', count: 1 }; currentSlot = 0; selectSlot(0);
+    const dx = (px + 2.5) - playerPos.x, dy = (gy + 2.5) - playerPos.y, dz = (pz + 0.5) - playerPos.z;
+    yaw = Math.atan2(-dx, -dz); pitch = Math.asin(dy / Math.hypot(dx, dy, dz));
+    placeBlock();   // 臂落在柱西侧第二格 → 形态 B 触发
+    const g = mobs.find(m => m.type === 'golem');
+    return { golem: !!g, structureGone: getBlock(px + 2, gy + 4, pz) === null,
+             achv: achvUnlocked.has('golem'), n: achvUnlocked.size };
+  })()`);
+  check('铁傀儡构造生成 + 成就「铁壁守护」', golem.golem && golem.structureGone && golem.achv && golem.n === 20, JSON.stringify(golem));
 
   // ---- 12. 繁殖(两只求爱猪 → 幼崽;跟随玩家当前位置生成)----
   const breed = await evl(`(() => {

@@ -73,6 +73,10 @@
     { name: '拉杆', pattern: ['stick', null, 'cobblestone', null], result: { kind: 'block', id: 'lever_off' }, count: 1, shapeless: false },
     // 红石线:1 红石粉无序(经典直接撒粉,R38)
     { name: '红石线', pattern: ['redstone_dust', null, null, null], result: { kind: 'block', id: 'redstone' }, count: 1, shapeless: true },
+    // 铁块:9 铁锭(经典压缩,R39;铁傀儡构造材料)
+    { name: '铁块', pattern: ['iron_ingot', 'iron_ingot', 'iron_ingot', 'iron_ingot', 'iron_ingot', 'iron_ingot', 'iron_ingot', 'iron_ingot', 'iron_ingot'], result: { kind: 'block', id: 'iron_block' }, count: 1, shapeless: false },
+    // 铁块分解:1 块 → 9 铁锭(经典,R39)
+    { name: '铁锭(分解)', pattern: ['iron_block', null, null, null], result: { kind: 'item', id: 'iron_ingot' }, count: 9, shapeless: true },
     // 铁轨:6 铁锭 + 1 木棍(经典配方 → 16 节)
     { name: '铁轨', pattern: ['iron_ingot', 'iron_ingot', 'iron_ingot', 'iron_ingot', 'stick', 'iron_ingot', null, null, null], result: { kind: 'block', id: 'rail' }, count: 16, shapeless: false },
     // 矿车:5 铁锭 U 形(经典配方 → 1 辆)

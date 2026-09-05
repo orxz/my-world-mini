@@ -920,6 +920,13 @@ test('红石配方:火把/拉杆/线(R38)', () => {
   const wire = matchRecipeGrid(g2(['redstone_dust', null, null, null]), 2, RECIPES);
   assert.ok(wire && wire.result.id === 'redstone', '1 粉 → 线');
 });
+test('铁块配方:9 铁锭压缩 / 1 块分解 9 锭(R39)', () => {
+  const ing = () => ({ kind: 'item', id: 'iron_ingot' });
+  const nine = matchRecipeGrid(Array(9).fill(0).map(ing), 3, RECIPES);
+  assert.ok(nine && nine.result.id === 'iron_block' && nine.result.kind === 'block', '9 锭 → 铁块');
+  const back = matchRecipeGrid([null, { kind: 'block', id: 'iron_block' }, null, null], 2, RECIPES);
+  assert.ok(back && back.result.id === 'iron_ingot' && back.count === 9, '铁块 → 9 锭');
+});
 
 console.log('\n=== 总结 ===');
 console.log(`通过: ${passed}/${passed+failed}`);

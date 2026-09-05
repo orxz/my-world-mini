@@ -176,6 +176,7 @@
     { id: 'bucket',      icon: '🪣', name: '桶装玩意',     desc: '用铁桶装一次水' },
     { id: 'dungeon_loot',icon: '🗝️', name: '宝箱猎人',     desc: '打开一个地牢战利品箱' },
     { id: 'redstone',   icon: '⚡', name: '电路初成',     desc: '放置一支红石火把' },
+    { id: 'golem',      icon: '🤖', name: '铁壁守护',     desc: '用铁块召唤一只铁傀儡' },
   ];
   const ACHV_BY_ID = {};
   for (const a of ACHIEVEMENTS) ACHV_BY_ID[a.id] = a;

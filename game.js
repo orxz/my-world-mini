@@ -2381,11 +2381,14 @@ function tutorialStep() { return TUTORIAL_STEPS[tutorial.step]; }
 
 // 步骤描述动态化:place 步骤检测当前手持是否为方块,不是则追加引导
 function tutorialDesc(s) {
+  // 触屏版文案(R46):与事件绑定的 isTouch 判定保持一致,渲染时实时取
+  const useTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+  const desc = useTouch && s.descTouch ? s.descTouch : s.desc;
   if (s.id === 'place') {
     const held = hotbar[currentSlot];
-    if (!held || held.kind !== 'block') return s.desc + '<br><b style="color:#8a4a20;">→ 先按数字键选中刚才拾取的方块(快捷栏亮框那格)再放置</b>';
+    if (!held || held.kind !== 'block') return desc + '<br><b style="color:#8a4a20;">→ 先按数字键选中刚才拾取的方块(快捷栏亮框那格)再放置</b>';
   }
-  return s.desc;
+  return desc;
 }
 
 // 目标进度的人类可读显示(look 用百分比,move 用格,其余用次)
@@ -3567,6 +3570,12 @@ function setupInput() {
     document.getElementById('pause-menu').classList.add('hidden');
     startTutorial(true);
     showToast('教程已重新开始');
+  });
+  // 背包与合成(暂停菜单;R46 —— 触屏无 E 键,这是移动端背包的唯一入口)
+  const btnInv = document.getElementById('btn-inventory');
+  if (btnInv) btnInv.addEventListener('click', () => {
+    document.getElementById('pause-menu').classList.add('hidden');
+    toggleInventory(true);
   });
   // 天气开关(暂停菜单;关闭=强制晴天)
   const btnWeather = document.getElementById('btn-weather');

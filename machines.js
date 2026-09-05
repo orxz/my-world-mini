@@ -10,16 +10,16 @@
   // ---- 新手教程(分步引导;完成自动检测。R17-R19 的步骤定义,单一数据源) ----
   const TUTORIAL_STEPS = [
     { id: 'welcome', title: '👋 欢迎来到我的世界!', desc: '这是一个体素沙盒世界:挖矿、合成、建造、生存。跟着教程学会基本操作吧!(点下方「跳过教程」可随时跳过;教程期间夜晚不会刷怪,放心学)', goal: null },
-    { id: 'move',   title: '① 移动', desc: '按 W/A/S/D 键走动起来', goal: { type: 'move', n: 8 } },
-    { id: 'look',   title: '② 环顾四周', desc: '移动鼠标转动视角观察世界(转约半圈即可)', goal: { type: 'look', n: 2.5 } },
-    { id: 'break',  title: '③ 挖掘方块', desc: '对准方块按住左键(出现裂纹进度条,现在可以长按连挖),破坏 3 个', goal: { type: 'break', n: 3 } },
+    { id: 'move',   title: '① 移动', desc: '按 W/A/S/D 键走动起来', descTouch: '用左下角摇杆推动走动起来', goal: { type: 'move', n: 8 } },
+    { id: 'look',   title: '② 环顾四周', desc: '移动鼠标转动视角观察世界(转约半圈即可)', descTouch: '按住屏幕空白处拖动,转动视角观察世界(转约半圈即可)', goal: { type: 'look', n: 2.5 } },
+    { id: 'break',  title: '③ 挖掘方块', desc: '对准方块按住左键(出现裂纹进度条,现在可以长按连挖),破坏 3 个', descTouch: '对准方块长按右下「挖」按钮(出现裂纹进度条),破坏 3 个', goal: { type: 'break', n: 3 } },
     { id: 'pickup', title: '④ 拾取掉落物', desc: '走近地上旋转的小方块,自动拾取 2 个', goal: { type: 'pickup', n: 2 } },
-    { id: 'place',  title: '⑤ 放置方块', desc: '手持方块对准地面按右键放置,放 2 个', goal: { type: 'place', n: 2 } },
-    { id: 'slot',   title: '⑥ 切换快捷栏', desc: '按数字键 1-9 或滚轮切换手持物品,切换 2 次', goal: { type: 'slot', n: 2 } },
-    { id: 'inventory', title: '⑦ 背包与合成', desc: '按 E 打开背包 —— 上方是物品目录(点击发放 ×64),下方有 2×2 合成格(试试 1 木头→4 木板)', goal: { type: 'inventory', n: 1 } },
+    { id: 'place',  title: '⑤ 放置方块', desc: '手持方块对准地面按右键放置,放 2 个', descTouch: '手持方块对准地面点右下「放」按钮,放 2 个', goal: { type: 'place', n: 2 } },
+    { id: 'slot',   title: '⑥ 切换快捷栏', desc: '按数字键 1-9 或滚轮切换手持物品,切换 2 次', descTouch: '点按底部快捷栏格子切换手持物品,切换 2 次', goal: { type: 'slot', n: 2 } },
+    { id: 'inventory', title: '⑦ 背包与合成', desc: '按 E 打开背包 —— 上方是物品目录(点击发放 ×64),下方有 2×2 合成格(试试 1 木头→4 木板)', descTouch: '点右上「≡」→「🎒 背包」打开背包 —— 上方是物品目录(点击发放 ×64),下方有 2×2 合成格(试试 1 木头→4 木板)', goal: { type: 'inventory', n: 1 } },
     { id: 'survival1', title: '💡 生存须知(上)', desc: '夜晚会刷新僵尸/骷髅/苦力怕,白天它们会燃烧 —— 入夜前砍树做一张床(3 羊毛+3 木板),右键睡觉跳到早晨并设重生点;怪物太近时睡不了。', goal: null },
     { id: 'survival2', title: '💡 生存须知(下)', desc: '发展链:挖圆石→合成台(4 木板)→熔炉(8 圆石,烧铁锭/玻璃/熟肉);猪排烤熟回饥饿更多。按 Q 丢弃;死亡会掉落全部物品,回原地可拾回。', goal: null },
-    { id: 'done',   title: '🎓 教程完成!', desc: '背包(E)里有全部物品目录随时取用;暂停菜单(Esc)→「操作说明」有完整手册。祝玩得开心!', goal: null },
+    { id: 'done',   title: '🎓 教程完成!', desc: '背包(E)里有全部物品目录随时取用;暂停菜单(Esc)→「操作说明」有完整手册。祝玩得开心!', descTouch: '背包(≡ 菜单)里有全部物品目录随时取用;≡ 菜单 →「操作说明」有完整手册。祝玩得开心!', goal: null },
   ];
 
   // 教程推进(就地修改 state:{active, step, progress};返回 'step'|'progress'|'none')

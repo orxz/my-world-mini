@@ -59,6 +59,9 @@ export default [
       'test/r41-build.cdp.mjs',      // R41 建筑方块轮 CDP 实机验证(同上)
       'test/r42-piston.cdp.mjs',     // R42 红石扩展轮 CDP 实机验证(同上)
       'test/r43-polish.cdp.mjs',     // R43 打磨轮 CDP 实机验证(同上)
+      'test/r44-journey.cdp.mjs',    // R44 可玩性验收:端到端真实旅程(同上)
+      'test/r44-visual-recheck.cdp.mjs',   // R44 视觉复验(同上)
+      'test/reload.cdp.mjs',         // 回归运行助手:套件连跑前重载新世界(同上)
     ],
   },
 

@@ -15,7 +15,7 @@ const { hash2, hash3, valueNoise2D, valueNoise3D, fbm2D, BIOMES, biomeAt, height
 const { RECIPES, matchRecipe, matchRecipeGrid, breakCost } = require('../craft.js');
 
 // ---- 从 machines.js 模块加载(状态机纯函数:教程/熔炉/天气/存档 schema,R25) ----
-const { TUTORIAL_STEPS, advanceTutorial, furnaceCanSmelt, furnaceTick, weatherNext, cartNextDir, xpToNext, xpGain, rollEnchants, ACHIEVEMENTS, ACHV_BY_ID, awardAchievement, SAVE_SCHEMA_FIELDS, validateSaveRecord } = require('../machines.js');
+const { TUTORIAL_STEPS, advanceTutorial, furnaceCanSmelt, furnaceTick, weatherNext, cartNextDir, xpToNext, xpGain, rollEnchants, ACHIEVEMENTS, ACHV_BY_ID, awardAchievement, redstonePower, SAVE_SCHEMA_FIELDS, validateSaveRecord } = require('../machines.js');
 
 // ---- 从 inventory.js 模块加载(库存/掉落/饥饿/护甲纯函数) ----
 const { STACK_MAX, FOODS, ARMOR_MAX_POINTS, armorReduce, pickupIntoInventory, normalizeHotbar, hungerTick, VILLAGER_TRADES, countInHotbar, consumeFromHotbar, canTrade, DUNGEON_LOOT_TABLE, rollDungeonLoot } = require('../inventory.js');
@@ -876,6 +876,49 @@ test('rollDungeonLoot:3-5 条、id 合法、不重复、count 在区间', () => 
 test('rollDungeonLoot 确定性(同序列同输出)', () => {
   const mk = () => { let i = 0; const seq = [0.5, 0.3, 0.9, 0.1, 0.6, 0.2, 0.8, 0.4]; return () => seq[i++ % seq.length]; };
   assert.deepStrictEqual(rollDungeonLoot(mk()), rollDungeonLoot(mk()));
+});
+
+// ===== 红石信号(R38) =====
+console.log('\n=== 红石信号(redstonePower) ===');
+test('redstonePower 衰减 -1/格,15 格外为 0(不入 map)', () => {
+  const wires = new Set();
+  for (let i = 1; i <= 16; i++) wires.add(i + ',0,0');
+  const p = redstonePower(wires, [{ key: '0,0,0', p: 15 }]);
+  assert.strictEqual(p.get('0,0,0'), 15);
+  assert.strictEqual(p.get('1,0,0'), 14);
+  assert.strictEqual(p.get('2,0,0'), 13);
+  assert.strictEqual(p.get('14,0,0'), 1);          // 距源 14 格 = 功率 1(最后一格)
+  assert.ok(!p.has('15,0,0'), '功率衰减为 0 即断电');   // 15 格外不通
+  assert.ok(!p.has('16,0,0'), '衰减到 0 不再向外传');
+});
+test('redstonePower 断线不传(跳跃格阻断)', () => {
+  const wires = new Set(['1,0,0', '3,0,0']);   // 2,0,0 断开
+  const p = redstonePower(wires, [{ key: '0,0,0', p: 15 }]);
+  assert.strictEqual(p.get('1,0,0'), 14);
+  assert.ok(!p.has('3,0,0'));
+});
+test('redstonePower 多源取最大 + 分支汇合', () => {
+  const wires = new Set(['1,0,0', '2,0,0', '3,0,0']);
+  const p = redstonePower(wires, [{ key: '0,0,0', p: 15 }, { key: '4,0,0', p: 15 }]);
+  assert.strictEqual(p.get('2,0,0'), Math.max(13, 13));   // 双向都传到 2 格 → 13
+  assert.strictEqual(p.get('1,0,0'), 14);
+  assert.strictEqual(p.get('3,0,0'), 14);
+});
+test('redstonePower 垂直分层不串扰 / 空源空线安全', () => {
+  const wires = new Set(['1,0,0', '1,1,0']);   // 上下层不直接相邻(需水平邻接)
+  const p = redstonePower(wires, [{ key: '0,0,0', p: 15 }]);
+  assert.strictEqual(p.get('1,0,0'), 14);
+  assert.ok(!p.has('1,1,0'));
+  assert.strictEqual(redstonePower(new Set(), []).size, 0);
+});
+test('红石配方:火把/拉杆/线(R38)', () => {
+  const g2 = (ids) => ids.map(x => x === null ? null : { kind: x === 'stick' || x === 'redstone_dust' || x === 'cobblestone' ? (x === 'cobblestone' ? 'block' : 'item') : 'block', id: x });
+  const torch = matchRecipeGrid(g2(['redstone_dust', null, 'stick', null]), 2, RECIPES);
+  assert.ok(torch && torch.result.id === 'redstone_torch', '红石火把');
+  const lever = matchRecipeGrid(g2(['stick', null, 'cobblestone', null]), 2, RECIPES);
+  assert.ok(lever && lever.result.id === 'lever_off', '拉杆(默认关)');
+  const wire = matchRecipeGrid(g2(['redstone_dust', null, null, null]), 2, RECIPES);
+  assert.ok(wire && wire.result.id === 'redstone', '1 粉 → 线');
 });
 
 console.log('\n=== 总结 ===');

@@ -80,7 +80,7 @@ async function main() {
   // (种子随机,先清空东向射线路径上的树叶/树干,保证视线干净)
   const scoop = await evl(`(() => {
     const px = Math.floor(playerPos.x), ey = Math.floor(playerPos.y), bz = Math.floor(playerPos.z);
-    for (let dx = 1; dx <= 5; dx++) setBlock(px + dx, ey, bz, null);
+    for (let dx = -1; dx <= 5; dx++) setBlock(px + dx, ey, bz, null);   // 含玩家自身格(可能落进树冠)
     const bx = px + 2;
     setBlock(bx, ey, bz, 'water');
     for (let i = 0; i < 9; i++) hotbar[i] = null;
@@ -96,7 +96,7 @@ async function main() {
   // ---- 3. 放水/舀取循环:眼前石柱西面倒水 → (柱西格)水;再舀回;循环 3 轮 ----
   const cycle = await evl(`(() => {
     const px = Math.floor(playerPos.x), ey = Math.floor(playerPos.y), bz = Math.floor(playerPos.z);
-    for (let dx = 1; dx <= 5; dx++) setBlock(px + dx, ey, bz, null);   // 清射线路径
+    for (let dx = -1; dx <= 5; dx++) setBlock(px + dx, ey, bz, null);   // 含玩家自身格(可能落进树冠)   // 清射线路径
     const sx = px + 3;
     setBlock(sx, ey, bz, 'stone');   // 眼平面石柱(倒水面)
     const wx = sx - 1;               // 水落点(石柱西面相邻格)
@@ -161,7 +161,7 @@ async function main() {
     const noScoop = hotbar[0] && hotbar[0].id === before;
     // 水桶:眼前石柱,柱西格已有水 → 射线穿水命中石柱,倒水目标格被水占据 → 拒绝
     const px = Math.floor(playerPos.x), ey = Math.floor(playerPos.y), bz = Math.floor(playerPos.z);
-    for (let dx = 1; dx <= 5; dx++) setBlock(px + dx, ey, bz, null);   // 清射线路径
+    for (let dx = -1; dx <= 5; dx++) setBlock(px + dx, ey, bz, null);   // 含玩家自身格(可能落进树冠)   // 清射线路径
     const sx = px + 3;
     setBlock(sx, ey, bz, 'stone');
     setBlock(sx - 1, ey, bz, 'water');

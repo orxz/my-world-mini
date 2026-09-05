@@ -155,6 +155,7 @@
     { id: 'string',      kind: 'item', min: 1, max: 3, w: 2 },
     { id: 'gem_diamond', kind: 'item', min: 1, max: 1, w: 1 },
     { id: 'bucket',      kind: 'item', min: 1, max: 1, w: 1 },
+    { id: 'redstone_dust', kind: 'item', min: 2, max: 6, w: 2 },
   ];
   function rollDungeonLoot(rand) {
     const n = 3 + Math.floor(rand(0) * 3);   // 3-5 条

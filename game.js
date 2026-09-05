@@ -48,11 +48,16 @@ const BLOCK_TYPES = {
   bookshelf:    { name: '书架',   top: '#a0763a', side: '#96682e', bottom: '#8a5f28', solid: true, tool: 'axe', hardness: 1.5 },
   slime:        { name: '黏液块', top: '#6fc05a', side: '#5eae4c', bottom: '#4f9c40', solid: true, tool: 'any', hardness: 0.4 },
   spawner:      { name: '刷怪笼', top: '#2a2a33', side: '#232330', bottom: '#2a2a33', solid: true, tool: 'pickaxe', hardness: 5 },
+  redstone:     { name: '红石线', top: '#c03028', side: '#a02820', bottom: '#a02820', solid: false, tool: 'any', hardness: 0.05 },
+  redstone_torch:{ name: '红石火把', top: '#ff5040', side: '#ff5040', bottom: '#8a6430', solid: false, tool: 'any', hardness: 0.05 },
+  lever_off:    { name: '拉杆(关)', top: '#8a8a92', side: '#7a7a82', bottom: '#6a6a72', solid: false, tool: 'any', hardness: 0.5 },
+  lever_on:     { name: '拉杆(开)', top: '#e08030', side: '#d07028', bottom: '#6a6a72', solid: false, tool: 'any', hardness: 0.5 },
+  redstone_ore: { name: '红石矿', top: '#888888', side: '#7c7c7c', bottom: '#6e6e6e', solid: true, tool: 'pickaxe', hardness: 3.0 },
 };
 const HOTBAR_ORDER = ['grass', 'dirt', 'stone', 'wood', 'leaves', 'sand', 'planks', 'brick'];
 
 // 方块数字 id(用于紧凑的 Uint8Array 区块存储)
-const BLOCK_ID = { air: 0, grass: 1, dirt: 2, stone: 3, wood: 4, leaves: 5, sand: 6, planks: 7, brick: 8, water: 9, snow: 10, gravel: 11, wool_red: 12, wool_yellow: 13, wool_white: 14, wool_black: 15, door: 16, door_iron: 17, door_stone: 18, door_gold: 19, door_diamond: 20, crafting_table: 21, cobblestone: 22, coal_ore: 23, iron_ore: 24, diamond_ore: 25, tnt: 26, furnace: 27, glass: 28, bed: 29, chest: 30, ladder: 31, bookshelf: 32, torch: 33, rail: 34, enchanting_table: 35, slime: 36, spawner: 37 };
+const BLOCK_ID = { air: 0, grass: 1, dirt: 2, stone: 3, wood: 4, leaves: 5, sand: 6, planks: 7, brick: 8, water: 9, snow: 10, gravel: 11, wool_red: 12, wool_yellow: 13, wool_white: 14, wool_black: 15, door: 16, door_iron: 17, door_stone: 18, door_gold: 19, door_diamond: 20, crafting_table: 21, cobblestone: 22, coal_ore: 23, iron_ore: 24, diamond_ore: 25, tnt: 26, furnace: 27, glass: 28, bed: 29, chest: 30, ladder: 31, bookshelf: 32, torch: 33, rail: 34, enchanting_table: 35, slime: 36, spawner: 37, redstone: 38, redstone_torch: 39, lever_off: 40, lever_on: 41, redstone_ore: 42 };
 const ID_TO_BLOCK = Object.keys(BLOCK_ID);
 
 // ============================================================
@@ -143,8 +148,9 @@ const ITEM_TYPES = {
   slime_ball:  { name: '黏液球', color: '#7ec850', shape: 'gem' },
   bucket:      { name: '铁桶',   color: '#c8c8d0', shape: 'bucket' },
   water_bucket:{ name: '水桶',   color: '#2a8fd6', shape: 'bucket' },
+  redstone_dust:{ name: '红石粉', color: '#c03028', shape: 'gem' },
 };
-const ITEM_ORDER = ['gem_diamond','gem_gold','gem_emerald','arrow','porkchop','cooked_porkchop','beef','steak','mutton','apple','stick','coal','iron_ingot','leather','book','minecart','string','ender_pearl','wheat','bread','raw_fish','cooked_fish','slime_ball','bucket','water_bucket'];
+const ITEM_ORDER = ['gem_diamond','gem_gold','gem_emerald','arrow','porkchop','cooked_porkchop','beef','steak','mutton','apple','stick','coal','iron_ingot','leather','book','minecart','string','ender_pearl','wheat','bread','raw_fish','cooked_fish','slime_ball','bucket','water_bucket','redstone_dust'];
 // 食物表与堆叠上限来自纯函数模块 inventory.js(INVLIB)
 const FOODS = INVLIB.FOODS;
 
@@ -547,6 +553,72 @@ function drawBlockFace(ctx, type, face, s, seedRand) {
       ctx.fillRect(Math.floor(s * 0.42), Math.floor(s * 0.42), Math.floor(s * 0.16), Math.floor(s * 0.16));
       break;
     }
+    case 'redstone': {
+      // 红石线(R38):透明底 + 十字红粉轨迹(顶/底面);侧面仅底部细线
+      ctx.clearRect(0, 0, s, s);
+      const dust = '#c03028', dustHi = '#e05040';
+      if (face === 'top' || face === 'bottom') {
+        ctx.fillStyle = dust;
+        ctx.fillRect(Math.floor(s * 0.06), Math.floor(s * 0.42), Math.floor(s * 0.88), Math.floor(s * 0.16));
+        ctx.fillRect(Math.floor(s * 0.42), Math.floor(s * 0.06), Math.floor(s * 0.16), Math.floor(s * 0.88));
+        ctx.fillStyle = dustHi;
+        ctx.fillRect(Math.floor(s * 0.4), Math.floor(s * 0.4), Math.floor(s * 0.2), Math.floor(s * 0.2));
+        ctx.fillRect(Math.floor(s * 0.1), Math.floor(s * 0.46), Math.floor(s * 0.12), Math.floor(s * 0.08));
+      } else {
+        ctx.fillStyle = dust;
+        ctx.fillRect(0, s - Math.max(1, Math.floor(s * 0.08)), s, Math.max(1, Math.floor(s * 0.08)));
+      }
+      break;
+    }
+    case 'redstone_torch': {
+      // 红石火把(R38):木棍 + 红色发光头 + 暗红光晕(透明底)
+      ctx.clearRect(0, 0, s, s);
+      ctx.fillStyle = '#8a6430';
+      ctx.fillRect(Math.floor(s * 0.44), Math.floor(s * 0.34), Math.max(1, Math.floor(s * 0.12)), Math.floor(s * 0.6));
+      ctx.fillStyle = 'rgba(200,40,30,0.35)';
+      ctx.fillRect(Math.floor(s * 0.28), Math.floor(s * 0.04), Math.floor(s * 0.44), Math.floor(s * 0.36));
+      ctx.fillStyle = '#ff5040';
+      ctx.fillRect(Math.floor(s * 0.38), Math.floor(s * 0.18), Math.floor(s * 0.24), Math.floor(s * 0.2));
+      ctx.fillStyle = '#ffd0c0';
+      ctx.fillRect(Math.floor(s * 0.43), Math.floor(s * 0.22), Math.floor(s * 0.12), Math.floor(s * 0.1));
+      break;
+    }
+    case 'lever_off':
+    case 'lever_on': {
+      // 拉杆(R38):圆石底座 + 斜杆(关=灰暗斜靠 / 开=橙亮竖起)
+      ctx.clearRect(0, 0, s, s);
+      const on = type === 'lever_on';
+      ctx.fillStyle = '#6a6a72';
+      ctx.fillRect(Math.floor(s * 0.2), Math.floor(s * 0.74), Math.floor(s * 0.6), Math.floor(s * 0.14));
+      ctx.fillStyle = '#8a8a92';
+      ctx.fillRect(Math.floor(s * 0.26), Math.floor(s * 0.7), Math.floor(s * 0.48), Math.floor(s * 0.08));
+      ctx.strokeStyle = on ? '#e08030' : '#7a7a82';
+      ctx.lineWidth = Math.max(2, Math.floor(s * 0.1)); ctx.lineCap = 'round';
+      ctx.beginPath();
+      if (on) { ctx.moveTo(Math.floor(s * 0.5), Math.floor(s * 0.72)); ctx.lineTo(Math.floor(s * 0.5), Math.floor(s * 0.24)); }
+      else { ctx.moveTo(Math.floor(s * 0.5), Math.floor(s * 0.72)); ctx.lineTo(Math.floor(s * 0.76), Math.floor(s * 0.4)); }
+      ctx.stroke();
+      if (on) {
+        ctx.fillStyle = '#ffb060';
+        ctx.beginPath(); ctx.arc(Math.floor(s * 0.5), Math.floor(s * 0.24), Math.floor(s * 0.07), 0, Math.PI * 2); ctx.fill();
+      }
+      break;
+    }
+    case 'redstone_ore': {
+      // 红石矿(R38):石底 + 分层红斑(暗圈→红芯→高光)
+      ctx.fillStyle = '#7c7c7c';
+      ctx.fillRect(0, 0, s, s);
+      const spots = [[0.24, 0.28], [0.62, 0.2], [0.4, 0.62], [0.72, 0.58], [0.18, 0.66]];
+      for (const [fx, fy] of spots) {
+        ctx.fillStyle = '#7a2018';
+        ctx.fillRect(Math.floor(s * (fx - 0.06)), Math.floor(s * (fy - 0.06)), Math.floor(s * 0.12), Math.floor(s * 0.12));
+        ctx.fillStyle = '#c03028';
+        ctx.fillRect(Math.floor(s * (fx - 0.03)), Math.floor(s * (fy - 0.03)), Math.floor(s * 0.06), Math.floor(s * 0.06));
+        ctx.fillStyle = '#ff7060';
+        ctx.fillRect(Math.floor(s * fx), Math.floor(s * fy), Math.max(1, Math.floor(s * 0.02)), Math.max(1, Math.floor(s * 0.02)));
+      }
+      break;
+    }
     case 'tnt': {
       // TNT:红底 + 白色中带 + 深色字样点
       noise(20);
@@ -734,6 +806,21 @@ const villageTorches = new Map();
 // dungeonSpawns 刷怪笼 {x,y,z,mob} / dungeonLootSpots 战利品箱 {x,y,z}
 const dungeonSpawns = new Map();
 const dungeonLootSpots = new Map();
+// 红石元件登记表(R38):chunkKey → Map("x,y,z" → 方块 id);
+// 放置/破坏/拉杆切换走 setBlock 实时更新,区块(重)装载时从 diff 桶扫描登记
+const REDSTONE_FAMILY = { redstone: 1, redstone_torch: 1, lever_off: 1, lever_on: 1 };
+const redstoneParts = new Map();
+function registerRedstone(x, y, z, id) {
+  const ck = chunkKey(Math.floor(x / CHUNK_SIZE), Math.floor(z / CHUNK_SIZE));
+  let m = redstoneParts.get(ck);
+  if (!m) { m = new Map(); redstoneParts.set(ck, m); }
+  m.set(x + ',' + y + ',' + z, id);
+}
+function unregisterRedstone(x, y, z) {
+  const ck = chunkKey(Math.floor(x / CHUNK_SIZE), Math.floor(z / CHUNK_SIZE));
+  const m = redstoneParts.get(ck);
+  if (m) m.delete(x + ',' + y + ',' + z);
+}
 
 function chunkKey(cx, cz) { return `${cx},${cz}`; }
 function blockKey(x, y, z) { return `${x},${y},${z}`; }
@@ -794,6 +881,7 @@ function generateChunkData(cx, cz) {
         if (r < 0.012) data[idx2] = BLOCK_ID.coal_ore;
         else if (r < 0.019) data[idx2] = BLOCK_ID.iron_ore;
         else if (r < 0.022 && y < 12) data[idx2] = BLOCK_ID.diamond_ore;
+        else if (r < 0.026 && y < 14) data[idx2] = BLOCK_ID.redstone_ore;   // 红石矿(R38,深层)
       }
 
       // 洞穴挖空(R24,经典):3D 噪声隧道 + 深处空腔。保护:
@@ -900,7 +988,16 @@ function generateChunkData(cx, cz) {
   // 应用玩家改动 diff(只遍历本区块桶,避免全量 16×48×16 字符串 key 探测)
   const bucket = modsByChunk.get(chunkKey(cx, cz));
   if (bucket) {
-    for (const [idx, t] of bucket) data[idx] = t ? BLOCK_ID[t] : 0;
+    for (const [idx, t] of bucket) {
+      data[idx] = t ? BLOCK_ID[t] : 0;
+      // 红石元件随 diff 入册(R38):读档/重装区块后信号网络可恢复
+      if (t && REDSTONE_FAMILY[t]) {
+        const y = Math.floor(idx / (CHUNK_SIZE * CHUNK_SIZE));
+        const rem = idx - y * CHUNK_SIZE * CHUNK_SIZE;
+        // chunkIdx = lx + lz*16 + y*256 → lx = rem%16, lz = floor(rem/16)
+        registerRedstone(ox + (rem % CHUNK_SIZE), y, oz + Math.floor(rem / CHUNK_SIZE), t);
+      }
+    }
   }
 
   return data;
@@ -1046,6 +1143,9 @@ function setBlock(x, y, z, type) {
   dirtyChunks.add(ch);
   // 记录改动 diff(用于存档;全局表 + 区块桶同步)
   addModification(x, y, z, type);
+  // 红石元件登记表实时更新(R38):放入/拉杆切换 upsert,清空则移除登记
+  if (type && REDSTONE_FAMILY[type]) registerRedstone(x, y, z, type);
+  else unregisterRedstone(x, y, z);   // 幂等:非红石格删除无副作用
   // 相邻 chunk 在边界时也需重建(面剔除跨边界)
   if (lx === 0) markChunkDirty(cx - 1, cz);
   if (lx === CHUNK_SIZE - 1) markChunkDirty(cx + 1, cz);
@@ -2532,6 +2632,7 @@ function clearWorld() {
   villageTorches.clear();       // 村庄火把随区块生成重新登记(R31)
   dungeonSpawns.clear();        // 地牢登记随区块生成重新登记(R37)
   dungeonLootSpots.clear();
+  redstoneParts.clear();        // 红石登记随区块 diff 重新入册(R38)
   for (const a of arrows) scene.remove(a);
   arrows.length = 0;
   clearDroppedItems();   // 清掉落物,避免旧世界残留
@@ -3549,6 +3650,22 @@ function breakBlock() {
   // 矿车(R26):左键击打 —— 移动中顺向助推,静止回收掉落
   const lookCart = raycastCart(3.5);
   if (lookCart) { punchCart(lookCart); return; }
+  // 红石元件(R38):非固体射线穿不中 —— 视线采样命中即一击拆除
+  {
+    const rs = raycastRedstone(4);
+    if (rs) {
+      setBlock(rs.x, rs.y, rs.z, null);
+      spawnParticles(rs.x, rs.y, rs.z, 0xc03028, 6);
+      audio.play('break');
+      let dropId = rs.id, dropKind = 'block', dropN = 1;
+      if (rs.id === 'redstone') { dropId = 'redstone_dust'; dropKind = 'item'; }
+      else if (rs.id === 'lever_on') dropId = 'lever_off';   // 拆下拉杆回到关态
+      spawnDroppedItem(rs.x, rs.y, rs.z, dropId, dropN, dropKind);
+      tutEvent('break', 1);
+      markDirtySave();
+      return;
+    }
+  }
   // 门:左键=移除门(任何手持,和破坏方块一致);右键=开关门
   const lookDoor = raycastDoor();
   if (lookDoor) {
@@ -3581,6 +3698,17 @@ function breakBlock() {
   if (getBlock(t.x, t.y + 1, t.z) === 'torch') {
     setBlock(t.x, t.y + 1, t.z, null);
     spawnDroppedItem(t.x, t.y + 1, t.z, 'torch', 1, 'block');
+  }
+  // 红石元件附着(R38):支撑被拆,上方元件一并弹出
+  {
+    const above = getBlock(t.x, t.y + 1, t.z);
+    if (above && REDSTONE_FAMILY[above]) {
+      setBlock(t.x, t.y + 1, t.z, null);
+      let popId = above, popKind = 'block';
+      if (above === 'redstone') { popId = 'redstone_dust'; popKind = 'item'; }
+      else if (above === 'lever_on') popId = 'lever_off';
+      spawnDroppedItem(t.x, t.y + 1, t.z, popId, 1, popKind);
+    }
   }
   // 箱子被拆:掉落全部内容
   if (type === 'chest') {
@@ -3621,6 +3749,8 @@ function breakBlock() {
   else if (type === 'diamond_ore') { dropType = 'gem_diamond'; dropKind = 'item'; }
   else if (type === 'leaves' && Math.random() < 0.15) { dropType = 'apple'; dropKind = 'item'; }
   else if (type === 'spawner') { dropType = null; }   // 刷怪笼破坏无掉落(经典,R37)
+  else if (type === 'redstone_ore') { dropType = 'redstone_dust'; dropKind = 'item'; dropCount = 4 + (Math.random() < 0.5 ? 1 : 0); }   // 红石矿 → 红石粉 4-5(R38)
+  else if (type === 'redstone') { dropType = 'redstone_dust'; dropKind = 'item'; }   // 红石线拆回红石粉(R38)
   // 成熟麦田(R29):麦子格上仍有种植计时 → 收获小麦(计时即成熟标记)
   if (type === 'leaves' && cropTimers.has(blockKey(t.x, t.y, t.z))) {
     cropTimers.delete(blockKey(t.x, t.y, t.z));
@@ -3712,6 +3842,16 @@ function placeBlock() {
     if (hitType === 'furnace') { openFurnacePanel(tHit.x, tHit.y, tHit.z); return; }
     if (hitType === 'bed') { trySleep(tHit.x, tHit.y, tHit.z); return; }
     if (hitType === 'chest') { openChestPanel(tHit.x, tHit.y, tHit.z); return; }
+    // 拉杆(R38):命中面的相邻格是拉杆 → 右键切换开/关(双 id 方块,存档天然记录)
+    const lx = tHit.x + Math.round(tHit.normal.x), ly = tHit.y + Math.round(tHit.normal.y), lz = tHit.z + Math.round(tHit.normal.z);
+    const lb = getBlock(lx, ly, lz);
+    if (lb === 'lever_off' || lb === 'lever_on') {
+      setBlock(lx, ly, lz, lb === 'lever_off' ? 'lever_on' : 'lever_off');
+      showToast(lb === 'lever_off' ? '🕹️ 拉杆:开' : '🕹️ 拉杆:关');
+      audio.play('place');
+      swingHoldItem();
+      return;
+    }
   }
   if (item && item.kind === 'item' && FOODS[item.id]) {
     // 食物:右键进食恢复饥饿值
@@ -3749,6 +3889,10 @@ function placeBlock() {
   if (selectedType === 'rail' && !isSolidAt(nx, ny - 1, nz)) {
     showToast('铁轨需要放在固体方块上面'); return;
   }
+  // 红石元件(R38):线/火把/拉杆需固体支撑(与铁轨/火把同规则)
+  if ((selectedType === 'redstone' || selectedType === 'redstone_torch' || selectedType === 'lever_off') && !isSolidAt(nx, ny - 1, nz)) {
+    showToast('红石元件需要放在固体方块上面'); return;
+  }
   if (selectedType !== 'ladder' && overlapsPlayer(nx, ny, nz)) { showToast('挡住自己了,换个方向'); return; }
   if (selectedType && selectedType.indexOf('door') === 0) {
     const facing = Math.abs(Math.sin(yaw)) > 0.5 ? 1 : 0;
@@ -3761,12 +3905,14 @@ function placeBlock() {
   }
   if (tryPlantCrop(nx, ny, nz)) { showToast('种下小麦(60秒成熟)'); audio.play('place'); consumeSelected(); return; }
   if (setBlock(nx, ny, nz, selectedType)) {
+    const placedType = selectedType;   // consumeSelected 数尽会置空,先留存(R38)
     spawnParticles(nx, ny, nz, new THREE.Color(BLOCK_TYPES[selectedType].top).getHex(), 4);
     showToast(`放置:${BLOCK_TYPES[selectedType].name}`);
     tutEvent('place', 1);
     audio.play('place');
     markDirtySave();
     consumeSelected();
+    if (placedType === 'redstone_torch') unlockAchv('redstone');   // 成就:电路初成(R38)
   }
 }
 
@@ -3917,11 +4063,70 @@ function removeDoor(x, y, z) {
 function toggleDoor(x, y, z) {
   const d = doors.get(doorKey(x, y, z));
   if (!d) return false;
+  if (d.type === 'door_iron') {   // 铁门只能红石驱动(经典,R38)
+    showToast('🚪 铁门需要红石信号(火把/拉杆+红石线)');
+    return false;
+  }
   d.open = !d.open;
   d.animT = 0;  // 触发动画(在 animate 里推进)
   audio.play('step');
   showToast(d.open ? '🚪 开门' : '🚪 关门');
   return true;
+}
+
+// ============================================================
+// 红石基础(R38):信号网络每 0.25s 重算 ——
+// 电源 = 红石火把(常开 15)/ 拉杆(开态 15);传导 = 红石线(BFS 衰减 -1/格);
+// 执行器 = 铁门(任一门格相邻充能 >0 强制开,断能关)
+// 传播算法在 machines.js redstonePower 纯函数(单测覆盖)
+// ============================================================
+let redstoneTimer = 0;
+function updateRedstone(dt) {
+  redstoneTimer -= dt;
+  if (redstoneTimer > 0) return;
+  redstoneTimer = 0.25;
+  const wires = new Set();
+  const sources = [];
+  let hasDoor = false;
+  for (const d of doors.values()) if (d.type === 'door_iron') { hasDoor = true; break; }
+  // 没有任何线/电源/铁门时不做 BFS(零成本快路径:登记表为空且无铁门)
+  if (redstoneParts.size === 0 && !hasDoor) return;
+  for (const m of redstoneParts.values()) {
+    for (const [key, id] of m) {
+      const [x, y, z] = key.split(',').map(Number);
+      if (getBlock(x, y, z) !== id) continue;   // 残留登记(已破坏/未加载)跳过
+      if (id === 'redstone') wires.add(key);
+      else if (id === 'redstone_torch') sources.push({ key, p: 15 });
+      else if (id === 'lever_on') sources.push({ key, p: 15 });
+    }
+  }
+  const power = MACHINES.redstonePower(wires, sources);
+  // 执行器:铁门(两格门体,任一格四向相邻充能即开)
+  for (const d of doors.values()) {
+    if (d.type !== 'door_iron') continue;
+    let powered = false;
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      if ((power.get((d.x + dx) + ',' + d.y + ',' + (d.z + dz)) || 0) > 0
+          || (power.get((d.x + dx) + ',' + (d.y + 1) + ',' + (d.z + dz)) || 0) > 0) { powered = true; break; }
+    }
+    if (powered !== d.open) {
+      d.open = powered;
+      d.animT = 0;
+      audio.play('step');
+    }
+  }
+}
+
+// 红石元件直接破坏(R38):非固体元件射线穿不中 —— 沿视线采样最先命中的元件格
+function raycastRedstone(maxDist) {
+  const dx = -Math.sin(yaw) * Math.cos(pitch), dy = Math.sin(pitch), dz = -Math.cos(yaw) * Math.cos(pitch);
+  for (let t = 0.3; t <= (maxDist || 4); t += 0.2) {
+    const x = Math.floor(playerPos.x + dx * t), y = Math.floor(playerPos.y + dy * t), z = Math.floor(playerPos.z + dz * t);
+    const b = getBlock(x, y, z);
+    if (b && REDSTONE_FAMILY[b]) return { x, y, z, id: b };
+    if (b && BLOCK_TYPES[b] && BLOCK_TYPES[b].solid) return null;   // 先撞墙
+  }
+  return null;
 }
 // 门开关动画推进(在 animate 里调用)
 function updateDoorAnim(dt) {
@@ -6836,6 +7041,7 @@ function animate() {
   achvVillageT -= dt;                              // 成就:发现村庄节流探测(R34)
   if (achvVillageT <= 0) { achvVillageT = 1; checkVillageAchv(); }
   if (locked) updateSpawners(dt);                  // 地牢刷怪笼(暂停时冻结,R37)
+  if (locked) updateRedstone(dt);                  // 红石信号网络(暂停时冻结,R38)
   if (locked) updateDroppedItems(dt);              // 掉落物(暂停时冻结;每帧仅一次)
   if (locked && settings.mobs) updateMobs(dt);     // 生物(暂停时冻结)
   if (locked) updateArrows(dt);                    // 箭矢(暂停时冻结,避免面板开着被骷髅射中)
@@ -7458,7 +7664,7 @@ function openTablePanel() {
   if (closeBtn) closeBtn.onclick = closeTablePanel;
   // 目录循环列表:方块 + 材料物品(矿石/圆石/木棍等,按 kind 区分图标)
   const catalog = HOTBAR_ORDER.map(id => ({ kind: 'block', id }))
-    .concat(['water', 'snow', 'gravel', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'sand', 'bed', 'chest', 'ladder', 'bookshelf', 'wool_red', 'wool_white', 'torch', 'rail', 'enchanting_table', 'slime'].map(id => ({ kind: 'block', id })))
+    .concat(['water', 'snow', 'gravel', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'sand', 'bed', 'chest', 'ladder', 'bookshelf', 'wool_red', 'wool_white', 'torch', 'rail', 'enchanting_table', 'slime', 'redstone', 'redstone_torch', 'lever_off'].map(id => ({ kind: 'block', id })))
     .concat(['leather', 'book'].map(id => ({ kind: 'item', id })))
     .concat(['gem_gold', 'gem_diamond', 'gem_emerald', 'arrow', 'stick', 'coal', 'iron_ingot'].map(id => ({ kind: 'item', id })));
   document.querySelectorAll('#table-grid .inv-cell').forEach((cell, i) => {

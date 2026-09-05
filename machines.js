@@ -175,6 +175,7 @@
     { id: 'kill_slime',  icon: '🟢', name: '黏糊糊',       desc: '击碎一只小史莱姆' },
     { id: 'bucket',      icon: '🪣', name: '桶装玩意',     desc: '用铁桶装一次水' },
     { id: 'dungeon_loot',icon: '🗝️', name: '宝箱猎人',     desc: '打开一个地牢战利品箱' },
+    { id: 'redstone',   icon: '⚡', name: '电路初成',     desc: '放置一支红石火把' },
   ];
   const ACHV_BY_ID = {};
   for (const a of ACHIEVEMENTS) ACHV_BY_ID[a.id] = a;
@@ -183,6 +184,34 @@
     const a = ACHV_BY_ID[id];
     if (!a || unlocked.has(id)) return null;
     return a;
+  }
+
+  // ---- 红石信号(R38):BFS 传播纯函数(经典衰减 -1/格,多源取最大) ----
+  // wires: Set("x,y,z") 红石线格;sources: [{key:"x,y,z", p:15}] 电源
+  // 返回 Map(key → power);电源自身格也带功率(相邻执行器可直接取)
+  function redstonePower(wires, sources) {
+    const power = new Map();
+    const queue = [];
+    for (const s of sources) {
+      if (!s || !Number.isFinite(s.p) || s.p <= 0) continue;
+      const cur = power.get(s.key) || 0;
+      if (s.p > cur) { power.set(s.key, s.p); queue.push([s.key, s.p]); }
+    }
+    const adj = (key) => {
+      const [x, y, z] = key.split(',').map(Number);
+      return [(x + 1) + ',' + y + ',' + z, (x - 1) + ',' + y + ',' + z, x + ',' + y + ',' + (z + 1), x + ',' + y + ',' + (z - 1)];
+    };
+    while (queue.length) {
+      const [key, p] = queue.shift();
+      if (p <= 1) continue;   // 衰减到 0 不再向外传
+      for (const nk of adj(key)) {
+        if (!wires.has(nk)) continue;
+        if ((power.get(nk) || 0) >= p - 1) continue;
+        power.set(nk, p - 1);
+        queue.push([nk, p - 1]);
+      }
+    }
+    return power;
   }
 
   // ---- 存档 schema(R16 Critical 防漂移:字段清单单一来源) ----
@@ -200,13 +229,13 @@
 
   // 导出(Node 环境)
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { TUTORIAL_STEPS, advanceTutorial, COOK_TIME, SMELT, FUELS, furnaceCanSmelt, furnaceTick, weatherNext, cartNextDir, xpToNext, xpGain, ENCHANT_NAMES, ENCHANT_POOL, rollEnchants, ACHIEVEMENTS, ACHV_BY_ID, awardAchievement, SAVE_SCHEMA_FIELDS, validateSaveRecord };
+    module.exports = { TUTORIAL_STEPS, advanceTutorial, COOK_TIME, SMELT, FUELS, furnaceCanSmelt, furnaceTick, weatherNext, cartNextDir, xpToNext, xpGain, ENCHANT_NAMES, ENCHANT_POOL, rollEnchants, ACHIEVEMENTS, ACHV_BY_ID, awardAchievement, redstonePower, SAVE_SCHEMA_FIELDS, validateSaveRecord };
   }
   // 浏览器:挂到全局
   global.MACHINES = {
     TUTORIAL_STEPS, advanceTutorial, COOK_TIME, SMELT, FUELS, furnaceCanSmelt, furnaceTick,
     weatherNext, cartNextDir, xpToNext, xpGain, ENCHANT_NAMES, ENCHANT_POOL, rollEnchants,
-    ACHIEVEMENTS, ACHV_BY_ID, awardAchievement, SAVE_SCHEMA_FIELDS, validateSaveRecord,
+    ACHIEVEMENTS, ACHV_BY_ID, awardAchievement, redstonePower, SAVE_SCHEMA_FIELDS, validateSaveRecord,
   };
 
 })(typeof window !== 'undefined' ? window : globalThis);

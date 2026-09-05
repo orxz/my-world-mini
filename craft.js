@@ -67,6 +67,12 @@
     { name: '黏液块', pattern: ['slime_ball', 'slime_ball', 'slime_ball', 'slime_ball'], result: { kind: 'block', id: 'slime' }, count: 1, shapeless: true },
     // 铁桶:3 铁锭 V 形(经典配方,R36;舀水/放水)
     { name: '铁桶', pattern: ['iron_ingot', null, 'iron_ingot', null, 'iron_ingot', null, null, null, null], result: { kind: 'item', id: 'bucket' }, count: 1, shapeless: false },
+    // 红石火把:红石粉上 + 木棍下(经典配方,R38;常开电源)
+    { name: '红石火把', pattern: ['redstone_dust', null, 'stick', null], result: { kind: 'block', id: 'redstone_torch' }, count: 1, shapeless: false },
+    // 拉杆:木棍上 + 圆石下(经典配方,R38;右键开关电源)
+    { name: '拉杆', pattern: ['stick', null, 'cobblestone', null], result: { kind: 'block', id: 'lever_off' }, count: 1, shapeless: false },
+    // 红石线:1 红石粉无序(经典直接撒粉,R38)
+    { name: '红石线', pattern: ['redstone_dust', null, null, null], result: { kind: 'block', id: 'redstone' }, count: 1, shapeless: true },
     // 铁轨:6 铁锭 + 1 木棍(经典配方 → 16 节)
     { name: '铁轨', pattern: ['iron_ingot', 'iron_ingot', 'iron_ingot', 'iron_ingot', 'stick', 'iron_ingot', null, null, null], result: { kind: 'block', id: 'rail' }, count: 16, shapeless: false },
     // 矿车:5 铁锭 U 形(经典配方 → 1 辆)

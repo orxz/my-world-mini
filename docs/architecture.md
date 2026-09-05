@@ -23,7 +23,7 @@
 └───────────────┬─────────────────────────────────────────┘
                 │ <script src> 直引 + onclick 回调
 ┌───────────────▼─────────────────────────────────────────┐
-│  game.js  ── 游戏引擎(20 个模块,~7900 行)             │  引擎层
+│  game.js  ── 游戏引擎(20 个模块,~8050 行)             │  引擎层
 │   渲染 / 物理 / 输入 / 物品 / 视角 / 存档 / 音效 / UI   │
 └───────────────┬─────────────────────────────────────────┘
                 │ 函数调用(hash2/fbm2D/biomeAt/heightAt + CRAFTLIB)
@@ -32,12 +32,12 @@
 │   worldgen:  哈希 / 值噪声 / fbm / 群系 / 高度 / 洞穴 / 村庄 / 地牢 │
 │   craft:     RECIPES / matchRecipe / breakCost                  │
 │   inventory: 拾取堆叠 / 饥饿 / 护甲减伤 / 交易表 / 地牢战利品      │
-│   machines:  教程 / 熔炉 / 天气 / 矿车寻路 / 经验 / 附魔 / 成就 / 存档schema │
+│   machines:  教程 / 熔炉 / 天气 / 矿车 / 经验 / 附魔 / 成就 / 红石 / schema │
 │   ← 均可单测                                                    │
 └─────────────────────────────────────────────────────────────────┘
                 ▲
 ┌───────────────┴─────────────────────────────────────────┐
-│  test/unit.test.js  ── Node 单元测试(132 项)          │  测试
+│  test/unit.test.js  ── Node 单元测试(137 项)          │  测试
 │    require(worldgen + craft + inventory + machines)    │
 │  test/unit.test.js  ── Node 单元测试(46 项)           │  测试
 │    require('../worldgen.js') + require('../craft.js')   │
@@ -109,7 +109,11 @@ three.min.js  ── Three.js r160(第三方渲染库,内置,离线)
 > 挖掉失效/破坏无掉落);战利品箱 `fillDungeonLoot` 世界坐标 hash 确定性
 > 填充(`INVLIB.rollDungeonLoot`);登记表 dungeonSpawns/dungeonLootSpots 随
 > 区块生成重建,R37)、
-> **成就系统**(`unlockAchv`/`showAchvToast`/`openAchvPanel`:19 条经典里程碑,
+> **红石基础**(新方块 红石线/红石火把/拉杆双id/红石矿;`updateRedstone`
+> 每 0.25s BFS 重算驱动铁门自动开闭(手动拒绝);传播算法 machines
+> `redstonePower` 纯函数;登记表 redstoneParts 随 setBlock/diff 桶实时
+> 维护,读档自动重建;拉杆右键切换、元件视线采样一击拆、支撑破坏弹出,R38)、
+> **成就系统**(`unlockAchv`/`showAchvToast`/`openAchvPanel`:20 条经典里程碑,
 > 埋点 = 拾取(pickupIntoInventory 包装层)/合成(craftGiveResult)/击杀(hurtMob)/
 > 钓鱼/睡觉/矿车/附魔/交易/繁殖/发现村庄(animate 每秒节流探测);
 > 金色 toast 右上滑入,暂停菜单面板全清单;ACHIEVEMENTS/awardAchievement 在

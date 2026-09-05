@@ -208,6 +208,22 @@ async function main() {
   })()`);
   check('地牢战利品箱 + 成就「宝箱猎人」', !!dg && lootAchv.n >= 3 && lootAchv.n <= 5 && lootAchv.achv && lootAchv.total === 18, JSON.stringify({ ...lootAchv, dg: !!dg }));
 
+  // ---- 11.8 红石火把(R38 电路初成:真实放置路径)----
+  const rs = await evl(`(() => {
+    const px = Math.floor(playerPos.x), gy = Math.floor(playerPos.y) - 1, pz = Math.floor(playerPos.z);
+    // 清出东向射线路径(含玩家自身格,可能落进树冠)+ 垫一块石头支撑
+    for (let dx = -1; dx <= 2; dx++) for (let dy = 1; dy <= 3; dy++) setBlock(px + dx, gy + dy, pz, null);
+    setBlock(px + 2, gy, pz, 'stone');
+    playerPos.set(px + 0.5, gy + 1.9, pz + 0.5); velocity.set(0, 0, 0);
+    for (let i = 0; i < 9; i++) hotbar[i] = null;
+    hotbar[0] = { kind: 'block', id: 'redstone_torch', count: 1 }; currentSlot = 0; selectSlot(0);
+    const dx = (px + 2.5) - playerPos.x, dy = (gy + 1.0) - playerPos.y, dz = (pz + 0.5) - playerPos.z;
+    yaw = Math.atan2(-dx, -dz); pitch = Math.asin(dy / Math.hypot(dx, dy, dz));
+    placeBlock();
+    return { torch: getBlock(px + 2, gy + 1, pz) === 'redstone_torch', achv: achvUnlocked.has('redstone'), n: achvUnlocked.size };
+  })()`);
+  check('红石火把放置 + 成就「电路初成」', rs.torch && rs.achv && rs.n === 19, JSON.stringify(rs));
+
   // ---- 12. 繁殖(两只求爱猪 → 幼崽;跟随玩家当前位置生成)----
   const breed = await evl(`(() => {
     clearMobs();

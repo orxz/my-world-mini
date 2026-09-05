@@ -7840,8 +7840,12 @@ function applySave(rec) {
   // 重建全局 diff 表 + 区块桶(读档一次性解析 key,游戏期间按桶直接应用)
   if (rec.modifications) {
     for (const [k, v] of rec.modifications) {
+      // 脏数据防御(R47):key 非法(解析不出有限坐标)的 diff 跳过 ——
+      // 否则 NaN 坐标条目会永久留在 diff 表并随下次存档扩散
       const c1 = k.indexOf(','), c2 = k.indexOf(',', c1 + 1);
-      addModification(+k.slice(0, c1), +k.slice(c1 + 1, c2), +k.slice(c2 + 1), v);
+      const mx = +k.slice(0, c1), my = +k.slice(c1 + 1, c2), mz = +k.slice(c2 + 1);
+      if (c1 < 0 || c2 < 0 || !Number.isFinite(mx) || !Number.isFinite(my) || !Number.isFinite(mz)) continue;
+      addModification(mx, my, mz, v);
     }
   }
   if (rec.playerPos && rec.playerPos.y > 1 && rec.playerPos.y < WORLD_HEIGHT

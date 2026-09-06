@@ -288,11 +288,12 @@ function drawBlockFace(ctx, type, face, s, seedRand) {
       }
       break;
     case 'leaves':
-      for (let y = 0; y < s; y++) for (let x = 0; x < s; x++) {
-        if (seedRand() < 0.15) { ctx.clearRect(x, y, 1, 1); continue; }
-        const d = (seedRand() - 0.5) * 50;
+      // 2×2 块状明暗 + 块状孔洞:保留像素感的同时消除逐像素高频噪点(远看白斑)
+      for (let y = 0; y < s; y += 2) for (let x = 0; x < s; x += 2) {
+        const d = (seedRand() - 0.5) * 26;
         ctx.fillStyle = rgbStr(base.r + d, base.g + d, base.b + d);
-        ctx.fillRect(x, y, 1, 1);
+        ctx.fillRect(x, y, 2, 2);
+        if (seedRand() < 0.1) ctx.clearRect(x, y, 2, 2);
       }
       break;
     case 'brick':
@@ -1693,6 +1694,7 @@ let holdGroup = null;
 let holdSwingT = 0;
 let shieldActive = 0;
 let raisedShield = null;   // 举盾时手持的盾引用(格挡成功扣耐久用)
+let playerShadow = null;   // 玩家接地阴影(第三人称显示;生物/掉落物各自持有)
 
 let breakTargetKey = null;
 let breakProgress = 0;
@@ -2058,6 +2060,7 @@ function buildPlayerModel() {
   playerModel.userData = { armL, armR, legL, legR, walkPhase: 0, swingT: 0, heldMount };
   playerModel.visible = false;
   scene.add(playerModel);
+  if (!playerShadow) playerShadow = makeBlobShadow(0.75);   // 接地阴影(第三人称显示)
 }
 
 // ============================================================
@@ -2127,6 +2130,68 @@ function updateHoldItem() {
 }
 
 const blockGeo = new THREE.BoxGeometry(1, 1, 1);
+
+// ============================================================
+// 第九部分补充:实体接地阴影(blob shadow)—— 修复"视觉悬浮"感
+// 半透明径向渐变圆片贴在脚下地面,随离地高度缩小/淡出;
+// 玩家(第三人称)/生物/掉落物共用,几何与纹理全局共享
+// ============================================================
+let blobShadowTex = null;
+function getBlobShadowTex() {
+  if (blobShadowTex) return blobShadowTex;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 64;
+  const ctx = cv.getContext('2d');
+  const g = ctx.createRadialGradient(32, 32, 4, 32, 32, 30);
+  g.addColorStop(0, 'rgba(0,0,0,0.55)');
+  g.addColorStop(0.7, 'rgba(0,0,0,0.25)');
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 64, 64);
+  blobShadowTex = new THREE.CanvasTexture(cv);
+  // 预热上传 GPU:避免首个阴影实体出现时纹理计数中途变化(性能长测的内存稳定性口径)
+  if (typeof renderer !== 'undefined' && renderer && renderer.initTexture) renderer.initTexture(blobShadowTex);
+  return blobShadowTex;
+}
+const blobShadowGeo = new THREE.PlaneGeometry(1, 1);
+
+function makeBlobShadow(size) {
+  const m = new THREE.Mesh(blobShadowGeo, new THREE.MeshBasicMaterial({
+    map: getBlobShadowTex(), transparent: true, depthWrite: false,
+  }));
+  m.rotation.x = -Math.PI / 2;
+  m.renderOrder = 1;              // 在地形之后绘制,避免与顶面深度冲突
+  m.userData.baseSize = size;
+  m.visible = false;
+  scene.add(m);
+  return m;
+}
+
+function removeBlobShadow(sh) {
+  if (!sh) return;
+  scene.remove(sh);
+  sh.material.dispose();          // 几何/纹理全局共享,不在此释放
+}
+
+// 每帧调用:从脚部向下找支撑面(最多 12 格),圆片贴地并随离地高度淡出
+function updateBlobShadow(sh, x, z, feetY) {
+  if (!sh) return;
+  const bx = Math.floor(x), bz = Math.floor(z);
+  const yEnd = Math.max(0, Math.floor(feetY) - 12);
+  let gy = -1;
+  for (let y = Math.floor(feetY); y >= yEnd; y--) {
+    if (isSolidAt(bx, y, bz)) { gy = y; break; }
+  }
+  if (gy < 0) { sh.visible = false; return; }   // 脚下无地面(悬空/未加载区块)
+  const h = feetY - (gy + 1);                    // 离地高度
+  if (h > 5) { sh.visible = false; return; }     // 太高淡出殆尽,不再绘制
+  const k = Math.max(0, 1 - h * 0.18);           // 贴地 1 → 升空渐减
+  sh.visible = true;
+  sh.position.set(x, gy + 1 + 0.02, z);
+  sh.scale.setScalar(sh.userData.baseSize * (0.8 + 0.2 * k));
+  sh.material.opacity = 0.15 + 0.75 * k;
+}
+
 
 function buildToolMesh(toolId) {
   const def = TOOL_TYPES[toolId];
@@ -4601,6 +4666,7 @@ function spawnDroppedItem(x, y, z, itemId, count = 1, kind = 'block', durability
     baseY: 0,
   };
   scene.add(mesh);
+  mesh.userData.shadow = makeBlobShadow(0.34);   // 接地阴影
   droppedItems.push(mesh);
   return mesh;
 }
@@ -4662,7 +4728,7 @@ function updateDroppedItems(dt) {
         const got = pickupIntoInventory(u.kind || 'block', u.type, want, u.durability);
         if (got > 0) {
           audio.play('place');   // 拾取音
-          if (got >= want) { scene.remove(d); droppedItems.splice(i, 1); continue; }
+          if (got >= want) { removeBlobShadow(u.shadow); scene.remove(d); droppedItems.splice(i, 1); continue; }
           u.count = want - got;   // 部分吸收:剩余留在地上
         }
       }
@@ -4670,6 +4736,7 @@ function updateDroppedItems(dt) {
 
     // 寿命到点:淡出后移除(最后 1 秒闪烁式收缩)
     if (u.life <= 0) {
+      removeBlobShadow(u.shadow);
       scene.remove(d);
       droppedItems.splice(i, 1);
       continue;
@@ -4687,7 +4754,7 @@ function updateDroppedItems(dt) {
 
 // 清空所有掉落物(重置/读档时调用,避免场景残留)
 function clearDroppedItems() {
-  for (const d of droppedItems) scene.remove(d);
+  for (const d of droppedItems) { removeBlobShadow(d.userData.shadow); scene.remove(d); }
   droppedItems.length = 0;
 }
 
@@ -4820,8 +4887,16 @@ function spawnMob(x, groundY, z, type, opts) {
     m.slimeBase = [0.55, 0.85, 1.2][m.slimeSize];
     m.mesh.scale.setScalar(m.slimeBase);
   }
+  // 接地阴影:尺寸按体型(史莱姆随 slimeBase,其余按类型表)
+  m.shadow = makeBlobShadow(t === 'slime' ? m.slimeBase : (MOB_SHADOW_SIZE[t] || 0.7));
   return m;
 }
+
+// 各类型生物的接地阴影直径(格)
+const MOB_SHADOW_SIZE = {
+  pig: 0.7, cow: 0.8, sheep: 0.75, chicken: 0.45, villager: 0.7,
+  zombie: 0.65, creeper: 0.6, skeleton: 0.6, spider: 0.9, enderman: 0.6, golem: 0.95,
+};
 
 // 僵尸模型:绿皮人形,-z 为前,双臂经典前平举;userData 携带腿/臂引用
 function buildZombieMesh() {
@@ -5368,6 +5443,7 @@ function removeMob(i) {
     }
   });
   scene.remove(m.mesh);
+  removeBlobShadow(m.shadow);
   mobs.splice(i, 1);
 }
 function clearMobs() { for (let i = mobs.length - 1; i >= 0; i--) removeMob(i); }
@@ -7717,6 +7793,14 @@ function animate() {
       else { ud.armR.rotation.x = -Math.sin(p * Math.PI) * 1.6; }
     }
   }
+
+  // 接地阴影跟随:玩家(仅第三人称,模型可见时)/生物/掉落物
+  if (playerShadow) {
+    if (playerModel && playerModel.visible) updateBlobShadow(playerShadow, playerPos.x, playerPos.z, playerPos.y - PLAYER_HEIGHT * 0.5);
+    else playerShadow.visible = false;
+  }
+  for (const m of mobs) updateBlobShadow(m.shadow, m.mesh.position.x, m.mesh.position.z, m.mesh.position.y - 0.45);
+  for (const d of droppedItems) updateBlobShadow(d.userData.shadow, d.position.x, d.position.z, d.position.y - 0.15);
 
   // 交互:按住左键(或长按移动端挖矿键)连续挖掘 —— 每 0.22 秒自动追加一次破坏点击
   // 触屏不锁指针:touchBreakHeld 是明确的按键意图,不受 locked 门控(R32② 修复)

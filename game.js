@@ -2035,9 +2035,9 @@ function buildPlayerModel() {
   }
   const armL = makeArm(-1);
   const armR = makeArm(1);
-  // 右手挂点(手持物):在手部位置
+  // 右手挂点(手持物):在手部位置,略向前抬(持物感,避免"夹在腋下")
   const heldMount = new THREE.Group();
-  heldMount.position.set(0, -0.46, 0.04);
+  heldMount.position.set(0, -0.42, 0.18);
   armR.add(heldMount);
 
   // 腿(髋 y=0.78)—— 短腿,裤腿+鞋共 0.78
@@ -2066,8 +2066,17 @@ function buildPlayerModel() {
 // 第一人称手持物容器:挂在相机上(屏幕右下角),本地坐标
 function buildHoldGroup() {
   holdGroup = new THREE.Group();
-  holdGroup.position.set(0.55, -0.45, -0.85);   // 右下前方
+  holdGroup.position.set(HOLD_BASE.x, HOLD_BASE.y, HOLD_BASE.z);   // 右下前方
   holdGroup.rotation.set(0, 0, 0);
+  // 手臂:肤色,从屏幕右下伸向画面中心(空手也显示,经典 MC 观感;消除手持物"无依托悬浮"感)
+  const arm = new THREE.Mesh(
+    new THREE.BoxGeometry(0.22, 0.22, 0.6),
+    new THREE.MeshLambertMaterial({ color: 0xf0c090 })
+  );
+  arm.position.set(-0.26, 0.16, 0.32);
+  arm.rotation.set(-0.55, 0.5, 0.15);
+  holdGroup.add(arm);
+  holdGroup.userData.arm = arm;
   camera.add(holdGroup);
   updateHoldItem();
 }
@@ -2077,7 +2086,13 @@ function buildHoldGroup() {
 // 在 selectSlot 时调用。默认第1格是方块 → 持续手持显示。
 // 刷新手持物:方块/工具/材料都在 FP(屏幕右下)和 TP(玩家右手)显示
 function updateHoldItem() {
-  if (holdGroup) { while (holdGroup.children.length) holdGroup.remove(holdGroup.children[0]); }
+  // 清空旧物品(手臂是常驻件,保留)
+  if (holdGroup) {
+    for (let i = holdGroup.children.length - 1; i >= 0; i--) {
+      const c = holdGroup.children[i];
+      if (c !== holdGroup.userData.arm) holdGroup.remove(c);
+    }
+  }
   const heldMount = playerModel ? playerModel.userData.heldMount : null;
   if (heldMount) { while (heldMount.children.length) heldMount.remove(heldMount.children[0]); }
 
@@ -2093,10 +2108,10 @@ function updateHoldItem() {
     base = buildMaterialMesh(item.id);                      // Group
   } else { return; }
 
-  // 第一人称(屏幕右下)
+  // 第一人称(屏幕右下,手臂前端;方块收小避免占屏过大)
   if (holdGroup) {
     const fp = base.clone();
-    if (item.kind === 'block') { fp.scale.setScalar(0.42); fp.rotation.set(0.2, 0.55, 0); }
+    if (item.kind === 'block') { fp.scale.setScalar(0.30); fp.rotation.set(0.2, 0.55, 0); fp.position.set(0, 0.02, 0); }
     else if (item.kind === 'tool') { fp.scale.setScalar(1.0); fp.rotation.set(0.1, 0.3, 0); }   // 工具保留原尺寸
     else { fp.scale.setScalar(0.6); fp.rotation.set(0.3, 0.6, 0.2); }
     holdGroup.add(fp);
@@ -2306,18 +2321,20 @@ function updateThirdPersonCamera() {
   }
   playerModel.visible = true;
   // 模型锚点:碰撞盒底(模型 model-space 脚底=0,故脚踩地)
+  // 模型脸在本地 +z,而玩家朝向 forward=(-sin yaw, -cos yaw) 即 yaw=0 时朝 -z
+  // → 需 +π 对齐:否则背后视角看到正脸、正面视角看到后脑勺
   playerModel.position.set(playerPos.x, playerPos.y - PLAYER_HEIGHT * 0.5, playerPos.z);
-  playerModel.rotation.y = yaw;
+  playerModel.rotation.y = yaw + Math.PI;
 
   // 理想相机位置:玩家身后(或身前),沿水平朝向偏移
   const dist = 3.5;                       // 距离(比旧 6.0 近,人物更大更清晰)
   const dir = cameraMode === 1 ? 1 : -1;  // 1=背后, -1=正面
   const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
-  const eyeY = playerPos.y + 0.2;         // 眼睛高度
-  // 相机略高于眼睛,自然俯视
+  const eyeY = playerPos.y + 0.15;        // 碰撞锚点:眼睛(=playerPos)略上,避免眼线贴方块误拉近
+  // 相机略高于眼线取景(能越过头顶看到前方);高度差即准星与落点的固定视差,取小值
   const idealX = playerPos.x - fx * dist * dir;
   const idealZ = playerPos.z - fz * dist * dir;
-  const idealY = eyeY + 0.6;
+  const idealY = playerPos.y + 0.3;
 
   // 相机碰撞:沿"眼睛→理想位置"步进,遇方块拉近(避免穿墙)
   const clear = raycastCameraClearDist(playerPos.x, eyeY, playerPos.z, idealX, idealY, idealZ);
@@ -2331,8 +2348,9 @@ function updateThirdPersonCamera() {
   camera.rotation.order = 'YXZ';
   // 相机朝向:背后视角看玩家背影;正面视角相机转向玩家( yaw+π )
   camera.rotation.y = yaw + (dir < 0 ? Math.PI : 0);
-  // 略俯视(-0.15 弧度≈-8.6°)+ 鼠标 pitch 的一半
-  camera.rotation.x = -0.15 + pitch * 0.5;
+  // 与挖掘射线(raycastTarget 用全量 pitch)完全平行:准星即落点
+  // (旧实现 -0.15+pitch*0.5 导致第三人称准星与实际目标错位)
+  camera.rotation.x = pitch;
   camera.rotation.z = 0;   // 第三人称无 roll(避免第一人称视角摆动残留)
   camera.fov = 70;
   camera.updateProjectionMatrix();
@@ -2493,6 +2511,7 @@ function init() {
   scene.fog = new THREE.Fog(0x87CEEB, FOG_NEAR, FOG_FAR);
 
   camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 1000);
+  scene.add(camera);   // 手持物挂在相机下,相机必须进入场景图其子节点才会渲染
 
   try {
     renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -7669,7 +7688,7 @@ function animate() {
   // 玩家模型:每帧跟随玩家位置/朝向(无论 cameraMode),避免切换人称时模型停留原地
   if (playerModel) {
     playerModel.position.set(playerPos.x, playerPos.y - PLAYER_HEIGHT * 0.5, playerPos.z);
-    playerModel.rotation.y = yaw;
+    playerModel.rotation.y = yaw + Math.PI;   // 模型脸在本地 +z,与 forward(-z)差 π
     const ud = playerModel.userData;
     const horizSpeed = Math.hypot(velocity.x, velocity.z);
     const moving = horizSpeed > 0.5;

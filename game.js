@@ -1619,13 +1619,15 @@ function updateChunks(playerWX, playerWZ) {
       chunks.delete(key);
     }
   }
-  // 清理远离玩家的门(距离 > 渲染范围 + 2 chunk,避免内存泄漏)
+  // 门与渲染范围联动:超出(渲染范围 + 2 chunk)仅释放 mesh 保留表项(数据轻),
+  // 玩家回到附近按需重建 —— 避免内存泄漏的同时,走远再回来门不消失
   const _doorMaxDist = (RENDER_DISTANCE + 2) * CHUNK_SIZE;
-  for (const [key, d] of doors) {
+  for (const d of doors.values()) {
     const dist = Math.max(Math.abs(d.x - playerWX), Math.abs(d.z - playerWZ));
     if (dist > _doorMaxDist) {
-      if (d.group) { disposeDoorGroup(d.group); scene.remove(d.group); }
-      doors.delete(key);
+      if (d.group) { disposeDoorGroup(d.group); scene.remove(d.group); d.group = null; }
+    } else if (!d.group) {
+      d.group = createDoorMesh(d); scene.add(d.group);   // 回到附近:重建
     }
   }
 
@@ -3265,16 +3267,23 @@ function refreshHotbarSlot(i) {
   if (!slot) { buildHotbar(); return; }
   const item = hotbar[i];
   slot.className = 'slot' + (i === currentSlot ? ' active' : '');
-  const oldCv = slot.querySelector('canvas'); if (oldCv) oldCv.remove();
+  // 图标仅在物品种类变化时重画(耐久/数量刷新不重建 canvas,部分刷新)
+  const iconKey = item ? (item.kind + ':' + item.id) : '';
+  if (slot.dataset.icon !== iconKey) {
+    slot.dataset.icon = iconKey;
+    const oldCv = slot.querySelector('canvas'); if (oldCv) oldCv.remove();
+    if (item) {
+      const cv = document.createElement('canvas');
+      cv.width = cv.height = 64;
+      slot.appendChild(cv);
+      drawItemIcon(item, cv);
+    }
+  }
   const oldCnt = slot.querySelector('.cnt'); if (oldCnt) oldCnt.remove();
   const oldDur = slot.querySelector('.dur'); if (oldDur) oldDur.remove();
   const nameEl = slot.querySelector('.name');
   if (nameEl) nameEl.textContent = itemName(item);
   if (item) {
-    const cv = document.createElement('canvas');
-    cv.width = cv.height = 64;
-    slot.appendChild(cv);
-    drawItemIcon(item, cv);
     if ((item.count || 1) > 1) {
       const cnt = document.createElement('span');
       cnt.className = 'cnt';
@@ -3299,6 +3308,7 @@ function buildHotbar() {
     const slot = document.createElement('div');
     slot.className = 'slot' + (i === currentSlot ? ' active' : '');
     slot.dataset.slot = i;
+    slot.dataset.icon = item ? (item.kind + ':' + item.id) : '';   // 与 refreshHotbarSlot 的图标缓存约定一致
     slot.innerHTML = `<span class="num">${i + 1}</span><span class="name">${itemName(item)}</span>`;
     const cv = document.createElement('canvas');
     cv.width = cv.height = 64;
@@ -3326,12 +3336,14 @@ function itemName(item) {
   if (!item) return '(空)';
   if (item.kind === 'block') {
     const n = item.count || 1;
-    return BLOCK_TYPES[item.id].name + (n > 1 ? ' ×' + n : '');
+    const bt = BLOCK_TYPES[item.id];
+    return (bt ? bt.name : '?') + (n > 1 ? ' ×' + n : '');
   }
-  if (item.kind === 'tool') return TOOL_TYPES[item.id].name;
+  if (item.kind === 'tool') return (TOOL_TYPES[item.id] || { name: '?' }).name;
   if (item.kind === 'item') {
     const n = item.count || 1;
-    return ITEM_TYPES[item.id].name + (n > 1 ? ` ×${n}` : '');
+    const it = ITEM_TYPES[item.id];
+    return (it ? it.name : '?') + (n > 1 ? ` ×${n}` : '');
   }
   return '?';
 }
@@ -7220,6 +7232,7 @@ function dropInventoryOnDeath() {
 
 function respawnPlayer() {
   dropInventoryOnDeath();
+  isFlying = false;   // 死亡退出飞行(否则生存模式可借死亡重生飞天)
   if (spawnPoint) playerPos.set(spawnPoint.x, spawnPoint.y, spawnPoint.z);
   else {
     const plazaH = SEA_LEVEL + 6;
@@ -7708,23 +7721,31 @@ function animate() {
   if (dt > 0.05) dt = 0.05;
 
   const locked = document.pointerLockElement === renderer.domElement;
+  // 触屏设备无指针锁(iOS Safari 等不支持 requestPointerLock):
+  // 以「游戏进行中」(遮罩/暂停菜单隐藏且无面板打开)作为物理活跃条件,桌面 locked 语义不变
+  let active = locked;
+  if (!locked && (('ontouchstart' in window) || navigator.maxTouchPoints > 0)) {
+    const pmHidden = document.getElementById('pause-menu').classList.contains('hidden');
+    const ovHidden = document.getElementById('overlay').classList.contains('hidden');
+    active = pmHidden && ovHidden && !inventoryOpen && !tableOpen && !furnaceOpen && !chestOpen && !tradeOpen;
+  }
   const prevVy = velocity.y;
-  if (locked) updatePlayer(dt, prevVy);
-  if (locked) updateFallingBlocks(dt);             // 沙砾重力(暂停时冻结)
-  if (locked) updateTNT(dt);                       // 点燃的 TNT(暂停时冻结)
-  if (locked) updateMinecarts(dt);                 // 矿车(暂停时冻结,R26)
-  if (locked) updateXPOrbs(dt);                    // 经验球(R28)
-  if (locked) updateFishing(dt);                   // 钓鱼浮标(R29)
-  updateWeather(dt);                               // 天气(晴雨随机调度,暂停也推进)
-  updateFurnaces(dt);                              // 熔炉冶炼(经典:暂停也持续燃烧)
-  updateCanes();                                   // 甘蔗生长(绝对时间判定,R40)
-  achvVillageT -= dt;                              // 成就:发现村庄节流探测(R34)
+  if (active) updatePlayer(dt, prevVy);
+  if (active) updateFallingBlocks(dt);           // 沙砾重力(暂停时冻结)
+  if (active) updateTNT(dt);                     // 点燃的 TNT(暂停时冻结)
+  if (active) updateMinecarts(dt);               // 矿车(暂停时冻结,R26)
+  if (active) updateXPOrbs(dt);                  // 经验球(R28)
+  if (active) updateFishing(dt);                 // 钓鱼浮标(R29)
+  updateWeather(dt);                             // 天气(晴雨随机调度,暂停也推进)
+  updateFurnaces(dt);                            // 熔炉冶炼(经典:暂停也持续燃烧)
+  updateCanes();                                 // 甘蔗生长(绝对时间判定,R40)
+  achvVillageT -= dt;                            // 成就:发现村庄节流探测(R34)
   if (achvVillageT <= 0) { achvVillageT = 1; checkVillageAchv(); }
-  if (locked) updateSpawners(dt);                  // 地牢刷怪笼(暂停时冻结,R37)
-  if (locked) updateRedstone(dt);                  // 红石信号网络(暂停时冻结,R38)
-  if (locked) updateDroppedItems(dt);              // 掉落物(暂停时冻结;每帧仅一次)
-  if (locked && settings.mobs) updateMobs(dt);     // 生物(暂停时冻结)
-  if (locked) updateArrows(dt);                    // 箭矢(暂停时冻结,避免面板开着被骷髅射中)
+  if (active) updateSpawners(dt);                // 地牢刷怪笼(暂停时冻结,R37)
+  if (active) updateRedstone(dt);                // 红石信号网络(暂停时冻结,R38)
+  if (active) updateDroppedItems(dt);            // 掉落物(暂停时冻结;每帧仅一次)
+  if (active && settings.mobs) updateMobs(dt);   // 生物(暂停时冻结)
+  if (active) updateArrows(dt);                  // 箭矢(暂停时冻结,避免面板开着被骷髅射中)
   updateParticles(dt);   // 粒子效果
   updateDoorAnim(dt);    // 门开关动画
   updateDamageVignette(dt);
@@ -7928,6 +7949,30 @@ function updateCanes() {
   }
 }
 
+// 存档物品修复:丢弃未知 id 的损坏物品,补齐缺失字段(保留合法数量)
+// (早期版本的该防御在某次重构中随 hotbar 恢复路径被移除,脏档会令
+//  itemName/drawItemIcon 抛 TypeError 使读档崩溃;此处恢复契约)
+function sanitizeItem(item) {
+  if (!item || typeof item !== 'object') return null;
+  if (item.kind === 'block') {
+    if (!BLOCK_TYPES[item.id]) return null;
+    const n = item.count | 0;
+    const out = { kind: 'block', id: item.id };
+    if (n > 0) out.count = n;   // 无 count 交 normalizeHotbar 补满
+    return out;
+  }
+  if (item.kind === 'tool') {
+    if (!TOOL_TYPES[item.id]) return null;
+    const maxDur = TOOL_TYPES[item.id].durability;
+    return { kind: 'tool', id: item.id, durability: Number.isFinite(item.durability) ? Math.max(1, Math.min(maxDur, item.durability)) : maxDur };
+  }
+  if (item.kind === 'item') {
+    if (!ITEM_TYPES[item.id]) return null;
+    return { kind: 'item', id: item.id, count: Math.max(1, (item.count | 0) || 1) };
+  }
+  return null;
+}
+
 function applySave(rec) {
   if (autosaveTimer) { clearTimeout(autosaveTimer); autosaveTimer = null; }
   const missingFields = MACHINES.validateSaveRecord(rec);
@@ -7970,7 +8015,7 @@ function applySave(rec) {
   updateHungerBar();
   breathTimer = 0;
   if (rec.hotbar) {
-    hotbar = rec.hotbar;
+    hotbar = rec.hotbar.map(sanitizeItem).slice(0, HOTBAR_SIZE);
     // 旧存档归一化:无数量字段的方块格补满一组(逻辑在 inventory.js)
     INVLIB.normalizeHotbar(hotbar);
   } else initInventory();

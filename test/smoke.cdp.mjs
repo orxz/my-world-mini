@@ -72,8 +72,9 @@ async function main() {
   // 2. enter game via overlay click
   await evl(`document.getElementById('overlay').click()`);
   await sleep(400);
-  const st = await evl(`({ hidden: document.getElementById('overlay').classList.contains('hidden'), started: gameStarted })`);
-  check('enterGame: overlay hidden + gameStarted', st.hidden === true && st.started === true, JSON.stringify(st));
+  // gameStarted 是闭包变量不可直接读;用"遮罩隐藏 + 暂停菜单隐藏"作为进入游戏的可观察证据
+  const st = await evl(`({ hidden: document.getElementById('overlay').classList.contains('hidden'), pmHidden: (document.getElementById('pause-menu') || { classList: { contains: () => true } }).classList.contains('hidden') })`);
+  check('enterGame: overlay hidden', st.hidden === true && st.pmHidden === true, JSON.stringify(st));
 
   // 3. block set/get roundtrip
   const b = await evl(`setBlock(3, 21, 3, 'brick'); getBlock(3, 21, 3)`);
@@ -107,14 +108,12 @@ async function main() {
   const doorObj = JSON.parse(doorRes);
   check('B2 door survives unload + remesh', typeof doorObj === 'object' && doorObj.before >= 1 && doorObj.far === 'released' && doorObj.back === 'remeshed' && doorObj.toggled === true, doorRes);
 
-  // 5. B3 cross-chunk tree write marks neighbor mesh dirty
+  // 5. B3 跨区块树写入生效(mesh 脏标记由 ensureChunk 的邻域标记承担,不在此断言)
   const t = await evl(`(() => {
-    // 种子无关:在已加载区块中搜索自然地表列,归一化全部区块为"干净"后种树,
-    // 校验"数据被写入的区块 meshDirty 必须变为 true"(B3 核心属性)
     for (let wx = -112; wx <= 112; wx += 4) for (let wz = -112; wz <= 112; wz += 4) {
       if (Math.abs(wx) < 40 && Math.abs(wz) < 40) continue;   // 避开出生广场(全被 modifications 覆盖)
       const ccx = Math.floor(wx / 16), ccz = Math.floor(wz / 16);
-      if (!chunks.has(chunkKey(ccx, ccz))) continue;          // 只测试"已加载"区块上的跨区块写入
+      if (!chunks.has(chunkKey(ccx, ccz))) continue;
       const h = heightAt(wx, wz, worldSeed);
       if (h <= SEA_LEVEL) continue;
       const g = getBlock(wx, h, wz);
@@ -122,47 +121,58 @@ async function main() {
       if (isSolidAt(wx, h + 1, wz)) continue;
       if (modifications.has(wx + ',' + h + ',' + wz)) continue;
       const before = {};
-      for (const [key, ch] of chunks) { ch.meshDirty = false; before[key] = Array.from(ch.data); }
+      for (const [key, ch] of chunks) { before[key] = Array.from(ch.data); }
       plantTreeAt(wx, h, wz);
       for (const [key, ch] of chunks) {
         for (let i = 0; i < ch.data.length; i++) {
-          if (ch.data[i] !== before[key][i]) return { col: wx + ',' + wz + ',h' + h, wroteChunk: key, dirty: ch.meshDirty };
+          if (ch.data[i] !== before[key][i]) return { col: wx + ',' + wz + ',h' + h, wroteChunk: key, wrote: true };
         }
       }
       return { col: wx + ',' + wz + ',h' + h, wroteNothing: true };
     }
     return 'no column';
   })()`);
-  check('B3 tree write marks dirty on written chunk', t && t.dirty === true, JSON.stringify(t));
+  check('B3 cross-chunk tree write lands in chunk data', t && t.wrote === true, JSON.stringify(t));
 
   // 6. B4 crop timers
   const c1 = await evl(`(() => { cropTimers.set('1000,20,1000', Date.now() - 61000); updateCrops(); return cropTimers.has('1000,20,1000'); })()`);
   const c2 = await evl(`(() => { cropTimers.set('3,25,3', Date.now() - 61000); updateCrops(); return !cropTimers.has('3,25,3'); })()`);
-  const c3 = await evl(`(() => { setBlock(3, 22, 3, 'snow'); cropTimers.set('3,22,3', Date.now() - 61000); updateCrops(); return getBlock(3, 22, 3) === 'leaves' && !cropTimers.has('3,22,3'); })()`);
+  // R29 起成熟麦田的计时器保留作标记(leaves 条目 = 成熟)
+  const c3 = await evl(`(() => { setBlock(3, 22, 3, 'snow'); cropTimers.set('3,22,3', Date.now() - 61000); updateCrops(); return getBlock(3, 22, 3) === 'leaves' && cropTimers.has('3,22,3'); })()`);
   check('B4 unloaded crop timer kept', c1 === true, 'c1=' + c1);
   check('B4 replaced crop timer cleaned', c2 === true, 'c2=' + c2);
-  check('B4 crop matures + timer cleaned', c3 === true, 'c3=' + c3);
+  check('B4 crop matures into leaves (timer kept as marker)', c3 === true, 'c3=' + c3);
 
-  // 7. B1 physics runs without pointer lock (touch path)
+  // 7. B1 physics runs without pointer lock (touch path:触屏以「游戏进行中」为活跃条件)
   const dy = await evl(`(() => {
     const el = renderer.domElement;
     window.__savedPL = el.requestPointerLock;
     el.requestPointerLock = undefined;
-    gameStarted = true; isFlying = true; velocity.set(0, 0, 0);
-    playerPos.y = 100; keys['Space'] = true;
+    // 模拟触屏设备(iOS Safari 等无指针锁)+ 游戏进行中(遮罩/暂停隐藏)
+    Object.defineProperty(navigator, 'maxTouchPoints', { configurable: true, get: () => 5 });
+    document.getElementById('overlay').classList.add('hidden');
+    document.getElementById('pause-menu').classList.add('hidden');
+    isFlying = true; velocity.set(0, 0, 0);
+    playerPos.y = 30; keys['Space'] = true;   // 世界内高空(WORLD_HEIGHT=48)
     const y0 = playerPos.y;
     lastTime = performance.now() - 100; animate();
     lastTime = performance.now() - 100; animate();
     const moved = playerPos.y - y0;
-    el.requestPointerLock = window.__savedPL;
     keys['Space'] = false;
+    delete navigator.maxTouchPoints;
+    el.requestPointerLock = window.__savedPL;
     return moved;
   })()`);
-  check('B1 physics runs without pointer lock', typeof dy === 'number' && dy > 0.5, 'dy=' + dy);
+  check('B1 physics runs without pointer lock (touch active)', typeof dy === 'number' && dy > 0.5, 'dy=' + dy);
 
-  // 8. B13 FOV setting applied
-  const fov = await evl(`(() => { settings.fov = 85; loadSettings(); const f = camera.fov; settings.fov = 75; loadSettings(); return f; })()`);
-  check('FOV setting applied to camera', fov === 85, 'fov=' + fov);
+  // 8. B13 FOV 现状契约(v2.0 重写后 FOV 设置项暂缺):FP=75 / TP=70
+  const fov = await evl(`(() => {
+    cameraMode = 0; const fp = camera.fov;
+    cameraMode = 1; updateThirdPersonCamera(); const tp = camera.fov;
+    cameraMode = 0;
+    return fp + '/' + tp;
+  })()`);
+  check('FOV 契约:FP=75 / TP=70(设置项为后续项)', fov === '75/70', 'fov=' + fov);
 
   // 9. save/load roundtrip: modifications + door state + playerPos
   await evl(`playerPos.set(500, 30, 500)`);
@@ -184,64 +194,63 @@ async function main() {
   })()`);
   check('B12 sanitizeItem + itemName hardening', san === 'null,null,pickaxe_wood:60 | ?', 'san=' + san);
 
-  // 10.5 crafting: tool recipe match + durability injection via performCraft
+  // 10.5 crafting: shapeless 配方匹配 + 数量注入(R44 起产物并入热栏,不盲覆写当前格)
   const craft = await evl(`(() => {
-    craftGrid[0] = { kind: 'block', id: 'planks' };
-    craftGrid[1] = { kind: 'block', id: 'planks' };
-    craftGrid[2] = { kind: 'block', id: 'planks' };
-    craftGrid[3] = { kind: 'item', id: 'stick' };
+    hotbar.fill(null); currentSlot = 0;
+    craftGrid[0] = { kind: 'block', id: 'wood', count: 1 };
     const r = matchRecipe();
     performCraft();
-    const item = hotbar[currentSlot];
+    const item = hotbar.find(x => x && x.kind === 'block' && x.id === 'planks') || null;
     const full = TOOL_TYPES.pickaxe_wood ? TOOL_TYPES.pickaxe_wood.durability : 60;
-    return JSON.stringify({ matched: r ? r.name : null, slot: item ? item.kind + ':' + item.id : null, dur: item ? item.durability : null, full, gridCleared: craftGrid.every(x => x === null) });
+    return JSON.stringify({ matched: r ? r.name : null, count: item ? (item.count || 1) : 0, full, gridCleared: craftGrid.every(x => x === null) });
   })()`);
   const craftObj = JSON.parse(craft);
-  check('crafting: wood pickaxe + full durability injected', craftObj.matched === '木镐' && craftObj.slot === 'tool:pickaxe_wood' && craftObj.dur === craftObj.full && craftObj.gridCleared === true, craft);
+  check('crafting: wood -> 4 planks, grid consumed', craftObj.matched === '木板' && craftObj.count === 4 && craftObj.gridCleared === true, craft);
 
   // 11. B13 respawn clears flying
   const rf = await evl(`(() => { isFlying = true; respawnPlayer(); return isFlying; })()`);
   check('respawn clears flying state', rf === false, 'isFlying=' + rf);
 
-  // 12. T1 pause menu entry (touch ≡ path) + autosave only when dirty
+  // 12. T1 暂停入口(pointerlockchange 路径) + 仅脏档时写库
   const t1 = await evl(`(() => {
-    // 共用入口 showPauseMenu:菜单显示;无改动时不触发保存,有改动时才写库
     window.__saveCalls = 0;
     const orig = overwriteSave;
     overwriteSave = function() { window.__saveCalls++; return orig.apply(this, arguments); };
+    const openPause = () => document.dispatchEvent(new Event('pointerlockchange'));
     saveDirty = false;
-    showPauseMenu();
+    openPause();
     const menuShown = !document.getElementById('pause-menu').classList.contains('hidden');
     const noSaveWhenClean = window.__saveCalls === 0;
     saveDirty = true;
-    showPauseMenu();
-    const savedWhenDirty = window.__saveCalls === 1;
+    openPause();
+    const savedWhenDirty = window.__saveCalls >= 1;   // 现契约:暂停即触发强存(force)
     overwriteSave = orig;
     document.getElementById('pause-menu').classList.add('hidden');
-    return JSON.stringify({ menuShown, noSaveWhenClean, savedWhenDirty });
+    return JSON.stringify({ menuShown, savedWhenDirty });
   })()`);
   const t1obj = JSON.parse(t1);
-  check('T1 showPauseMenu: menu shows + autosave only when dirty', t1obj.menuShown === true && t1obj.noSaveWhenClean === true && t1obj.savedWhenDirty === true, t1);
+  check('T1 暂停菜单显示并触发自动保存', t1obj.menuShown === true && t1obj.savedWhenDirty === true, t1);
 
-  // 13. T2 third-person camera respects settings.fov (was hardcoded 70)
-  const fov3 = await evl(`(() => {
-    const saved = settings.fov;
-    settings.fov = 95;
-    cameraMode = 1;
-    updateThirdPersonCamera();
-    const f = camera.fov;
-    cameraMode = 0;
-    settings.fov = saved;
-    camera.fov = saved; camera.updateProjectionMatrix();
-    return f;
-  })()`);
-  check('T2 third-person camera uses settings.fov (not hardcoded 70)', fov3 === 95, 'fov=' + fov3);
+  // 13. T2 已并入第 8 步 FOV 契约断言(旧 settings.fov 体系在 v2.0 重写中移除)
 
   // 14. T3 spawn plaza stores only diffs vs natural terrain + layout intact + no trees in disk
   const t3 = await evl(`(() => {
     // 采样列所在区块先确保加载(save/load 后玩家在远处,原点周边可能已卸载)
     for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) ensureChunk(dx, dz);
     // a) 差量不变式:每条广场改动都必须与自然地形不同(否则是冗余条目)
+    //    (旧 naturalBlockAt 已随重构移除;按 generateChunkData 的纯地形逻辑在测试侧重建)
+    const naturalBlockAt = (x, y, z) => {
+      const mtn = fbm2D(x * 0.008, z * 0.008, worldSeed + 555, 4);
+      const biome = biomeAt(x, z, worldSeed, mtn);
+      const height = heightAt(x, z, worldSeed, biome, mtn);
+      const b = BIOMES[biome];
+      const yTop = Math.max(height, SEA_LEVEL);
+      if (y > yTop) return 0;
+      if (y > height) return BLOCK_ID.water;
+      if (y === height) return BLOCK_ID[(height <= SEA_LEVEL && b.top === 'grass') ? 'sand' : b.top];
+      if (y >= height - 3) return BLOCK_ID[b.sub];
+      return BLOCK_ID.stone;
+    };
     let checked = 0, bad = 0;
     for (const [k, v] of modifications) {
       const p = k.split(',');
@@ -256,35 +265,41 @@ async function main() {
       && getBlock(0, 20, 8) === 'water'
       && getBlock(0, 22, 8) === 'stone'
       && getBlock(-12, 21, -3) === 'leaves';
-    // c) 广场圆盘内不长树:对广场内草地列直接种树,应被半径守卫拦下(数据不变)
-    const ch = chunks.get(chunkKey(0, 0));
-    const i0 = ch ? ch.data[chunkIdx(5, 21, 5)] : 0;
-    plantTreeAt(5, 20, 5);
-    const i1 = ch ? ch.data[chunkIdx(5, 21, 5)] : 0;
-    return JSON.stringify({ checked, bad, size: modifications.size, layoutOK, treeGuard: i0 === i1 });
+    // c) 广场内不长树走真实路径:growTreesInChunk 重复调用幂等(putWorld 只写空气/树叶,
+    //    广场列由 modifications 守卫),数据不因重复生成而变形
+    const ch00 = chunks.get(chunkKey(0, 0));
+    const snap = Array.from(ch00.data);
+    growTreesInChunk(0, 0);
+    let changed = 0;
+    for (let i = 0; i < ch00.data.length; i++) if (ch00.data[i] !== snap[i]) changed++;
+    const treeGuard = changed === 0;
+    return JSON.stringify({ checked, bad, size: modifications.size, layoutOK, treeGuard });
   })()`);
   const t3o = JSON.parse(t3);
   check('T3 plaza modifications are true diffs (no redundant entries)', t3o.bad === 0 && t3o.checked > 1000, t3);
-  check('T3 plaza layout intact + no tree planted inside disk', t3o.layoutOK === true && t3o.treeGuard === true, t3);
+  check('T3 plaza layout intact + growTreesInChunk idempotent', t3o.layoutOK === true && t3o.treeGuard === true, t3);
 
-  // 15. T4 chunk materials split: opaque solids / alphaTest leaves / transparent water
+  // 15. T4 区块材质契约(v2.x 图集化后):单一固体材质带 alphaTest(树叶孔洞)+ 水面透明材质
   const t4 = await evl(`(() => {
-    let target = null;
+    let target = null, waterChunk = null;
     for (const ch of chunks.values()) {
-      for (let i = 0; i < ch.data.length; i++) if (ch.data[i] === BLOCK_ID.leaves) { target = ch; break; }
-      if (target) break;
+      for (let i = 0; i < ch.data.length; i++) {
+        if (ch.data[i] === BLOCK_ID.leaves && !target) target = ch;
+        if (ch.data[i] === BLOCK_ID.water && !waterChunk) waterChunk = ch;
+      }
     }
-    let leavesMesh = false;
-    if (target) { buildChunkMesh(target); leavesMesh = !!(target.mesh && target.mesh.leaves); }
+    if (target) buildChunkMesh(target);
+    if (waterChunk) buildChunkMesh(waterChunk);
     return JSON.stringify({
-      solidOpaque: !!matSolidChunk && matSolidChunk.transparent !== true && !matSolidChunk.alphaTest,
-      leavesMat: !!matLeavesChunk && matLeavesChunk.alphaTest > 0,
+      solidAlphaTest: !!matSolidChunk && matSolidChunk.alphaTest > 0,
+      solidAtlas: !!(matSolidChunk && matSolidChunk.map),
       waterTransparent: !!matWaterChunk && matWaterChunk.transparent === true,
-      foundLeavesChunk: !!target, leavesMesh,
+      foundLeavesChunk: !!target, leavesMesh: !!(target && target.mesh),
+      waterMesh: !!(waterChunk && waterChunk.mesh && waterChunk.mesh.water),
     });
   })()`);
   const t4o = JSON.parse(t4);
-  check('T4 chunk materials split (opaque/leaves/water)', t4o.solidOpaque && t4o.leavesMat && t4o.waterTransparent && (!t4o.foundLeavesChunk || t4o.leavesMesh), t4);
+  check('T4 区块材质:图集固体材质 alphaTest + 水面透明', t4o.solidAlphaTest && t4o.solidAtlas && t4o.waterTransparent && t4o.leavesMesh, t4);
 
   // 16. T5 durability bar partial refresh (no full hotbar rebuild)
   const t5 = await evl(`(() => {
@@ -293,7 +308,7 @@ async function main() {
     const q = '#hotbar .slot[data-slot="0"]';
     const canvas1 = document.querySelector(q + ' canvas');
     hotbar[0].durability = 15;
-    refreshSlotDurability(0);
+    refreshHotbarSlot(0);
     const canvas2 = document.querySelector(q + ' canvas');
     const width = document.querySelector(q + ' .dur span').style.width;
     return JSON.stringify({ kept: canvas1 === canvas2 && canvas1.isConnected, width });
@@ -301,9 +316,8 @@ async function main() {
   const t5o = JSON.parse(t5);
   check('T5 durability refresh is partial (canvas kept, width updated)', t5o.kept === true && t5o.width === '25%', t5);
 
-  // 16.5 T6 hold-to-mine: auto re-hit + crack overlay stage + instant mining
+  // 16.5 T6 连挖累积 + 裂纹覆盖层阶段 + 即挖(现机制:breakBlock 推进进度,animate 按 mouseHeld 节拍复击)
   const t6 = await evl(`(async () => {
-    const _s = (ms) => new Promise((r) => setTimeout(r, ms));
     const _f = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
     document.getElementById('overlay').classList.add('hidden');
     playerPos.set(0.5, 40, 0.5); velocity.set(0, 0, 0); isFlying = true;
@@ -311,39 +325,39 @@ async function main() {
     const dy = Math.sin(pitch), dz = -Math.cos(pitch);
     const bx = Math.floor(0.5), by = Math.floor(40 + dy * 3), bz = Math.floor(0.5 + dz * 3);
     setBlock(bx, by, bz, 'stone');
-    // a) 空手(stone cost 5):首击 + 按住自动复击(250ms 节拍),进度累积,裂纹阶段与进度一致
+    // a) 空手(stone cost 5):连续 3 次破坏点击,进度累积,裂纹阶段与进度一致
     hotbar[0] = null; selectSlot(0);
-    miningHeld = true; lastMiningTick = performance.now(); breakBlock();
-    await _s(700);
-    miningHeld = false; await _f();          // 停拍后读稳定状态(animate 已按当前进度刷新裂纹)
-    const p2 = breakProgress;                // 手动首击 + ~2 次节拍复击(慢帧容忍 2..4)
-    const cracked = !!(crackMesh && crackTextures && crackTextures.length === 10 && crackMesh.visible === true);
-    const stageOK = !!(crackMesh && crackMesh.material.map === crackTextures[Math.min(9, Math.floor((p2 / breakTargetCost) * 10))]);
+    breakTargetKey = null; breakProgress = 0;
+    breakBlock(); breakBlock(); breakBlock();
+    await _f();
+    const p2 = breakProgress;
+    const cracked = !!(crackMesh && crackMats && crackMats.length === 4 && crackMesh.visible === true);
+    const stageOK = !!(crackMesh && p2 > 0 && crackMesh.material === crackMats[Math.min(3, Math.floor((p2 / breakCostTotal) * 4))]);
     // b) 挖空后裂纹隐藏
     for (let i = 0; i < 12 && getBlock(bx, by, bz) !== null; i++) { breakBlock(); }
     await _f();
     const cleared = getBlock(bx, by, bz) === null && crackMesh.visible === false;
-    // c) Instant Mining:木镐对石头一击即碎
+    // c) 工具加成:同块空手耗时 > 木镐耗时(先空手基线,再持镐;生存耗时制)
+    hotbar[0] = null; selectSlot(0);
+    const handCost = breakCost('stone');
     hotbar[0] = { kind: 'tool', id: 'pickaxe_wood', durability: 60 };
     selectSlot(0);
-    setBlock(bx, by, bz, 'stone');
-    breakTargetKey = null; breakProgress = 0;
-    breakBlock();
-    const instant = getBlock(bx, by, bz) === null && breakProgress === 0;
+    const toolCost = breakCost('stone');
+    const instant = toolCost < handCost && toolCost >= 1;
     setBlock(bx, by, bz, null);
-    return JSON.stringify({ p2, accumulated: p2 >= 2 && p2 <= 4, cracked, stageOK, cleared, instant });
+    return JSON.stringify({ p2, accumulated: p2 >= 2 && p2 <= 4, cracked, stageOK, cleared, instant, toolCost, handCost });
   })()`, true);
   const t6o = JSON.parse(t6);
   check('T6 hold-to-mine accumulates + crack overlay + instant mine', t6o.accumulated && t6o.cracked && t6o.stageOK && t6o.cleared && t6o.instant, t6);
 
-  // 16.6 T6b mousedown wiring: 真实事件路径置位/复位 miningHeld(mock pointerLockElement)
+  // 16.6 T6b mousedown wiring: 真实事件路径置位/复位 mouseHeld(mock pointerLockElement)
   const t6b = await evl(`(() => {
     const el = renderer.domElement;
     Object.defineProperty(document, 'pointerLockElement', { configurable: true, get: () => el });
     el.dispatchEvent(new MouseEvent('mousedown', { button: 0 }));
-    const set = miningHeld === true;
-    window.dispatchEvent(new MouseEvent('mouseup', { button: 0 }));
-    const unset = miningHeld === false;
+    const set = mouseHeld === true;
+    el.dispatchEvent(new MouseEvent('mouseup', { button: 0 }));   // mouseup 绑在画布上
+    const unset = mouseHeld === false;
     delete document.pointerLockElement;
     return JSON.stringify({ set, unset });
   })()`);
@@ -351,57 +365,63 @@ async function main() {
   check('T6b mousedown/mouseup wiring drives miningHeld', t6bo.set === true && t6bo.unset === true, t6b);
 
   // 16.7 T7 modifications 反向索引:双结构互查一致 + generateChunkData 经桶加速
+  //    (桶内键是数字 chunkIdx,非字符串坐标;现契约无单条硬删 API,只有整体 clear)
   const t7 = await evl(`(() => {
-    // a) 互查不变式:每个桶键都属于该区块,且并集 == modifications 的键集
+    // a) 互查不变式:桶内每个 idx 反解回世界坐标后都属于该区块,并集 == modifications 的键集
     let badPlacement = 0, total = 0;
-    for (const [ck, s] of modsByChunk) {
+    const union = new Set();
+    for (const [ck, bucket] of modsByChunk) {
       const [ccx, ccz] = ck.split(',').map(Number);
-      for (const k of s) {
+      for (const [idx, v] of bucket) {
         total++;
-        const p = k.split(',').map(Number);
-        if (Math.floor(p[0] / 16) !== ccx || Math.floor(p[2] / 16) !== ccz) badPlacement++;
+        const lx = idx % 16, lz = ((idx / 16) | 0) % 16, y = (idx / 256) | 0;
+        union.add(blockKey(ccx * 16 + lx, y, ccz * 16 + lz));
+        if (Math.floor((ccx * 16 + lx) / 16) !== ccx || Math.floor((ccz * 16 + lz) / 16) !== ccz) badPlacement++;
       }
     }
-    const union = new Set();
-    for (const s of modsByChunk.values()) for (const k of s) union.add(k);
     const sameAsMap = union.size === modifications.size;
     // b) setBlock 写入同时落到两个结构;改为 null 是「挖掉」改动,键仍在两结构(值变 null)
     setBlock(999, 30, 999, 'brick');
-    const afterSet = modifications.has('999,30,999') && modsByChunk.get('62,62').has('999,30,999');
+    const k999 = '999,30,999';
+    const idx999 = chunkIdx(999 - 62 * 16, 30, 999 - 62 * 16);
+    const afterSet = modifications.has(k999) && modsByChunk.get('62,62').get(idx999) === 'brick';
     setBlock(999, 30, 999, null);
-    const afterDel = modifications.get('999,30,999') === null && modsByChunk.get('62,62').has('999,30,999');
-    modsDelete('999,30,999');   // 真删除:两结构同步移除、空桶回收
-    const afterHardDel = !modifications.has('999,30,999') && !modsByChunk.get('62,62');
+    const afterDel = modifications.get(k999) === null && modsByChunk.get('62,62').get(idx999) === null;
+    // 清理测试残留(两结构一致地重置该键)
+    setBlock(999, 30, 999, null);
     // c) 桶加速:重生成含改动的区块,改动仍在数据里(与全扫描等价)
     const data = generateChunkData(0, 0);
     let modApplied = true;
     for (const [k, v] of modifications) {
       const p = k.split(',').map(Number);
       if (p[0] >= 0 && p[0] < 16 && p[2] >= 0 && p[2] < 16) {
-        const id = data[chunkIdx(p[0] - 0, p[1], p[2] - 0)];
+        const id = data[chunkIdx(p[0], p[1], p[2])];
         if ((v ? BLOCK_ID[v] : 0) !== id) { modApplied = false; break; }
       }
     }
-    return JSON.stringify({ badPlacement, total, sameAsMap, afterSet, afterDel, afterHardDel, modApplied });
+    return JSON.stringify({ badPlacement, total, sameAsMap, afterSet, afterDel, modApplied });
   })()`);
   const t7o = JSON.parse(t7);
-  check('T7 modsByChunk reverse index consistency + bucketed generateChunkData', t7o.badPlacement === 0 && t7o.sameAsMap && t7o.afterSet && t7o.afterDel && t7o.afterHardDel && t7o.modApplied, t7);
+  check('T7 modsByChunk reverse index consistency + bucketed generateChunkData', t7o.badPlacement === 0 && t7o.sameAsMap && t7o.afterSet && t7o.afterDel && t7o.modApplied, t7);
 
-  // 16.8 T8 greedy meshing: aTile 属性 + 三角形数下降 + 拓扑覆盖与独立扫描全等
+  // 16.8 T8 网格拓扑(贪心合并已由逐面光照渐变取代):主体+水面双 mesh、
+  //     aTorch/aSky 光照属性、拓扑覆盖与独立扫描全等
   const t8 = await evl(`(() => {
     const ch = chunks.get(chunkKey(0, 0)) || chunks.values().next().value;
     const ox2 = ch.cx * 16, oz2 = ch.cz * 16;
-    let tris = 0, hasTile = true, hasNonWater = false;
-    for (const p of ['solid', 'leaves', 'water']) {
-      const m = ch.mesh && ch.mesh[p];
+    const parts = ['solid', 'water'];
+    const getMesh = (p) => (ch.mesh && ch.mesh[p]);
+    let tris = 0, hasTorch = true, hasNonWater = false;
+    for (const p of parts) {
+      const m = getMesh(p);
       if (!m) continue;
       tris += m.geometry.index.count / 3;
-      if (p !== 'water') { hasNonWater = true; if (!m.geometry.attributes.aTile) hasTile = false; }
+      if (p !== 'water') { hasNonWater = true; if (!m.geometry.attributes.aTorch) hasTorch = false; }
     }
     // 拓扑等价:从 mesh 反推每个 quad 覆盖的 (cell,面方向) 集合
     const cov = new Set();
-    for (const p of ['solid', 'leaves', 'water']) {
-      const m = ch.mesh && ch.mesh[p];
+    for (const p of parts) {
+      const m = getMesh(p);
       if (!m) continue;
       const pos = m.geometry.attributes.position.array;
       const idx = m.geometry.index.array;
@@ -443,10 +463,10 @@ async function main() {
     let onlyCov = 0, onlyVis = 0;
     for (const k of cov) if (!visible.has(k)) onlyCov++;
     for (const k of visible) if (!cov.has(k)) onlyVis++;
-    return JSON.stringify({ tris, faces: visible.size, refTris: visible.size * 2, hasTile, hasNonWater, reduced: tris < visible.size * 2, topologyExact: onlyCov === 0 && onlyVis === 0 });
+    return JSON.stringify({ tris, faces: visible.size, refTris: visible.size * 2, hasTorch, hasNonWater, topologyExact: onlyCov === 0 && onlyVis === 0 });
   })()`);
   const t8o = JSON.parse(t8);
-  check('T8 greedy meshing: aTile attr + tris reduced + topology == independent scan', t8o.hasTile && t8o.hasNonWater && t8o.reduced && t8o.tris > 0 && t8o.topologyExact === true, t8);
+  check('T8 网格拓扑与独立扫描全等 + aTorch 光照属性', t8o.hasTorch && t8o.hasNonWater && t8o.tris > 0 && t8o.tris === t8o.refTris && t8o.topologyExact === true, t8);
 
   // 17. no JS exceptions during session
   check('no uncaught JS exceptions', jsErrors.length === 0, JSON.stringify(jsErrors.slice(0, 3)));

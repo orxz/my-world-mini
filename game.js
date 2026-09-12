@@ -1999,7 +1999,7 @@ function updateClouds(dt) {
 // userData 契约(动画 + 手持物依赖):{armL, armR, legL, legR, heldMount, walkPhase, swingT}
 // 玩家模型(Minecraft Steve 风格):大头、短四肢、紧凑身体
 // model-space: 脚底 y=0,头顶(含头发)y≈1.80。锚点=碰撞盒底,脚踩地。
-// userData 契约:{armL, armR, legL, legR, heldMount, walkPhase, swingT}
+// userData 契约:{armL, armR, legL, legR, heldMount, walkPhase, swingT, fadeMats}
 function buildPlayerModel() {
   playerModel = new THREE.Group();
   const skin = new THREE.MeshLambertMaterial({ color: 0xf0c090 });
@@ -2059,7 +2059,9 @@ function buildPlayerModel() {
   const legR = makeLeg(1);
 
   playerModel.add(torso, head, hairCap, hairBack, hairSideL, hairSideR, armL, armR, legL, legR);
-  playerModel.userData = { armL, armR, legL, legR, walkPhase: 0, swingT: 0, heldMount };
+  // 贴墙淡出材质表:全部为本模型专属实例(头部 6 面含 clone/派生),可安全改 opacity
+  const fadeMats = [skin, shirt, sleeve, pants, shoe, hair, ...headMats];
+  playerModel.userData = { armL, armR, legL, legR, walkPhase: 0, swingT: 0, heldMount, fadeMats };
   playerModel.visible = false;
   scene.add(playerModel);
   if (!playerShadow) playerShadow = makeBlobShadow(0.75);   // 接地阴影(第三人称显示)
@@ -2379,10 +2381,29 @@ function makeHeadMaterials(skinMat, hairMat) {
 // 第十部分:第三人称相机(沿用旧实现)
 // ============================================================
 // 第三人称相机:背后(模式1)/正面(模式2)
-// 设计:距离 3.5 米(人物占屏幕较大),相机高度=玩家眼睛+0.5(略俯视),碰撞时拉近
+// 设计:距离 4 米(原版同款,模型占屏适中不挡准星),相机过肩
+// (+0.55 ≈ 头顶),碰撞时拉近;拉近到贴脸时模型按距离淡出(不糊屏)
+// 贴墙淡出系数应用:1=不透明(常态);<1 线性透明;≤0.02 隐藏模型(连带接地阴影)
+// 材质均为玩家专属实例(见 buildPlayerModel 的 fadeMats),改 opacity 不影响其它实体;
+// 手持物(heldMount)材质可能共享方块材质表,跟随手臂按阈值整体显隐
+function setPlayerModelFade(f) {
+  if (!playerModel) return;
+  const ud = playerModel.userData;
+  if (ud.fadeMats) {
+    for (const m of ud.fadeMats) {
+      m.opacity = f;
+      m.transparent = f < 1;
+      m.depthWrite = f >= 0.55;   // 半透时关深度写,避免头/躯干/四肢互相深度冲突
+    }
+  }
+  playerModel.visible = f > 0.02 && cameraMode !== 0;
+  if (ud.heldMount) ud.heldMount.visible = f > 0.35;
+}
+
 function updateThirdPersonCamera() {
   if (cameraMode === 0) {
     playerModel.visible = false;
+    setPlayerModelFade(1);                 // 恢复不透明(避免切回 TP 残留透明)
     if (camera.fov !== 75) { camera.fov = 75; camera.updateProjectionMatrix(); }
     return;
   }
@@ -2394,19 +2415,24 @@ function updateThirdPersonCamera() {
   playerModel.rotation.y = yaw + Math.PI;
 
   // 理想相机位置:玩家身后(或身前),沿水平朝向偏移
-  const dist = 3.5;                       // 距离(比旧 6.0 近,人物更大更清晰)
+  const dist = 4.0;                       // 距离(原版第三人称同款;3.5 时模型占屏过大、平视挡准星)
   const dir = cameraMode === 1 ? 1 : -1;  // 1=背后, -1=正面
   const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
   const eyeY = playerPos.y + 0.15;        // 碰撞锚点:眼睛(=playerPos)略上,避免眼线贴方块误拉近
-  // 相机略高于眼线取景(能越过头顶看到前方);高度差即准星与落点的固定视差,取小值
+  // 相机过肩取景:+0.55(约玩家头顶高度,模型落到画面中下、准星越过头顶);
+  // 高度差是准星与挖掘落点的固定平移视差,远近处 <1 格,原版亦然;
+  // 相机 pitch 仍与挖掘射线完全平行(角度零偏差,见下方 rotation.x = pitch)
   const idealX = playerPos.x - fx * dist * dir;
   const idealZ = playerPos.z - fz * dist * dir;
-  const idealY = playerPos.y + 0.3;
+  const idealY = playerPos.y + 0.55;
 
   // 相机碰撞:沿"眼睛→理想位置"步进,遇方块拉近(避免穿墙)
   const clear = raycastCameraClearDist(playerPos.x, eyeY, playerPos.z, idealX, idealY, idealZ);
   const safe = Math.max(0.8, clear);      // 最小 0.8 避免贴脸
   const t = safe / dist;
+  // 贴墙淡出(原版行为):被墙挤到 ≤1.8 格时模型开始透明,≤1.0 格完全隐藏,
+  // 避免模型糊满屏幕挡死视野;恢复正常距离自动回实
+  setPlayerModelFade(Math.min(1, Math.max(0, (safe - 1.0) / 0.8)));
   camera.position.set(
     playerPos.x + (idealX - playerPos.x) * t,
     eyeY + (idealY - eyeY) * t,
@@ -7419,7 +7445,9 @@ function updatePlayer(dt, prevVy) {
   }
   const forward = _fwd.set(-Math.sin(yaw), 0, -Math.cos(yaw));
   const right = _right.set(Math.cos(yaw), 0, -Math.sin(yaw));
-  if (cameraMode === 2) { forward.negate(); }
+  // 正面视角(cameraMode 2)相机回望玩家:屏幕上=玩家背后、屏幕右=玩家左侧,
+  // 前后/左右须整体镜像(W/A/S/D 按"屏幕方向"移动);只反前后不反左右会横移错乱
+  if (cameraMode === 2) { forward.negate(); right.negate(); }
 
   const move = _move.set(0, 0, 0);
   // 触屏摇杆输入

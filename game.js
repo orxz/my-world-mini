@@ -3560,6 +3560,7 @@ function setupInput() {
   const setRender = document.getElementById('set-render');
   const setMobs = document.getElementById('set-mobs');
   const setHostiles = document.getElementById('set-hostiles');
+  const setFpHeld = document.getElementById('set-fpheld');
   const setDN = document.getElementById('set-daynight');
   const setDNSpeed = document.getElementById('set-dayspeed');
   const setDNTime = document.getElementById('set-daytime');
@@ -3579,6 +3580,7 @@ function setupInput() {
     if (setRender) setRender.value = String(settings.renderDist);
     if (setMobs) setMobs.textContent = settings.mobs ? '开' : '关';
     if (setHostiles) setHostiles.textContent = settings.hostiles ? '开' : '关';
+    if (setFpHeld) setFpHeld.textContent = settings.fpHeld ? '开' : '关';
     if (setDN) {
       setDN.textContent = settings.dayNightEnabled ? '开' : '关';
       if (daynightControls) {
@@ -3619,6 +3621,11 @@ function setupInput() {
   if (setHostiles) setHostiles.addEventListener('click', () => {
     settings.hostiles = !settings.hostiles;
     if (!settings.hostiles) clearHostiles();
+    saveSettings(); refreshSettingsUI();
+  });
+  // 第一人称手持:关=纯净视角(看不到手臂/物品,不挡视线);开=MC 经典手持观感
+  if (setFpHeld) setFpHeld.addEventListener('click', () => {
+    settings.fpHeld = !settings.fpHeld;
     saveSettings(); refreshSettingsUI();
   });
   if (setDN) setDN.addEventListener('click', () => {
@@ -7794,11 +7801,17 @@ function animate() {
   if (Math.floor(now / 1000) !== window.__lastCropCheck) { window.__lastCropCheck = Math.floor(now / 1000); updateCrops(); }
 
   if (holdGroup) {
-    holdGroup.visible = (cameraMode === 0);
+    // FP 手持默认隐藏(纯净视角,不挡视线);设置「第一人称手持」可开回 MC 经典观感。
+    // TP 模式手持挂在玩家模型右手(heldMount),不受此设置影响
+    holdGroup.visible = (cameraMode === 0 && settings.fpHeld);
     updateHoldAnim(dt);
   }
 
   if (cameraMode === 0) {
+    // FP 下显式隐藏玩家模型并恢复不透明:TP→F5 切回 FP 时 visible 会残留 true
+    // (复位逻辑在 updateThirdPersonCamera,而 FP 分支不调用它),模型会挡在自己镜头前
+    playerModel.visible = false;
+    setPlayerModelFade(1);
     camera.position.copy(playerPos);
     camera.rotation.order = 'YXZ';
     camera.rotation.y = yaw;
@@ -8660,7 +8673,7 @@ const audio = {
 // 设置持久化(localStorage)
 // ============================================================
 const SETTINGS_KEY = 'myword_settings';
-let settings = { volume: 0.35, soundEnabled: true, fov: 75, renderDist: 5, dayNightEnabled: true, dayCycleSpeed: 120, mobs: true, hostiles: true, weather: true };
+let settings = { volume: 0.35, soundEnabled: true, fov: 75, renderDist: 5, dayNightEnabled: true, dayCycleSpeed: 120, mobs: true, hostiles: true, weather: true, fpHeld: false };
 function loadSettings() {
   try {
     const s = localStorage.getItem(SETTINGS_KEY);

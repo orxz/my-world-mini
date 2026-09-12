@@ -14,35 +14,68 @@ mkdirSync(OUT, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function main() {
+  console.error('[dbg] main start');
   let targets = null;
   for (let i = 0; i < 40; i++) {
     try {
       const res = await fetch(CDP + '/json/list');
       targets = await res.json();
-      const p = targets.find((t) => t.type === 'page' && t.url.includes('index.html'));
-      if (p) { targets = [p]; break; }
+      if (targets.find((t) => t.type === 'page' && t.url.includes('index.html'))) break;
     } catch (e) { /* retry */ }
     await sleep(500);
   }
-  const page = targets && targets[0];
-  if (!page) { console.error('FATAL: no page target'); process.exit(1); }
+  // 全新 Chrome(只有 about:blank)没有 index.html 页:先导航再重新取 target。
+  // file:// 导航可能替换 page target(旧 webSocketDebuggerUrl 失效会挂死),
+  // 故导航用临时连接,完成后重新列表、重连主 ws
+  if (!targets.find((t) => t.type === 'page' && t.url.includes('index.html'))) {
+    const any = targets && targets.find((t) => t.type === 'page');
+    if (!any) { console.error('FATAL: no page target'); process.exit(1); }
+    await new Promise((res) => {
+      const w = new WebSocket(any.webSocketDebuggerUrl);
+      w.onopen = () => w.send(JSON.stringify({ id: 1, method: 'Page.enable' }));
+      w.onmessage = (ev) => {
+        const m = JSON.parse(ev.data);
+        if (m.id === 1) w.send(JSON.stringify({ id: 2, method: 'Page.navigate', params: { url: 'file://' + process.cwd() + '/index.html' } }));
+        if (m.id === 2) { w.close(); res(); }
+      };
+      w.onerror = () => res();
+    });
+    await sleep(2500);
+    for (let i = 0; i < 20; i++) {
+      targets = await (await fetch(CDP + '/json/list')).json();
+      if (targets.find((t) => t.type === 'page' && t.url.includes('index.html'))) break;
+      await sleep(500);
+    }
+  }
+  const page = targets && targets.find((t) => t.type === 'page' && t.url.includes('index.html'));
+  if (!page) { console.error('FATAL: no index.html page after navigate'); process.exit(1); }
+  console.error('[dbg] page:', page.id.slice(0, 8));
 
-  const ws = new WebSocket(page.webSocketDebuggerUrl);
+  let ws = new WebSocket(page.webSocketDebuggerUrl);
   await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
+  console.error('[dbg] ws open');
   let id = 0;
   const pending = new Map();
   const jsErrors = [];
-  ws.onmessage = (ev) => {
-    const msg = JSON.parse(ev.data);
-    if (msg.id && pending.has(msg.id)) { pending.get(msg.id)(msg); pending.delete(msg.id); }
-    else if (msg.method === 'Runtime.exceptionThrown') {
-      const d = msg.params.exceptionDetails;
-      jsErrors.push((d.exception && d.exception.description) || d.text);
-    }
+  const attachWs = () => {
+    ws.onmessage = (ev) => {
+      const msg = JSON.parse(ev.data);
+      if (msg.id && pending.has(msg.id)) { pending.get(msg.id)(msg); pending.delete(msg.id); }
+      else if (msg.method === 'Runtime.exceptionThrown') {
+        const d = msg.params.exceptionDetails;
+        jsErrors.push((d.exception && d.exception.description) || d.text);
+      }
+    };
   };
-  const send = (method, params = {}) => new Promise((res) => {
+  attachWs();
+  const send = (method, params = {}) => new Promise((res, rej) => {
     const mid = ++id; pending.set(mid, res);
-    ws.send(JSON.stringify({ id: mid, method, params }));
+    // CDP 无响应兜底:页面导航/WS 失效时 send 会永久 pending,超时抛错暴露挂点
+    setTimeout(() => {
+      if (pending.has(mid)) { pending.delete(mid); rej(new Error('CDP timeout: ' + method)); }
+    }, 15000);
+    try { ws.send(JSON.stringify({ id: mid, method, params })); }
+    catch (e) { pending.delete(mid); rej(e); }
   });
   const evl = async (expression) => {
     const r = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true, timeout: 60000 });
@@ -58,8 +91,35 @@ async function main() {
     else console.log('SHOT-FAIL', name);
   };
 
-  await send('Page.navigate', { url: 'file://' + process.cwd() + '/index.html?fresh=' + Date.now() });
-  await sleep(3000);
+  // 页面已是 index.html(如 Chrome 以游戏页为初始标签启动)时直接复用当前连接:
+  // navigate/reload 都会令 file:// 页的 page-level WS 失效(旧连接 evaluate 永久
+  // 挂死),且重连在窗口被系统回收的环境下不稳定 —— 只在必要时才导航
+  const wasFreshGame = targets.find((t) => t.type === 'page' && t.url.includes('index.html'));
+  if (wasFreshGame) {
+    // 已是刚启动的游戏页(全新 profile,无缓存顾虑):等游戏就绪即可
+    await sleep(2500);
+  } else {
+    await send('Page.navigate', { url: 'file://' + process.cwd() + '/index.html?fresh=' + Date.now() });
+    try { ws.close(); } catch (e) { /* already closed */ }
+    await sleep(3000);
+    for (let i = 0; i < 20; i++) {
+      const list = await (await fetch(CDP + '/json/list')).json();
+      const again = list.find((t) => t.type === 'page' && t.url.includes('index.html'));
+      if (again) { ws = new WebSocket(again.webSocketDebuggerUrl); break; }
+      await sleep(500);
+    }
+    await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
+    attachWs();
+    await send('Runtime.enable');
+    await send('Page.enable');
+  }
+  // 页面必须在前台 tab:后台页的 captureScreenshot 会永久不响应(实测挂点)
+  await send('Page.bringToFront');
+  console.error('[dbg] ready');
+  // 刚启动的游戏页在同步初始化(世界生成),evaluate 会排队:轮询等主线程空闲
+  for (let i = 0; i < 8; i++) {
+    try { await evl('1+1'); break; } catch (e) { await sleep(2000); }
+  }
   await evl(`document.getElementById('overlay').click()`);
   await sleep(800);
   await evl(`endTutorial()`);
@@ -165,6 +225,42 @@ async function main() {
   })()`);
   check('V4a 🎥 按钮存在', v4.exists === true, JSON.stringify(v4));
   check('V4b 点击循环 0→1→…→0(三视角)', v4.exists && v4.before === 0 && v4.after === 1 && v4.back === 0, JSON.stringify(v4));
+
+  // ---- V6 第一人称纯净视角(R52 增补:默认看不到自己与手持)----
+  // 走真实路径:改 settings 后等 rAF 刷新(animate 每帧重算可见性),不自证
+  await evl(`cameraMode = 0; yaw = 0; pitch = -0.5; settings.fpHeld = false;`);
+  await sleep(350);
+  const v6a = await evl(`({ model: playerModel.visible, shadow: playerShadow.visible, hold: holdGroup.visible })`);
+  check('V6a FP 默认纯净:模型/影子/手持全隐', !v6a.model && !v6a.shadow && !v6a.hold, JSON.stringify(v6a));
+
+  await evl(`settings.fpHeld = true;`);
+  await sleep(350);
+  const v6b0 = await evl(`({ model: playerModel.visible, hold: holdGroup.visible, armVis: holdGroup.userData.arm.visible })`);
+  check('V6b 设置开:FP 手持显示且看不到自己', v6b0.hold && v6b0.armVis && !v6b0.model, JSON.stringify(v6b0));
+
+  await evl(`settings.fpHeld = true; cameraMode = 1; updateThirdPersonCamera();`);
+  await sleep(350);
+  const v6c = await evl(`({ model: playerModel.visible, hold: holdGroup.visible, tpHeld: playerModel.userData.heldMount.visible })`);
+  check('V6c TP 不受手持设置影响(模型+TP 手持可见)', v6c.model && !v6c.hold && v6c.tpHeld, JSON.stringify(v6c));
+  await evl(`cameraMode = 0; settings.fpHeld = false;`);
+  await sleep(350);
+  const v6e = await evl(`({ model: playerModel.visible, hold: holdGroup.visible })`);
+  check('V6e TP→FP 切换后模型立即隐藏(修复可见残留)', !v6e.model && !v6e.hold, JSON.stringify(v6e));
+
+  // 设置面板开关真实点击(click 处理器内部自会刷新文案;refreshSettingsUI
+  // 是 setupInput 闭包内局部函数,全局作用域不可直接调用)
+  const v6b = await evl(`(() => {
+    const btn = document.getElementById('set-fpheld');
+    if (!btn) return { exists: false };
+    document.getElementById('settings-panel').classList.remove('hidden');
+    const label0 = btn.textContent;
+    btn.click();
+    const after = settings.fpHeld, label1 = btn.textContent;
+    btn.click();
+    document.getElementById('settings-panel').classList.add('hidden');
+    return { exists: true, label0, after, label1, back: settings.fpHeld };
+  })()`);
+  check('V6d 设置面板「第一人称手持」开关可用', v6b.exists && v6b.after === true && v6b.back === false && v6b.label0 === '关' && v6b.label1 === '开', JSON.stringify(v6b));
 
   // ---- 模型朝向不回退(R51) ----
   const orient = await evl(`(() => {

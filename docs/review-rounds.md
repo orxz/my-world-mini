@@ -72,14 +72,31 @@
 - **移动端 🎥 切视角按钮**:触屏层此前无 F5 → 只能第一人称;
   ≡ 旁新增 🎥(touchstart/click 双绑定),断言 0→1→2→0 循环;
   操作文案同步「F5 / 🎥 切视角」
-- **测试**:r52-verify 13 项(V1 移动镜像 ×3 模式/V2 TP 几何/
+- **第一人称纯净视角**(用户复验反馈增补):①新设置「✋ 第一人称手持」
+  默认关 —— FP 画面看不到手臂/手持物品(纯净不挡视线),开则回 MC
+  经典手持;设置持久化、即时生效,TP 手持不受影响。②修复 TP→F5 切回
+  FP 后**看到自己身体**:visible 复位在 updateThirdPersonCamera 的 FP
+  分支但渲染循环 FP 路径不调用它(残留 true)→ 渲染循环 FP 分支补
+  显式隐藏 + fade 复位(Playwright 实测暴露,断言 V6e 固化)
+- **测试**:r52-verify 18 项(V1 移动镜像 ×3 模式/V2 TP 几何/
   V3 淡出三档/V4 按钮循环/V5 R51 防回退:相机 pitch 平行、模型朝向
-  点积 1.000、fov 70 无 roll)全过;r51-visual 12/12 无回退;
-  单测 141/141、lint 0/0
-- 测试坑新增:上一局 setBlock 的墙会随 localStorage 存档在 fresh
+  点积 1.000、fov 70 无 roll/V6 FP 纯净:默认全隐+设置开手持显+
+  TP→FP 切换即隐+面板开关循环)全过;r51-visual 12/12 无回退;
+  单测 141/141、lint 0/0;截图 AI 复审:FP 纯净"无手持无自身模型、
+  准星清晰",手持开"经典 MC 观感",贴墙淡出"透过模型可辨石墙"
+- 测试坑新增:①上一局 setBlock 的墙会随 localStorage 存档在 fresh
   导航后复活,把相机几何断言的场地打脏(首跑 dist=0.95 假失败)
   → 测位抬高 10 格空中 + 墙基于当前局放置;淡出断言档位要对准
-  fade 区间(safe 1.0~1.8),2 格墙 safe≈2.29 已在全显区
+  fade 区间(safe 1.0~1.8),2 格墙 safe≈2.29 已在全显区;②file:// 页
+  navigate/reload 后旧 page-level WS 失效(evaluate 永久挂死、页面本身
+  健康)→ send 加 15s 超时 + 必要时才导航 + 重连;③后台 tab 的
+  captureScreenshot 永不响应 → Page.bringToFront;④ headed Chrome 的
+  空白 tab 会被系统回收(桌面窗口还可能被用户关掉)→ 用
+  --headless=new --use-angle=swiftshader 全稳(18/18 一次过);
+  ⑤refreshSettingsUI 是 setupInput 闭包局部函数,套件断言不能全局直调
+  (click 处理器内部自会刷新文案);⑥改 game.js 后必须 bump index.html
+  的 ?v= 参数,否则浏览器(Playwright/CDP)命中旧 JS 出现"修复不生效"
+  假象
 
 ### R51 视觉与视角修复轮 ✅ 已验证(续推第 1 轮,2.3.0 发布)
 > 方向:/goal「优化游戏视觉和体验,修复人物视角、视觉悬浮等问题」

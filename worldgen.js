@@ -135,10 +135,10 @@
     const mtn = fbm2D(cx * 0.008, cz * 0.008, seed + 555, 4);
     const biome = biomeAt(cx, cz, seed, mtn);
     if (biome !== 'plains' && biome !== 'forest') return null;
-    const base = heightAt(cx, cz, seed, biome, mtn);
+    const base = heightAt(cx, cz, seed, mtn);
     if (base < 15) return null;   // 别泡水
     for (const [dx, dz] of [[-2, -2], [2, -2], [-2, 2], [2, 2]]) {
-      if (Math.abs(heightAt(cx + dx, cz + dz, seed, biome, mtn) - base) > 1) return null;
+      if (Math.abs(heightAt(cx + dx, cz + dz, seed, mtn) - base) > 1) return null;
     }
     return { cx, cz, base };
   }

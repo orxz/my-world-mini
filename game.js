@@ -967,7 +967,7 @@ function generateChunkData(cx, cz) {
       const wx = ox + lx, wz = oz + lz;
       const mtn = fbm2D(wx * 0.008, wz * 0.008, worldSeed + 555, 4);  // 山地强度(算一次,biome/height 共用)
       const biome = biomeAt(wx, wz, worldSeed, mtn);
-      const height = heightAt(wx, wz, worldSeed, biome, mtn);
+      const height = heightAt(wx, wz, worldSeed, mtn);
       const b = BIOMES[biome];
       const yTop = Math.max(height, SEA_LEVEL);
 
@@ -998,7 +998,7 @@ function generateChunkData(cx, cz) {
         let waterAdj = false;
         for (const [nx, nz] of [[wx + 1, wz], [wx - 1, wz], [wx, wz + 1], [wx, wz - 1]]) {
           const mtn2 = fbm2D(nx * 0.008, nz * 0.008, worldSeed + 555, 4);
-          const nh = heightAt(nx, nz, worldSeed, biomeAt(nx, nz, worldSeed, mtn2), mtn2);
+          const nh = heightAt(nx, nz, worldSeed, mtn2);
           if (nh < height + 1) { waterAdj = true; break; }   // 邻列此层没入水下
         }
         if (waterAdj) {
@@ -1108,13 +1108,13 @@ function generateChunkData(cx, cz) {
         const bx = fx - ox, bz = fz - oz;
         if (bx < 0 || bx > 15 || bz < 0 || bz > 15) continue;
         const mtnF = fbm2D(fx * 0.008, fz * 0.008, worldSeed + 555, 4);
-        const gh = heightAt(fx, fz, worldSeed, biomeAt(fx, fz, worldSeed, mtnF), mtnF);
+        const gh = heightAt(fx, fz, worldSeed, mtnF);
         if (gh >= 1 && gh < WORLD_HEIGHT - 1) data[chunkIdx(bx, gh, bz)] = BLOCK_ID.dirt;
       }
       const bxw = hut.cx + 2 - ox, bzw = hut.cz - 4 - oz;
       if (bxw >= 0 && bxw <= 15 && bzw >= 0 && bzw <= 15) {
         const mtnW = fbm2D((hut.cx + 2) * 0.008, (hut.cz - 4) * 0.008, worldSeed + 555, 4);
-        const gh2 = heightAt(hut.cx + 2, hut.cz - 4, worldSeed, biomeAt(hut.cx + 2, hut.cz - 4, worldSeed, mtnW), mtnW);
+        const gh2 = heightAt(hut.cx + 2, hut.cz - 4, worldSeed, mtnW);
         if (gh2 >= 1 && gh2 < WORLD_HEIGHT - 1) data[chunkIdx(bxw, gh2, bzw)] = BLOCK_ID.water;
       }
     }
@@ -1232,10 +1232,11 @@ function growTreesInChunk(cx, cz) {
       const wx = ox + lx, wz = oz + lz;
       const r = hash2(wx, wz, worldSeed + 999);
       if (r >= 0.12) continue;   // 预过滤:所有群系 treeChance ≤ 0.12,r 偏大必不种树
-      const biome = biomeAt(wx, wz, worldSeed);
+      const mtnT = fbm2D(wx * 0.008, wz * 0.008, worldSeed + 555, 4);
+      const biome = biomeAt(wx, wz, worldSeed, mtnT);
       const b = BIOMES[biome];
       if (b.treeChance <= 0) continue;
-      const height = heightAt(wx, wz, worldSeed, biome);
+      const height = heightAt(wx, wz, worldSeed, mtnT);
       if (height <= SEA_LEVEL) continue;
       // 村庄小屋附近不种树(R31):树冠(半径 ~2)不伸进屋体/挡门洞
       const hut = villageInCell(Math.floor(wx / 48), Math.floor(wz / 48), worldSeed);
@@ -2292,9 +2293,13 @@ function updateHoldAnim(dt) {
   if (!holdGroup) return;
   const item = hotbar[currentSlot];
   const isShield = item && item.kind === 'tool' && TOOL_TYPES[item.id].tool === 'shield';
+  // 盾计时无条件衰减(切槽/死亡后不再冻结 → 修复永久格挡)
+  if (shieldActive > 0) {
+    shieldActive -= dt;
+    if (shieldActive <= 0) { shieldActive = 0; raisedShield = null; }
+  }
   // 举盾:盾抬到正前方居中
   if (isShield && shieldActive > 0) {
-    shieldActive -= dt;
     holdGroup.position.set(0, -0.20, -0.75);
     holdGroup.rotation.set(0, 0, 0);
     return;
@@ -2896,6 +2901,9 @@ function clearWorld() {
   arrows.length = 0;
   clearDroppedItems();   // 清掉落物,避免旧世界残留
   clearMobs();           // 清生物,避免旧世界残留
+  weather = 'clear'; weatherTimer = 90;   // 天气不跨世界残留(读档世界不继承上一场的雨)
+  if (rainMesh) rainMesh.visible = false;
+  updateRainAudio();
   clearFallingBlocks();  // 清下落中的沙砾
   clearTNT();            // 清点燃的 TNT
   clearFurnaces();       // 清熔炉状态
@@ -3403,7 +3411,12 @@ function setupInput() {
   addEventListener('keydown', (e) => {
     if (e.repeat) return;
     if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')) return;
-    keys[e.code] = true;
+    // 门控:仅"游玩中"(已开始 且 暂停菜单/开始遮罩都隐藏)才响应游戏按键,
+    // 否则标题屏按 Q 会把开局木镐丢出去、暂停中按 E 叠开面板等
+    const inPlay = document.getElementById('overlay').classList.contains('hidden')
+      && document.getElementById('pause-menu').classList.contains('hidden');
+    keys[e.code] = inPlay ? true : false;
+    if (!inPlay) return;
     if (tableOpen) {
       if (e.code === 'KeyE' || e.code === 'Escape') closeTablePanel();
       return;
@@ -4592,7 +4605,12 @@ function getDoorAt(x, y, z) {
 function raycastDoor() {
   _rayEye.set(playerPos.x, playerPos.y, playerPos.z);
   _rayDir.set(-Math.sin(yaw)*Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw)*Math.cos(pitch));
-  for (let t = 0.3; t <= 4; t += 0.25) { const d = getDoorAt(Math.floor(_rayEye.x+_rayDir.x*t), Math.floor(_rayEye.y+_rayDir.y*t), Math.floor(_rayEye.z+_rayDir.z*t)); if (d) return d; }
+  for (let t = 0.3; t <= 4; t += 0.25) {
+    const sx = Math.floor(_rayEye.x+_rayDir.x*t), sy = Math.floor(_rayEye.y+_rayDir.y*t), sz = Math.floor(_rayEye.z+_rayDir.z*t);
+    const wall = getBlock(sx, sy, sz);   // 遮挡:隔墙不能开关/拆门
+    if (wall && BLOCK_TYPES[wall] && BLOCK_TYPES[wall].solid) return null;
+    const d = getDoorAt(sx, sy, sz); if (d) return d;
+  }
   return null;
 }
 // 释放门 mesh 的 geometry/material(避免 GPU 泄漏)
@@ -4754,8 +4772,8 @@ function updateDroppedItems(dt) {
     // 旋转(绕 Y 轴自旋,经典 Minecraft 掉落物观感)
     d.rotation.y += dt * 1.8;
 
-    // 重力 + 地面支撑:垂直方向积分,落到固体方块顶部即停
-    u.vy -= GRAVITY * dt;
+    // 重力 + 地面支撑:垂直方向积分,落到固体方块顶部即停(终端速度 -22 防穿薄地板)
+    u.vy = Math.max(-22, u.vy - GRAVITY * dt);
     let ny = d.position.y + u.vy * dt;
     const bx = Math.floor(d.position.x);
     const bz = Math.floor(d.position.z);
@@ -5738,6 +5756,35 @@ function killMob(m) {
 }
 
 // 爆炸:球形破坏方块(基岩除外,边缘随机保留成粗糙弹坑)+ 玩家伤害/击退 + 弹坑立即重建
+// 爆炸清理:容器/状态化方块被炸时与挖矿路径一致的善后(掉内容/删状态/清重生点)
+function explodeCleanupBlock(b, bx, by, bz) {
+  const key = blockKey(bx, by, bz);
+  if (b === 'chest') {
+    const c = chests.get(key);
+    if (c) {
+      for (const it of c.slots) {
+        if (it) spawnDroppedItem(bx, by, bz, it.id, it.count || 1, it.kind || 'block', it.durability);
+      }
+      chests.delete(key);
+      if (chestOpen === key) closeChestPanel();
+    }
+  } else if (b === 'furnace') {
+    const f = furnaces.get(key);
+    if (f) {
+      for (const it of [f.input, f.fuel, f.output]) {
+        if (it) spawnDroppedItem(bx, by, bz, it.id, it.count || 1, it.kind || 'block', it.durability);
+      }
+      furnaces.delete(key);
+      if (furnaceOpen === key) closeFurnacePanel();
+    }
+  } else if (b === 'bed' && spawnPoint) {
+    if (Math.floor(spawnPoint.x) === bx && Math.floor(spawnPoint.z) === bz
+        && Math.floor(spawnPoint.y - 1.1) === by) spawnPoint = null;
+  } else if (b === 'cake') {
+    cakes.delete(key);
+  }
+}
+
 function explodeAt(cx, cy, cz, radius, maxDamage) {
   const r = Math.ceil(radius);
   const bx0 = Math.floor(cx), by0 = Math.floor(cy), bz0 = Math.floor(cz);
@@ -5751,8 +5798,19 @@ function explodeAt(cx, cy, cz, radius, maxDamage) {
         const b = getBlock(bx, by, bz);
         if (!b || b === 'water') continue;
         if (d > radius - 1 && hash3(bx, by, bz, 777) < 0.45) continue;   // 边缘随机保留
+        // 容器/状态化方块:先走与挖矿一致的清理(掉内容/删状态/清重生点),
+        // 否则爆炸留下孤儿状态,原位重放同名方块会"复活"旧内容(物品复制)
+        if (b === 'chest' || b === 'furnace' || b === 'cake') explodeCleanupBlock(b, bx, by, bz);
         setBlock(bx, by, bz, null);
       }
+  // 爆炸半径内的门实体(非方块)一并移除,避免弹坑上悬浮门
+  const doorRadius = r + 1;
+  for (const [dkey, dv] of doors) {
+    if (Math.abs(dv.x - bx0) <= doorRadius && Math.abs(dv.y - by0) <= doorRadius && Math.abs(dv.z - bz0) <= doorRadius) {
+      if (dv.group) { disposeDoorGroup(dv.group); scene.remove(dv.group); }
+      doors.delete(dkey);
+    }
+  }
   spawnParticles(cx - 0.5, cy - 0.5, cz - 0.5, 0x666666, 20);
   spawnParticles(cx - 0.5, cy - 0.5, cz - 0.5, 0xff9944, 10);
   const dx = playerPos.x - cx, dy = playerPos.y - cy, dz = playerPos.z - cz;
@@ -5822,8 +5880,7 @@ function removeMinecart(c) {
 }
 
 function clearMinecarts() {
-  for (const c of minecarts) scene.remove(c.mesh);
-  minecarts.length = 0;
+  for (const c of minecarts.slice()) removeMinecart(c);   // 走单删路径(释放几何/材质,防泄漏)
   ridingCart = null;
 }
 
@@ -6486,7 +6543,15 @@ function raycastMob(maxDist) {
     const proj = tx * dx + ty * dy + tz * dz;
     if (proj <= 0.3 || proj > bestT) continue;
     const perp2 = tx * tx + ty * ty + tz * tz - proj * proj;
-    if (perp2 < 0.55) { best = m; bestT = proj; }
+    if (perp2 < 0.55) {
+      // 遮挡:命中最优目标前先采样视线穿过的体素,遇固体即被墙挡住
+      let blocked = false;
+      for (let t = 0.4; t < proj; t += 0.5) {
+        const wb = getBlock(Math.floor(playerPos.x + dx * t), Math.floor(playerPos.y + dy * t), Math.floor(playerPos.z + dz * t));
+        if (wb && BLOCK_TYPES[wb] && BLOCK_TYPES[wb].solid) { blocked = true; break; }
+      }
+      if (!blocked) { best = m; bestT = proj; }
+    }
   }
   return best;
 }
@@ -6794,7 +6859,7 @@ function openChestPanel(x, y, z) {
       }
       renderChestPanel();
     };
-    cell.oncontextmenu = (e) => { e.preventDefault(); c.slots[i] = null; renderChestPanel(); };
+    cell.oncontextmenu = (e) => { e.preventDefault(); c.slots[i] = null; renderChestPanel(); markDirtySave(); };
   });
   renderChestPanel();
 }
@@ -7227,7 +7292,8 @@ function damagePlayer(amount, kind) {
   if (amount <= 0) return;
   let dmg = amount;
   if (kind !== 'fall' && kind !== 'drown' && kind !== 'starve') {
-    if (shieldActive > 0) {
+    // 格挡:仅当"举盾时刻手持的盾"仍在当前格时生效(切槽后盾已放下,不永久格挡)
+    if (shieldActive > 0 && hotbar[currentSlot] === raisedShield) {
       damageRaisedShield();
       if (kind !== 'explosion') { audio.play('place'); showToast('🛡 格挡!'); return; }
       dmg = dmg * 0.5;
@@ -8756,7 +8822,30 @@ async function saveSlot(name) {
 }
 
 // 构建存档记录(字段单一来源:saveSlot 新建与 overwriteSave 覆盖共用,防止字段漂移)
+// 固化瞬态实体为方块(存档前调用):点燃的 TNT 回 TNT 块、下落沙砾回原块
+function solidifyTransientEntities() {
+  for (let i = tntEnts.length - 1; i >= 0; i--) {
+    const e = tntEnts[i];
+    const bx = Math.floor(e.mesh.position.x), by = Math.floor(e.mesh.position.y), bz = Math.floor(e.mesh.position.z);
+    scene.remove(e.mesh);
+    tntEnts.splice(i, 1);
+    if (!getBlock(bx, by, bz)) setBlock(bx, by, bz, 'tnt');
+    else spawnDroppedItem(bx, by, bz, 'tnt', 1, 'block');   // 落点被占则掉落物品
+  }
+  for (let i = fallingBlocks.length - 1; i >= 0; i--) {
+    const f = fallingBlocks[i];
+    const bx = Math.floor(f.mesh.position.x), by = Math.floor(f.mesh.position.y), bz = Math.floor(f.mesh.position.z);
+    scene.remove(f.mesh);
+    fallingBlocks.splice(i, 1);
+    if (!getBlock(bx, by, bz)) setBlock(bx, by, bz, f.type);
+    else spawnDroppedItem(bx, by, bz, f.type, 1, 'block');
+  }
+}
+
 function buildSaveRecord() {
+  // 存档前固化瞬态实体:点燃的 TNT / 下落中的沙砾还原为方块
+  // (否则 setBlock(null) 已写进 modifications,读档后实体凭空消失 = 物品损失)
+  solidifyTransientEntities();
   return {
     seed: worldSeed,
     dayTime,   // 世界时间随档走(0..1,0=午夜):防跨存档时间串档、床跳夜成果入档

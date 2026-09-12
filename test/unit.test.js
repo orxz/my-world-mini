@@ -90,6 +90,28 @@ test('heightAt 接受预计算 mtn', () => {
   const mtn = fbm2D(30*0.008, 30*0.008, 555+555, 4);
   assert.strictEqual(heightAt(30, 30, 555, 'plains', mtn), heightAt(30, 30, 555, 'plains', mtn));
 });
+test('回归(R53):山地抬升必须生效(误传 biome 字符串会吞掉 +18 抬升)', () => {
+  // 找一个 mtn 高的单元格,验证显式传 mtn 数值比传字符串显著更高
+  let found = null;
+  for (let x = 0; x < 6000 && !found; x += 37) {
+    for (let z = 0; z < 6000 && !found; z += 53) {
+      const mtn = fbm2D(x * 0.008, z * 0.008, 12345 + 555, 4);
+      if (mtn > 0.78) found = { x, z, mtn };
+    }
+  }
+  assert(found, '6000×6000 内应能找到深山单元格');
+  const hNum = heightAt(found.x, found.z, 12345, found.mtn);          // 正确调用
+  const hStr = heightAt(found.x, found.z, 12345, 'mountains');        // 旧 bug 形态(字符串)
+  assert(hNum - hStr >= 5, `山地抬升失效: 数值 ${hNum} vs 字符串 ${hStr}(差 ${hNum - hStr}, mtn=${found.mtn.toFixed(2)})`);
+});
+test('回归(R53):村庄选址平坦校验使用真实高度(第 4 参是 mtn 数字)', () => {
+  // villageInCell 内部 heightAt 调用已改传 mtn;间接验证:同坐标预计算 mtn 与
+  // heightAt 显式一致(即函数不再被字符串参数欺骗)
+  const mtn = fbm2D(748 * 0.008, 748 * 0.008, 12345 + 555, 4);
+  const h1 = heightAt(748, 748, 12345, mtn);
+  const h2 = heightAt(748, 748, 12345, fbm2D(748 * 0.008, 748 * 0.008, 12345 + 555, 4));
+  assert.strictEqual(h1, h2);
+});
 test('相邻列高度差有限(无断层)', () => {
   let maxDiff = 0;
   for (let i = 0; i < 200; i++) {

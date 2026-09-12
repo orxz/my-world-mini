@@ -3433,6 +3433,10 @@ function setupInput() {
       if (e.code === 'KeyE' || e.code === 'Escape') closeTradePanel();
       return;
     }
+    if (enchantOpen) {
+      if (e.code === 'KeyE' || e.code === 'Escape') closeEnchantPanel();
+      return;
+    }
     if (inventoryOpen) {
       if (e.code === 'KeyE' || e.code === 'Escape') toggleInventory(false);
       return;
@@ -3519,7 +3523,7 @@ function setupInput() {
     if (locked) {
       overlay.classList.add('hidden');
       pauseMenu.classList.add('hidden');
-    } else if (gameStarted && !inventoryOpen && !tableOpen && !furnaceOpen && !chestOpen && !tradeOpen) {
+    } else if (gameStarted && !inventoryOpen && !tableOpen && !furnaceOpen && !chestOpen && !tradeOpen && !enchantOpen) {
       pauseMenu.classList.remove('hidden');
       autosave(true);
     }
@@ -4078,6 +4082,8 @@ function breakBlock() {
       if (furnaceOpen === fk) closeFurnacePanel();
     }
   }
+  // 蛋糕被挖:清除剩余片数状态(否则原位重放新蛋糕会"复活"旧的剩余片数,R53·B10)
+  if (type === 'cake') cakes.delete(blockKey(t.x, t.y, t.z));
   // 经典掉落(生存采集):石头→圆石;煤矿→煤炭(1-2);钻石矿→钻石;树叶 15% 掉苹果
   let dropType = type, dropKind = 'block', dropCount = 1;
   if (type === 'stone') dropType = 'cobblestone';
@@ -4535,6 +4541,7 @@ function pistonExtend(x, y, z) {
   while (chain.length <= 12) {
     const b = getBlock(cx, y, cz);
     if (!b) break;
+    if (b === 'water') break;   // 液体:链止(经典:活塞不推不弹液体,不吞水不铸水物品)
     if (PISTON_IMMOVABLE[b]) return false;
     if (!BLOCK_TYPES[b] || !BLOCK_TYPES[b].solid) {
       // 非固体元件被推掉(经典 pop):掉落物后该格为空,链止于此
@@ -6047,6 +6054,7 @@ function updateXPBar() {
 
 // ---- 附魔台面板(JS 构建的经典灰岩面板) ----
 let enchantPanelEl = null, currentEnchantOptions = null;
+let enchantOpen = false;   // 面板开合状态(E/Esc 派发/指针门控/触屏冻结用,R53·B8)
 function openEnchantPanel() {
   if (!enchantPanelEl) {
     enchantPanelEl = document.createElement('div');
@@ -6059,10 +6067,12 @@ function openEnchantPanel() {
     ? MACHINES.rollEnchants(TOOL_TYPES[item.id].tool, Math.random)
     : null;
   renderEnchantPanel();
+  enchantOpen = true;
   enchantPanelEl.style.display = '';
   if (document.pointerLockElement) document.exitPointerLock();
 }
 function closeEnchantPanel() {
+  enchantOpen = false;
   if (enchantPanelEl) enchantPanelEl.style.display = 'none';
   tryRelockPointer();
 }
@@ -6734,7 +6744,7 @@ function openFurnacePanel(x, y, z) {
 // 交互:关闭面板后自动重新锁定指针(无缝回到游戏,不必再点一下画面)
 function tryRelockPointer() {
   if (!renderer || document.pointerLockElement === renderer.domElement) return;
-  if (inventoryOpen || tableOpen || furnaceOpen || chestOpen || tradeOpen) return;   // 还有面板开着则不抢
+  if (inventoryOpen || tableOpen || furnaceOpen || chestOpen || tradeOpen || enchantOpen) return;   // 还有面板开着则不抢
   try {
     const p = renderer.domElement.requestPointerLock();
     if (p && typeof p.catch === 'function') p.catch(() => {});
@@ -7837,7 +7847,7 @@ function animate() {
   if (!locked && (('ontouchstart' in window) || navigator.maxTouchPoints > 0)) {
     const pmHidden = document.getElementById('pause-menu').classList.contains('hidden');
     const ovHidden = document.getElementById('overlay').classList.contains('hidden');
-    active = pmHidden && ovHidden && !inventoryOpen && !tableOpen && !furnaceOpen && !chestOpen && !tradeOpen;
+    active = pmHidden && ovHidden && !inventoryOpen && !tableOpen && !furnaceOpen && !chestOpen && !tradeOpen && !enchantOpen;
   }
   const prevVy = velocity.y;
   if (active) updatePlayer(dt, prevVy);

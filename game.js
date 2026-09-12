@@ -3821,6 +3821,15 @@ function setupInput() {
     pauseBtn.addEventListener('touchstart', (e) => { e.preventDefault(); openPauseFromTouch(); }, { passive: false });
     pauseBtn.addEventListener('click', openPauseFromTouch);
   }
+
+  // 🎥 切视角按钮(R52):触屏无 F5 键,此前移动端无法切第三人称;
+  // 绑定放在 isTouch 之外(按钮仅触屏显示),统一绑定便于测试
+  const camBtn = document.getElementById('touch-camera');
+  if (camBtn) {
+    const switchCamFromTouch = () => { cycleCameraMode(); };
+    camBtn.addEventListener('touchstart', (e) => { e.preventDefault(); switchCamFromTouch(); }, { passive: false });
+    camBtn.addEventListener('click', switchCamFromTouch);
+  }
 }
 
 // ============================================================

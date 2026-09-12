@@ -414,6 +414,8 @@
   <div id="touch-place" style="position:fixed;right:30px;bottom:146px;width:60px;height:60px;background:rgba(80,180,80,0.3);border:2px solid rgba(100,200,100,0.5);border-radius:30px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;z-index:20;touch-action:none;">放</div>
   <!-- ≡ 暂停按钮(R43 打磨:此前 README 宣称但未实现 —— 触屏无入口打开暂停菜单) -->
   <div id="touch-pause" style="position:fixed;top:10px;right:10px;width:44px;height:40px;background:rgba(0,0,0,0.35);border:2px solid rgba(255,255,255,0.4);border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;z-index:21;touch-action:none;cursor:pointer;">≡</div>
+  <!-- 🎥 切视角按钮(R52:触屏无 F5 键,移动端此前无法切第三人称) -->
+  <div id="touch-camera" style="position:fixed;top:10px;right:62px;width:44px;height:40px;background:rgba(0,0,0,0.35);border:2px solid rgba(255,255,255,0.4);border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:18px;z-index:21;touch-action:none;cursor:pointer;">🎥</div>
 </div>
 
 <!-- 护甲条(生命条上方,无护甲时隐藏) -->
@@ -577,7 +579,7 @@
     <button id="btn-reset" class="menu-btn">重置世界(新地形)</button>
     <button id="btn-controls" class="menu-btn">操作说明</button>
     <div id="pause-controls" class="controls hidden">
-      <b>基础:</b> WASD 移动 · 空格跳/双击飞行 · Shift 下蹲/梯上悬停 · Q 丢弃整组 · F5 切视角<br>
+      <b>基础:</b> WASD 移动 · 空格跳/双击飞行 · Shift 下蹲/梯上悬停 · Q 丢弃整组 · F5 / 🎥 切视角<br>
       <b>方块:</b> 左键连击破坏(用对工具更快) · 右键放置 · 掉落物走近自动拾取 · 楼梯/台阶走上免跳 · 栅栏拦人拦怪(跳不过)<br>
       <b>右键交互:</b> 合成台(3×3) · 熔炉(冶炼) · 箱子(27格) · 床(睡觉跳早晨+设重生点) · TNT(点燃) · 拉杆(开关) · 蛋糕(逐片吃) · 村民(交易;手持面包=喂食繁殖)<br>
       <b>生存:</b> 砍树→合成台→镐→圆石→熔炉烧铁 · 猪排/鸡肉烤熟回饥饿 · 小麦喂猪牛羊鸡繁殖 · 剪刀剪羊毛 · 海岸甘蔗→糖→蛋糕(2糖1蛋3麦) · 鸡自动下蛋 · 桶舀水/倒水 · 钓竿甩竿收鱼<br>

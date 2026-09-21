@@ -668,11 +668,29 @@
   </div>
 </div>
 
-<script src="worldgen.js?v=20260924"></script>
-<script src="craft.js?v=20260929"></script>
-<script src="inventory.js?v=20260925"></script>
-<script src="machines.js?v=20260934"></script>
+<!-- 经典 script 顺序加载:下方顺序 = 原 game.js 单文件的行序,不得调换。
+     缓存版本号统一跟随 package.json 版本,发版时同步 bump(three.min.js 锁 r160 除外) -->
+<script src="worldgen.js?v=2.4.1"></script>
+<script src="craft.js?v=2.4.1"></script>
+<script src="inventory.js?v=2.4.1"></script>
+<script src="machines.js?v=2.4.1"></script>
 <script src="three.min.js?v=r160"></script>
-<script src="game.js?v=20260941"></script>
+<script src="game-defs.js?v=2.4.1"></script>
+<script src="game-atlas.js?v=2.4.1"></script>
+<script src="game-chunks.js?v=2.4.1"></script>
+<script src="game-scene.js?v=2.4.1"></script>
+<script src="game-init.js?v=2.4.1"></script>
+<script src="game-ui.js?v=2.4.1"></script>
+<script src="game-interact.js?v=2.4.1"></script>
+<script src="game-redstone.js?v=2.4.1"></script>
+<script src="game-entities.js?v=2.4.1"></script>
+<script src="game-systems.js?v=2.4.1"></script>
+<script src="game-block-entities.js?v=2.4.1"></script>
+<script src="game-physics.js?v=2.4.1"></script>
+<script src="game-render.js?v=2.4.1"></script>
+<script src="game-panels.js?v=2.4.1"></script>
+<script src="game-audio.js?v=2.4.1"></script>
+<script src="game-save.js?v=2.4.1"></script>
+<script src="game.js?v=2.4.1"></script>
 </body>
 </html>

@@ -1,0 +1,264 @@
+// ============================================================
+// 第十五部分:物理 / 移动(改造 isSolidAt 已查 chunk)
+// ============================================================
+function collidePlayer(dt) {
+  const r = PLAYER_RADIUS;
+  const H = PLAYER_HEIGHT;
+  moveAxis('x', velocity.x * dt, r, H);
+  moveAxis('z', velocity.z * dt, r, H);
+  onGround = false;
+  moveAxis('y', velocity.y * dt, r, H);
+}
+
+function moveAxis(axis, delta, r, H) {
+  if (delta === 0) return;
+  playerPos[axis] += delta;
+  const px = playerPos.x, py = playerPos.y, pz = playerPos.z;
+  const minX = Math.floor(px - r), maxX = Math.floor(px + r);
+  const minY = Math.floor(py - H * 0.5), maxY = Math.floor(py + H * 0.5);
+  const minZ = Math.floor(pz - r), maxZ = Math.floor(pz + r);
+  for (let x = minX; x <= maxX; x++)
+    for (let y = minY; y <= maxY; y++)
+      for (let z = minZ; z <= maxZ; z++) {
+        const b = getBlock(x, y, z);
+        if (!b || !BLOCK_TYPES[b] || !BLOCK_TYPES[b].solid) continue;
+        const bt = BLOCK_TYPES[b];
+        if (axis === 'y') {
+          if (delta > 0) { playerPos.y = y - H * 0.5 - 1e-4; }
+          else {
+            // 半砖(R41):落在半高 0.5;普通方块落满高 1
+            const landTop = bt.slab ? 0.5 : 1;
+            playerPos.y = y + landTop + H * 0.5 + 1e-4; onGround = true;
+          }
+          velocity.y = 0; return;
+        }
+        // ---- 水平轴:step-assist 与栅栏(R41)----
+        const feet = py - H * 0.5;
+        // 楼梯:着地走入 → 自动上一格(经典免跳攀爬);上方 2 格净空
+        if (bt.stair && onGround && feet >= y - 0.01 && !isSolidAt(x, y + 1, z) && !isSolidAt(x, y + 2, z)) {
+          playerPos.y = y + 1 + H * 0.5 + 1e-4;
+          continue;   // 登顶后本格不再视为阻挡
+        }
+        // 半砖:脚在其底面以上 → 半高踏上(行走/下落皆可);上方 1 格净空
+        if (bt.slab && feet >= y - 0.01 && !isSolidAt(x, y + 1, z)) {
+          playerPos.y = y + 0.5 + H * 0.5 + 1e-4; onGround = true;
+          continue;
+        }
+        if (axis === 'x') {
+          if (delta > 0) playerPos.x = x - r - 1e-4;
+          else playerPos.x = x + 1 + r + 1e-4;
+          velocity.x = 0; return;
+        } else {
+          if (delta > 0) playerPos.z = z - r - 1e-4;
+          else playerPos.z = z + 1 + r + 1e-4;
+          velocity.z = 0; return;
+        }
+      }
+  // 栅栏防跳(R41):身体未与栅栏格重叠(跳跃中)时,前进方向前沿列
+  // 若是栅栏且脚低于栅栏顶 → 阻挡。碰撞高 1.7(本作跳跃顶点 ≈1.56,
+  // 取 > 顶点确保任何起跳都越不过;经典 1.5 格对 1.25 跳同理)
+  if (axis === 'x' || axis === 'z') {
+    const feet = py - H * 0.5;
+    const dir = delta > 0 ? 1 : -1;
+    const ex = axis === 'x' ? px + dir * (r + 0.08) : px;
+    const ez = axis === 'z' ? pz + dir * (r + 0.08) : pz;
+    const fy = Math.floor(feet + 0.01);
+    for (const yy of [fy - 1, fy, fy + 1]) {   // 含脚下一格:跳跃中脚已越过栅栏格顶但仍在碰撞高度内
+      if (getBlock(Math.floor(ex), yy, Math.floor(ez)) === 'fence' && feet < yy + 1.7) {
+        if (axis === 'x') { playerPos.x -= delta; velocity.x = 0; }
+        else { playerPos.z -= delta; velocity.z = 0; }
+        return;
+      }
+    }
+  }
+}
+
+// 水中检测
+// 是否处于水中:采样点与第一人称相机严格一致(camera.position === playerPos),
+// 这样水下色调恰好在相机没入水时触发,避免水面附近出现"色调/相机位置"错位的闪烁带。
+// 第三人称相机虽在 +0.2 高度,但色调以玩家身体中心为准即可(视觉差异可忽略)。
+function inWater() {
+  const t = getBlock(Math.floor(playerPos.x), Math.floor(playerPos.y), Math.floor(playerPos.z));
+  return t === 'water';
+}
+
+// 音效节流状态
+let lastStepTime = 0, lastJumpTime = 0, lastWaterTime = 0, wasInWater = false;
+
+function updatePlayer(dt, prevVy) {
+  // 乘坐矿车(R26):位置由矿车驱动,玩家物理挂起;空格下车
+  if (ridingCart) {
+    if (keys['Space']) dismountCart();
+    return;
+  }
+  const forward = _fwd.set(-Math.sin(yaw), 0, -Math.cos(yaw));
+  const right = _right.set(Math.cos(yaw), 0, -Math.sin(yaw));
+  // 正面视角(cameraMode 2)相机回望玩家:屏幕上=玩家背后、屏幕右=玩家左侧,
+  // 前后/左右须整体镜像(W/A/S/D 按"屏幕方向"移动);只反前后不反左右会横移错乱
+  if (cameraMode === 2) { forward.negate(); right.negate(); }
+
+  const move = _move.set(0, 0, 0);
+  // 触屏摇杆输入
+  const tm = (typeof window.__touchMove === 'function') ? window.__touchMove() : null;
+  if (tm && (Math.abs(tm.x) > 0.1 || Math.abs(tm.z) > 0.1)) {
+    move.addScaledVector(forward, -tm.z);   // 池化:不 clone,零分配
+    move.addScaledVector(right, tm.x);
+  } else {
+    if (keys['KeyW']) move.add(forward);
+  if (keys['KeyS']) move.sub(forward);
+  if (keys['KeyD']) move.add(right);
+  if (keys['KeyA']) move.sub(right);
+  }
+  if (move.lengthSq() > 0) move.normalize();
+
+  const water = inWater();
+  const speed = isFlying ? FLY_SPEED : (water ? WALK_SPEED * 0.5 : WALK_SPEED);
+  const sprint = keys['ShiftLeft'] || keys['ShiftRight'];
+
+  if (isFlying) {
+    velocity.x = move.x * speed;
+    velocity.z = move.z * speed;
+    velocity.y = 0;
+    if (keys['Space']) velocity.y = speed;
+    if (sprint) velocity.y = -speed;
+  } else if (water) {
+    // 水中:有浮力(缓慢上浮到水面),按空格加速上浮;下落速度有上限避免一直沉底
+    velocity.x = move.x * speed;
+    velocity.z = move.z * speed;
+    if (keys['Space']) {
+      velocity.y = 4.5;                       // 主动上浮
+    } else {
+      velocity.y -= GRAVITY * 0.3 * dt;       // 重力(被浮力部分抵消)
+      velocity.y += 6.0 * dt;                 // 浮力:净效果是缓慢上浮
+      if (velocity.y < -3) velocity.y = -3;   // 下沉速度上限,避免加速到海底
+    }
+  } else {
+    velocity.x = move.x * speed;
+    velocity.z = move.z * speed;
+    // 梯子攀爬(经典):在梯子体积内 —— 空格上升 / Shift 悬停 / 其余缓慢下滑;
+    // 水平移动不受限,可左右挪出梯子
+    const onLadder = getBlock(Math.floor(playerPos.x), Math.floor(playerPos.y - 0.3), Math.floor(playerPos.z)) === 'ladder'
+      || getBlock(Math.floor(playerPos.x), Math.floor(playerPos.y + 0.3), Math.floor(playerPos.z)) === 'ladder';
+    if (onLadder) {
+      if (keys['Space']) velocity.y = 3.2;
+      else if (keys['ShiftLeft'] || keys['ShiftRight']) velocity.y = 0;
+      else velocity.y = Math.max(velocity.y - GRAVITY * dt, -1.8);
+    } else {
+      velocity.y -= GRAVITY * dt;
+      if (keys['Space'] && onGround) {
+        velocity.y = JUMP_SPEED;
+        const now = performance.now();
+        if (now - lastJumpTime > 250) { audio.play('jump'); lastJumpTime = now; }
+      }
+    }
+  }
+
+  collidePlayer(dt);
+
+  // 落地音效:仅在"从空中→触地"这一帧触发(边沿检测),避免着地后重复播放
+  // 黏液块(R35):重着陆弹起(越猛越高),免摔伤 —— 经典蹦床
+  let landedOnSlime = false;
+  if (onGround && !wasOnGround && prevVy < -6) {
+    const underSlime = getBlock(Math.floor(playerPos.x), Math.floor(playerPos.y - PLAYER_HEIGHT * 0.5 - 0.1), Math.floor(playerPos.z)) === 'slime';
+    if (underSlime && !isFlying) {
+      landedOnSlime = true;
+      onGround = false;
+      velocity.y = Math.min(14, Math.max(7, -prevVy * 0.65));
+      audio.play('jump');
+      spawnParticles(playerPos.x, playerPos.y - 0.8, playerPos.z, 0x6fc05a, 6);
+    } else {
+      audio.play('jump');
+      if (!water) spawnParticles(playerPos.x, playerPos.y - 0.7, playerPos.z, 0x9a8a6a, 6);   // 落地尘土
+    }
+  }
+  // Fall damage: when landing with prevVy < -15 (~4+ blocks), scale by speed. Flying immune.
+  if (onGround && !wasOnGround && !isFlying && prevVy < -15 && !inWater() && !landedOnSlime) {
+    const dmg = Math.floor((-prevVy - 15) / 3);
+    if (dmg > 0) damagePlayer(dmg, 'fall');
+  }
+  wasOnGround = onGround;
+  // 记录最后安全位置(用于虚空救援):仅当稳稳站在实体方块上时更新
+  if (onGround && !isFlying) lastSafePos.copy(playerPos);
+  // 教程:累计移动距离(仅落地行走计入)
+  if (tutorial.active) {
+    const dx = playerPos.x - (tutorial._lx === undefined ? playerPos.x : tutorial._lx);
+    const dz = playerPos.z - (tutorial._lz === undefined ? playerPos.z : tutorial._lz);
+    tutorial._lx = playerPos.x; tutorial._lz = playerPos.z;
+    if (onGround) tutEvent('move', Math.hypot(dx, dz));
+  }
+
+  // 走路音效(按节拍)
+  if (onGround && !isFlying) {
+    const horiz = Math.hypot(velocity.x, velocity.z);
+    if (horiz > 1) {
+      const now = performance.now();
+      const interval = 320;
+      if (now - lastStepTime > interval) {
+        audio.play('step');
+        lastStepTime = now;
+      }
+    }
+  }
+
+  // 入水音效
+  if (water && !wasInWater) {
+    const now = performance.now();
+    if (now - lastWaterTime > 500) { audio.play('water'); lastWaterTime = now; }
+  }
+  wasInWater = water;
+  // Drowning: head underwater continuously >15s -> 1 HP/sec. Reset on surfacing.
+  const headInWater = getBlock(Math.floor(playerPos.x), Math.floor(playerPos.y + 0.2), Math.floor(playerPos.z)) === 'water';
+  if (headInWater) {
+    breathTimer += dt;
+    if (breathTimer > 15) {
+      const over = breathTimer - 15;
+      const before = Math.floor(over - dt);
+      const after = Math.floor(over);
+      if (after > before) damagePlayer(after - before, 'drown');
+    }
+  } else {
+    breathTimer = 0;
+  }
+
+  // 饥饿系统(状态机在 inventory.js:hungerTick):移动消耗更快(飞行减半);
+  // 速率平衡:移动 0.7(≈5.7 秒 1 点,20 点约 2 分钟)/ 静止 0.25(16 秒 1 点)
+  const hres = INVLIB.hungerTick(hungerState, dt,
+    (Math.hypot(velocity.x, velocity.z) > 0.5 ? 0.7 : 0.25) * (isFlying ? 0.4 : 1),
+    playerHP < PLAYER_MAX_HP);
+  if (hres.hungerChanged) {
+    updateHungerBar();
+    // 低饥饿一次性警告(R45):饿伤前可感知(6 = 鸡腿图标将空过半)
+    if (hungerState.hunger === 6) showToast('🍗 你饿了:饥饿低于 18 不再回血,归零会持续掉血');
+  }
+  if (hres.regen) {
+    // 回血消耗食物(R45 经典收敛):每次 +1 血附加 0.5 点饥饿消耗
+    // (drain +2,4 单位=1 点)—— 吃满 20 只能「白嫖」几口,食物换血经济成立
+    hungerState.drain += 2;
+    playerHP = Math.min(PLAYER_MAX_HP, playerHP + 1);
+    updateHPBar();
+  }
+  if (hres.starve && playerHP > 2) damagePlayer(1, 'starve');
+
+  // 防掉落到地图下面:y < 0(世界底部以下)立即救援,不等 -20
+  if (playerPos.y < 0) {
+    // 优先:尝试在 lastSafePos 附近找安全位(确保区块已生成)
+    const sx = Math.floor(lastSafePos.x), sz = Math.floor(lastSafePos.z);
+    ensureChunk(Math.floor(sx / CHUNK_SIZE), Math.floor(sz / CHUNK_SIZE));
+    let rescued = false;
+    for (let y = Math.min(WORLD_HEIGHT - 3, Math.floor(lastSafePos.y) + 2); y >= 1; y--) {
+      if (isSolidAt(sx, y, sz) && !isSolidAt(sx, y + 1, sz) && !isSolidAt(sx, y + 2, sz)) {
+        playerPos.set(sx + 0.5, y + 1 + PLAYER_HEIGHT * 0.5 + 0.1, sz + 0.5);
+        rescued = true; break;
+      }
+    }
+    // 兜底:lastSafePos 不可用 → 回出生广场中心(确定性安全)
+    if (!rescued) {
+      const plazaH = SEA_LEVEL + 6;
+      playerPos.set(0.5, plazaH + 1 + PLAYER_HEIGHT * 0.5, 0.5);
+    }
+    velocity.set(0, 0, 0);
+    showToast('已从虚空中救回');
+  }
+}
+let wasOnGround = false;   // 落地边沿检测
+

@@ -74,7 +74,7 @@ npm run serve    # python3 -m http.server 8843
 # 浏览器访问 http://localhost:8843/
 ```
 
-> 游戏本身**零构建**:`index.html` 直接 `<script src>` 引入 `worldgen.js` / `craft.js` / `three.min.js` / `audio.js` / `save.js` / `doors.js` / `game.js`。
+> 游戏本身**零构建**:`index.html` 直接 `<script src>` 引入 `worldgen.js` / `craft.js` / `inventory.js` / `machines.js` / `three.min.js` 与 `game.js` 家族 17 个分片(见 [文件结构](#-文件结构))。
 > `npm` 只用于跑测试和 lint(见 [开发](#-开发))。
 
 ## 🎮 操作
@@ -499,23 +499,40 @@ npm run serve    # 启动本地静态服务器 http://localhost:8843/
 ```
 myword/
 ├── index.html          页面结构 + 样式 + 面板(开始/暂停/背包/存档管理/设置)
-├── game.js             游戏主逻辑(20 个模块,渲染/物理/物品/视角/存档/UI/广场)
+├── game.js             启动入口(13 行:init → setupInput → animate → 存档探测)
+├── game-defs.js        方块/工具/物品定义(BLOCK_TYPES/TOOL_TYPES/ITEM_TYPES)
+├── game-atlas.js       像素纹理与图集(drawBlockFace/buildAtlas,54 种方块)
+├── game-chunks.js      区块系统:数据/diff 分桶/网格构建/分帧加载卸载
+├── game-scene.js       全局状态/玩家模型/手持/接地阴影/相机/云朵天空天气
+├── game-init.js        初始化/出生广场/新手教程
+├── game-ui.js          快捷栏/背包/图标渲染 + 键鼠触屏输入(Pointer Lock)
+├── game-interact.js    DDA 射线检测/破坏/放置
+├── game-redstone.js    红石信号网络/活塞/门动画
+├── game-entities.js    破坏裂纹/粒子/掉落物/12 种生物模型+AI/铁桶/爆炸
+├── game-systems.js     矿车/经验附魔/钓鱼/繁殖/重力沙
+├── game-block-entities.js  TNT/熔炉/床/箱子/蛋糕/地牢刷怪笼/村民交易/成就/生命
+├── game-physics.js     物理/移动/碰撞
+├── game-render.js      渲染主循环/昼夜/天气/作物
+├── game-panels.js      背包面板/合成台
+├── game-audio.js       程序化音效(Web Audio 合成)
+├── game-save.js        设置(localStorage)/存档(IndexedDB 多存档)
 ├── worldgen.js         世界生成模块(噪声/生物群系/地形高度,纯函数可独立测试)
 ├── craft.js            合成与破坏计算模块(RECIPES/matchRecipe/breakCost,纯函数可独立测试)
 ├── inventory.js        库存/掉落/饥饿纯函数模块(pickupIntoInventory/hungerTick/armorReduce)
 ├── machines.js         状态机纯函数模块(教程推进/熔炉/天气/红石/成就/存档 schema 校验)
-├── audio.js            程序化音效(Web Audio 合成)
-├── save.js             IndexedDB 纯存储层(SAVELIB)
-├── doors.js            门实体渲染层(容器/网格/查询)
 ├── three.min.js        Three.js r160(已内置,离线可玩)
-├── test/unit.test.js   Node 单元测试(确定性函数验证,141 项)
+├── test/unit.test.js   Node 单元测试(确定性函数验证,143 项)
 ├── test/*.cdp.mjs      CDP 实机套件(smoke + r33-r52 共 21 套)+ reload.cdp.mjs 回归助手
 ├── docs/               架构与模块文档(architecture.md / worldgen.md / review-rounds.md)
-├── eslint.config.mjs   ESLint 9 flat config(仅开发期)
+├── eslint.config.mjs   ESLint 9 flat config(仅开发期,game 分片跨文件符号自动推导)
 ├── package.json        npm scripts(test / serve / lint)
 ├── LICENSE             MIT
 └── README.md           本文档
 ```
+
+> `game.js` 家族 17 个文件是原 9000 行单文件按行序的**字节等价拆分**(R54),
+> 由 index.html 按上述顺序以经典 `<script src>` 直引、共享全局作用域 ——
+> **加载顺序不得调换**。
 
 ## 🧱 技术栈
 - Three.js r160(WebGL 渲染)、原生 JavaScript(无框架、无构建)

@@ -11,8 +11,7 @@
 # 安装开发依赖(ESLint 等)
 npm install
 
-# 跑确定性函数单元测试(67 项)
-# 跑确定性函数单元测试(46 项)
+# 跑确定性函数单元测试(143 项)
 npm test
 
 # 静态检查
@@ -30,11 +29,18 @@ npm run serve
 ```
 myword/
 ├── index.html          # 页面结构 + 样式 + 面板(开始/暂停/背包/存档管理/设置)
-├── game.js             # 游戏主逻辑(20 个模块,~3600 行:渲染/物理/物品/视角/存档/UI)
+├── game.js             # 启动入口(13 行:init → setupInput → animate)
+├── game-*.js           # 引擎分片 ×16(defs/atlas/chunks/scene/init/ui/interact/
+│                       #   redstone/entities/systems/block-entities/physics/
+│                       #   render/panels/audio/save,按 index.html 行序加载、
+│                       #   共享全局作用域 —— 顺序不得调换,详见 architecture.md)
 ├── worldgen.js         # 世界生成模块(纯函数:噪声/群系/高度,可独立测试)
 ├── craft.js            # 合成与破坏计算模块(纯函数:配方匹配/破坏耗时,可独立测试)
+├── inventory.js        # 库存/饥饿/护甲纯函数模块(可独立测试)
+├── machines.js         # 状态机纯函数模块(教程/熔炉/天气/红石/成就/存档 schema)
 ├── three.min.js        # Three.js r160(第三方,已内置,离线可玩 —— 请勿改动)
-├── test/unit.test.js   # Node 单元测试(确定性函数验证)
+├── test/unit.test.js   # Node 单元测试(确定性函数验证,143 项)
+├── test/*.cdp.mjs      # CDP 实机套件(headless Chrome,冒烟 + 各轮回归)
 ├── docs/               # 架构与模块文档
 │   ├── architecture.md
 │   └── worldgen.md
@@ -46,9 +52,10 @@ myword/
 
 - **缩进**:2 空格(见 `.editorconfig`)
 - **语言**:原生 JavaScript,**不使用框架、不引入构建/打包工具**
-- **运行时零依赖**:`game.js` / `worldgen.js` / `craft.js` 由 `index.html` 以经典 `<script src>` 直引
-- **浏览器全局**:`game.js` 直接使用 `window` / `document` / `THREE` / `indexedDB` / `AudioContext` 等,
-  不做模块封装(顶层函数/变量视为全局,可被 HTML `onclick` 调用)
+- **运行时零依赖**:游戏脚本(game.js 家族分片 / worldgen / craft / inventory / machines)
+  由 `index.html` 以经典 `<script src>` 直引
+- **浏览器全局**:`game-*.js` 直接使用 `window` / `document` / `THREE` / `indexedDB` /
+  `AudioContext` 等,不做模块封装(顶层函数/变量视为全局,可被 HTML `onclick` 调用)
 - **worldgen.js / craft.js 是 UMD**:浏览器挂全局(`window.WORLDGEN` / `window.CRAFTLIB`)+ Node `module.exports`,便于单测复用
 - **中文注释**:函数/段落注释用中文说明意图,与现有风格一致
 - **提交前必跑**:`npm test && npm run lint` 全绿(errors 必须为 0;`no-unused-vars` 设为 warn 级,既有历史代码的少量未用变量允许保留,但新代码请避免)
@@ -78,7 +85,7 @@ myword/
 
 提交 PR 前,请确认:
 
-- [ ] `npm test` 通过(67 项全绿)
+- [ ] `npm test` 通过(143 项全绿)
 - [ ] `npm run lint` 通过(无 error)
 - [ ] 浏览器手动验证:游戏可启动、移动/破坏/放置正常、无控制台报错
 - [ ] 若改了 `worldgen.js` / `craft.js`,测试已同步更新

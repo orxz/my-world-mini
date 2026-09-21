@@ -1083,3 +1083,25 @@ Playwright 长会话压测(等效 **506 秒游戏时间** + 105 秒真实 rAF �
   得全新 6 片(端到端走真实 breakBlock)✓
 - 至此第 4 次审查的 14 项报告全部闭环(10+3 修复,1 项为审查误报已过滤)。
   单测 143/143、lint 0/0、启动冒烟 121 区块 120FPS。
+
+### R54 评估修复轮(结构治理)✅ 已验证
+- 背景:2026-09-21 全面评估报告四类缺陷:game.js 9000 行单体逼近无模块架构
+  可维护边界、空 catch 吞错、缓存版本号漂移、文档漂移(architecture.md 三处
+  重复块、README 列有不存在文件、CONTRIBUTING 行数/测试数过期)
+- **game.js 字节等价拆分**:按分节横幅边界纯行序切分为 17 个经典 script
+  (16 个 game-*.js 分片 + 13 行 game.js 启动入口),index.html 按原行序加载。
+  安全性论证:经典 script 共享全局词法环境 + 执行顺序不变 = 语义等价;拆前
+  扫描确认顶层立即执行仅 window.* 挂载与末尾启动调用,无函数提升顺序风险;
+  16 片拼接与原文件 1-8987 行 cmp 逐字节一致(拼接总字节 415562 == 拆分前文件)
+- **吞错治理**:8 处空 catch 补 console.debug(雨声停止/教程标记 ×3/指针锁/
+  音频初始化/设置读写);var _vol → let(全库最后一处 var)
+- **版本号统一**:6 个手写伪日期缓存参数(已互相漂移,如 ?v=20260934)统一为
+  ?v=2.4.1 跟随 package.json,发版时同步 bump(three.min.js 保持 ?v=r160)
+- **eslint 适配**:game 分片跨文件符号配置期自动推导(顶层声明提取含一行多
+  声明/解构/async function;let/var→writable 可变共享、const/function→readonly;
+  跨分片导出符号 varsIgnorePattern 自动生成),免手工维护约 500 符号清单
+- **文档同步**:architecture.md(三层图/文件表/测试数 143/三处重复块)、
+  README(文件结构重写,删不存在的 audio.js/save.js/doors.js 条目)、
+  CONTRIBUTING(目录树/测试计数)、findings.md(R19 项闭环注记 + R54 记录)
+- 验证:单测 143/143、lint 0 error/0 warning、CDP 冒烟 26 项 PASS(含
+  「无未捕获 JS 异常」);版本 2.4.1(纯重构+治理+文档,无功能变更)

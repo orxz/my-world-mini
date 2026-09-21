@@ -3,6 +3,47 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范,
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [2.4.1] - 2026-09-21
+
+「评估修复」治理版本:R54 修复轮 —— 全面评估报告缺陷清零。无功能变更。
+
+### 重构(game.js 单体拆分,字节等价)
+- 原 9000 行单文件按分节横幅边界**纯行序切分**为 17 个经典 script(16 个
+  `game-*.js` 分片 + 13 行 `game.js` 启动入口),`index.html` 按原行序加载。
+  经典 script 共享全局词法环境 + 执行顺序不变 = 语义等价;16 片拼接与原文件
+  1-8987 行 cmp **逐字节一致**,拆前扫描确认无函数提升顺序风险
+- 新文件族:`game-defs`(方块/工具/物品)、`game-atlas`(纹理图集)、`game-chunks`
+  (区块系统/网格/加载)、`game-scene`(状态/模型/相机/天空)、`game-init`(初始化/
+  教程)、`game-ui`(快捷栏/输入)、`game-interact`(射线/破坏/放置)、`game-redstone`
+  (红石/活塞)、`game-entities`(粒子/掉落物/生物)、`game-systems`(矿车/附魔/钓鱼/
+  繁殖)、`game-block-entities`(TNT/熔炉/箱子/地牢/交易/成就)、`game-physics`、
+  `game-render`、`game-panels`、`game-audio`、`game-save` + `game.js` 入口
+- 保持纯前端·零构建·打开即玩:仍是经典 script 直引,无模块/无打包
+
+### 修复(吞错治理)
+- 8 处空 catch 补 `console.debug` 日志(雨声停止/教程标记 ×3/指针锁/音频初始化/
+  设置读写)—— 故障可观测,不再静默吞掉
+- `var _vol` → `let`(全库最后一处 var)
+
+### 工程
+- 缓存版本号统一:6 个手写伪日期参数(已互相漂移,如 `?v=20260934`)统一为
+  `?v=2.4.1` 跟随 package.json 版本,发版时同步 bump(three.min.js 保持 `?v=r160`)
+- `eslint.config.mjs`:game 分片跨文件符号**配置期自动推导**(顶层声明提取含
+  一行多声明/解构/async;`let/var`→writable 可变共享、`const/function`→readonly;
+  跨分片导出符号 `varsIgnorePattern` 自动生成),免手工维护约 500 符号清单
+
+### 文档
+- `architecture.md`:三层图与文件表更新为 17 分片布局;修复模块表 11/12 重复行、
+  测试框 141/46 重复块、4.4 存档字段重复段落
+- `README.md`:文件结构重写(删除仓库中不存在的 `audio.js`/`save.js`/`doors.js`
+  条目),测试计数 141 → 143
+- `CONTRIBUTING.md`:目录树/行数/测试计数(67、46 → 143)同步
+- `findings.md` R19 评估项闭环注记 + R54 记录;`review-rounds.md` R54 轮次日志
+
+### 验证
+- 单测 143/143;ESLint 0 error / 0 warning;CDP 冒烟 26 项 PASS(headless Chrome
+  swiftshader,含「无未捕获 JS 异常」);17 文件拼接与拆分前文件逐字节等价
+
 ## [2.4.0] - 2026-09-12
 
 「人称视角体验」打磨版本:R52 视角体验修复轮(三视角实机截图 AI 审校

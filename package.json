@@ -1,6 +1,6 @@
 {
   "name": "myword",
-  "version": "2.4.0",
+  "version": "2.4.1",
   "description": "基于 Three.js 的 Minecraft 风格 3D 体素沙盒游戏(纯前端·零构建·打开即玩)",
   "private": true,
   "license": "MIT",

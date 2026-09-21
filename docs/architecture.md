@@ -8,8 +8,8 @@
 
 ## 1. 设计原则
 
-- **纯前端·零构建运行时**:不引入打包/编译工具,`index.html` 以经典 `<script src>` 直引四个脚本
-  (worldgen / craft / three / game);双击即玩,可完全离线。
+- **纯前端·零构建运行时**:不引入打包/编译工具,`index.html` 以经典 `<script src>` 直引
+  (worldgen / craft / inventory / machines / three + game.js 家族 17 个分片);双击即玩,可完全离线。
 - **确定性优先**:世界由种子 + 纯函数生成,同种子同坐标永远一致 → 存档只需存"种子 + 玩家改动 diff"。
 - **运行时无框架**:原生 JavaScript + Three.js,DOM 直接操作。
 - **可测部分与渲染解耦**:世界生成/合成破坏的纯逻辑抽到 `worldgen.js` 与 `craft.js`,可在 Node 单测中复用。
@@ -23,8 +23,9 @@
 └───────────────┬─────────────────────────────────────────┘
                 │ <script src> 直引 + onclick 回调
 ┌───────────────▼─────────────────────────────────────────┐
-│  game.js  ── 游戏引擎(20 个模块,~8750 行)             │  引擎层
-│   渲染 / 物理 / 输入 / 物品 / 视角 / 存档 / 音效 / UI   │
+│  game.js 家族 ── 游戏引擎(R54 拆分为 17 个分片,~9000 行)│  引擎层
+│   渲染/物理/输入/物品/视角/存档/音效/UI;按原单文件行序 │
+│   顺序加载,共享全局词法环境(文件表见第 3 节)         │
 └───────────────┬─────────────────────────────────────────┘
                 │ 函数调用(hash2/fbm2D/biomeAt/heightAt + CRAFTLIB)
 ┌───────────────▼─────────────────────────────────────────┐
@@ -37,10 +38,8 @@
 └─────────────────────────────────────────────────────────────────┘
                 ▲
 ┌───────────────┴─────────────────────────────────────────┐
-│  test/unit.test.js  ── Node 单元测试(141 项)          │  测试
+│  test/unit.test.js  ── Node 单元测试(143 项)          │  测试
 │    require(worldgen + craft + inventory + machines)    │
-│  test/unit.test.js  ── Node 单元测试(46 项)           │  测试
-│    require('../worldgen.js') + require('../craft.js')   │
 └─────────────────────────────────────────────────────────┘
 
 three.min.js  ── Three.js r160(第三方渲染库,内置,离线)
@@ -51,36 +50,33 @@ three.min.js  ── Three.js r160(第三方渲染库,内置,离线)
 这是"浏览器与测试共用单一数据源"的关键:所有可测的纯逻辑(地形、配方、破坏耗时)
 都不放在 `game.js` 里,避免 DOM/Three 依赖污染测试。
 
-## 3. game.js 模块划分(20 部分)
+## 3. 引擎层文件划分(game.js 家族,R54 拆分)
 
-`game.js` 按顺序分为 20 个带注释段落的模块,改动时按职责定位:
+原 9000 行单文件 game.js 自 R54 起按分节横幅边界**字节等价切分**为 17 个经典
+script,`index.html` 按原行序加载(**顺序不得调换**,共享全局词法环境)。
+各分片顶部保留原分节横幅注释,下表为文件与职责对照:
 
-| # | 模块 | 职责 |
-|---|---|---|
-| 1 | 方块定义 | `BLOCK_TYPES` / `BLOCK_ID` / `ID_TO_BLOCK`(数字 id↔名称) |
-| 2 | 工具与物品 | `TOOL_TYPES`(镐/斧/铲/剑/盾/弓 ×5 档)、`ITEM_TYPES`(材料) |
-| 3 | 像素纹理与图集 | `makePixelTexture` / `buildAtlas` / `makeBlockMaterials` |
-| 4 | 区块系统 | `chunks` Map、`modifications` 全局 diff + `modsByChunk` 分桶、`pendingBlocks` 树冠队列、`dirtyChunks` 脏集合、`generateChunkData`、`getBlock`/`setBlock`/`isSolidAt` |
-| 5 | 区块网格构建 | `buildChunkMesh`:面剔除 + atlas UV + 合并为单 BufferGeometry |
-| 6 | 区块加载/卸载 | `updateChunks`(分帧)、门实体 mesh 同步(数据不随卸载丢失) |
-| 7 | 全局状态 | 玩家 pos/velocity/keys/hotbar、相机、云朵、池化向量(热路径零 GC) |
-| 8 | 玩家模型 | `buildPlayerModel`(第三人称人形) |
-| 9 | 手持物品与工具模型 | `buildHoldGroup` / `updateHoldItem` / `buildToolMesh` |
-| 10 | 第三人称相机 | `updateThirdPersonCamera` / 相机碰撞 / 视角切换 |
-| 11 | 初始化 | `init` / 出生广场 `buildSpawnPlaza` / `findSafeSpawn` / `clearWorld` / `resetWorld` |
-| 12 | 快捷栏/背包 | `initInventory` / `buildHotbar` / 图标渲染;方块带 count 堆叠(生存采集) |
-| 11 | 初始化 | `init` / 出生广场 `buildSpawnPlaza` / `clearWorld` / `resetWorld` |
-| 12 | 快捷栏/背包 | `initInventory` / `buildHotbar` / 图标渲染 |
-| 13 | 输入 | 键盘/鼠标/触屏事件、Pointer Lock、音频初始化钩子 |
-| 14 | 射线检测 | DDA 体素步进(`raycastTarget`)+ 门实体射线(`raycastDoor`),结果池化零分配 |
-| 15 | 物理/移动 | 重力、跳跃、飞行、游泳、碰撞(`isSolidAt` 查 chunk) |
-| 16 | 渲染循环 | `requestAnimationFrame` 主循环、区块更新、雾色随水位、昼夜 |
-| 17 | 背包面板 | 背包 DOM 渲染、物品分类、合成(2×2;配方匹配在 craft.js) |
-| 18 | 音效系统 | Web Audio 程序化合成(Oscillator + 白噪声) |
-| 19 | 存档/读档 | IndexedDB 多存档、seed + modifications diff、自动保存 |
-| 20 | 启动 | 入口:DOM 就绪 → `init` → 主循环 |
+| 文件 | 行数 | 原部分 | 职责 |
+|---|---|---|---|
+| game-defs.js | 173 | 1-2 | `BLOCK_TYPES`/`BLOCK_ID`/`ID_TO_BLOCK`、`TOOL_TYPES`(镐/斧/铲/剑/盾/弓 ×5 档)、`ITEM_TYPES` |
+| game-atlas.js | 718 | 3 | 像素纹理与图集:`drawBlockFace`/`buildAtlas`/`makeBlockMaterials` |
+| game-chunks.js | 781 | 4-6 | `chunks` Map、`modifications` diff + `modsByChunk` 分桶、`pendingBlocks`、`generateChunkData`、`getBlock`/`setBlock`/`isSolidAt`;`buildChunkMesh` 面剔除合并;`updateChunks` 分帧加载卸载 |
+| game-scene.js | 806 | 7-10 | 玩家 pos/velocity/keys/hotbar、相机、云朵天空天气、池化向量;`buildPlayerModel`;手持物模型;接地阴影;第三人称相机 |
+| game-init.js | 502 | 11 | `init` / 出生广场 `buildSpawnPlaza` / `findSafeSpawn` / `clearWorld` / `resetWorld` / 新手教程 |
+| game-ui.js | 878 | 12-13 | `initInventory`/`buildHotbar`/图标渲染;键盘/鼠标/触屏输入、Pointer Lock、音频初始化钩子 |
+| game-interact.js | 581 | 14 | DDA 体素步进 `raycastTarget` + `raycastDoor`、`breakBlock`/`placeBlock`,结果池化零分配 |
+| game-redstone.js | 236 | R38/R42 | 红石信号网络(0.25s BFS 重算驱动铁门)、活塞推动、门开关动画 |
+| game-entities.js | 1159 | — | 破坏裂纹覆盖层、粒子、掉落物、12 种生物模型+AI、铁桶、爆炸 |
+| game-systems.js | 790 | — | 矿车、经验与附魔、钓鱼、繁殖、生物更新/击中/视线命中、重力沙 |
+| game-block-entities.js | 820 | — | TNT、熔炉、床、箱子、蛋糕、地牢刷怪笼、村民交易、成就、生命系统 |
+| game-physics.js | 264 | 15 | 重力、跳跃、飞行、游泳、碰撞(`isSolidAt` 查 chunk) |
+| game-render.js | 573 | 16 | `requestAnimationFrame` 主循环、区块更新、雾色随水位、昼夜 |
+| game-panels.js | 365 | 17 | 背包 DOM 渲染、物品分类、合成(2×2/3×3;配方匹配在 craft.js) |
+| game-audio.js | 97 | 18 | Web Audio 程序化合成(Oscillator + 白噪声) |
+| game-save.js | 244 | 19 | 设置 localStorage、IndexedDB 多存档、seed + modifications diff、自动保存 |
+| game.js | 13 | 20 | 启动入口:DOM 就绪 → `init` → 主循环(保留原名) |
 
-> 另有:**天空系统**(`createSky`/`updateSky`,渐变天穹+星空+日月光晕,挂第七部分)、
+> 另有:**天空系统**(`createSky`/`updateSky`,渐变天穹+星空+日月光晕,挂 game-scene.js)、
 > **生物系统**(`spawnMob`/`updateMobs`/`hurtMob`/`raycastMob`:被动 猪/牛/羊 游荡+
 > 小麦喂食繁殖(求爱红心→幼崽 0.55 缩放 60s 长大);敌对 僵尸/苦力怕/骷髅/蜘蛛/
 > 末影人(中立,被注视/受击激怒+瞬移);村民(村庄常驻 ≤2/屋,村边慢逛/
@@ -191,15 +187,6 @@ raycastTarget():
   读档先重建广场再覆盖用户 diff)→ 新档约 1KB
 - 读档:恢复 seed + modifications + 玩家/生物/矿车/熔炉/箱子/经验/成就状态 →
   `clearWorld` → 重新生成中心区块(自动应用 diff)
-存档记录 = { version, id, name, seed, playerPos, yaw, pitch, cameraMode, isFlying,
-             playerHP, dayTime, hotbar, currentSlot,
-             modifications: [[key, type|null], ...],
-             doorsData: [[key, {x,y,z,type,open,facing}], ...],
-             cropTimersData: [[key, plantTime], ...], timestamp }
-```
-
-- **只存种子 + 玩家改动 diff**(非全量方块)→ 容量小、加载快
-- 读档:恢复 seed + modifications + 玩家状态 → `clearWorld` → 重新生成中心区块(自动应用 diff)
 - 损坏存档防御:非法物品 id 丢弃(`sanitizeItem`)、位置/角度/配方数据校验、读取失败不挂起
 - 自动保存:有当前存档时,30 秒 + 暂停 + 改动防抖
 - 多存档:IndexedDB 自增 id,每个存档独立

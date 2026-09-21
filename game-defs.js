@@ -1,0 +1,173 @@
+/* ============================================================
+   我的世界 - 体素小游戏(增强版)
+   基于 Three.js,纯前端实现
+   增强:动态区块加载(近似无限世界)/ 6 种生物群系 / Web Audio 音效 / IndexedDB 存档
+   ============================================================ */
+const { THREE } = window;
+
+// ============================================================
+// 第一部分:方块定义(扩展 water/snow/gravel)
+// ============================================================
+const BLOCK_TYPES = {
+  grass:   { name: '草方块',   top: '#6b9c3e', side: '#7a5a3a', bottom: '#8b6b45', solid: true,  tool: 'shovel',   hardness: 0.6 },
+  dirt:    { name: '泥土',     top: '#8b6b45', side: '#7a5a3a', bottom: '#6b4e30', solid: true,  tool: 'shovel',   hardness: 0.5 },
+  stone:   { name: '石头',     top: '#888888', side: '#7c7c7c', bottom: '#6e6e6e', solid: true,  tool: 'pickaxe',  hardness: 1.5 },
+  wood:    { name: '木头',     top: '#b8945f', side: '#6e4f2a', bottom: '#b8945f', solid: true,  tool: 'axe',      hardness: 1.0 },
+  leaves:  { name: '树叶',     top: '#3f7a2e', side: '#356827', bottom: '#2c5520', solid: true,  tool: 'axe',      hardness: 0.3 },
+  sand:    { name: '沙子',     top: '#e6d59a', side: '#d8c68a', bottom: '#c4b276', solid: true,  tool: 'shovel',   hardness: 0.5 },
+  planks:  { name: '木板',     top: '#b08243', side: '#a0763a', bottom: '#8a6430', solid: true,  tool: 'axe',      hardness: 1.0 },
+  brick:   { name: '砖块',     top: '#a44a32', side: '#923f2a', bottom: '#7e3523', solid: true,  tool: 'pickaxe',  hardness: 2.0 },
+  water:   { name: '水',       top: '#2a8fd6', side: '#2480c0', bottom: '#1f72b0', solid: false, tool: 'any',      hardness: 100, liquid: true },
+  snow:    { name: '雪',       top: '#f4f8ff', side: '#e4ecf4', bottom: '#d4dce8', solid: true,  tool: 'shovel',   hardness: 0.3 },
+  gravel:  { name: '沙砾',     top: '#8a8278', side: '#7a7268', bottom: '#6a6258', solid: true,  tool: 'shovel',   hardness: 0.6 },
+  // 纯色装饰方块(羊毛):接近零噪点,扁平纯色,适合像素艺术
+  wool_red:    { name: '红色羊毛', top: '#c0392b', side: '#c0392b', bottom: '#c0392b', solid: true, tool: 'any', hardness: 0.8 },
+  wool_yellow: { name: '黄色羊毛', top: '#f1c40f', side: '#f1c40f', bottom: '#f1c40f', solid: true, tool: 'any', hardness: 0.8 },
+  wool_white:  { name: '白色羊毛', top: '#ecf0f1', side: '#ecf0f1', bottom: '#ecf0f1', solid: true, tool: 'any', hardness: 0.8 },
+  wool_black:  { name: '黑色羊毛', top: '#2c3e50', side: '#2c3e50', bottom: '#2c3e50', solid: true, tool: 'any', hardness: 0.8 },
+  door:        { name: '木门',     top: '#8a6334', side: '#a0763a', bottom: '#8a6334', solid: true, tool: 'axe',      hardness: 1.0 },
+  door_iron:   { name: '铁门',     top: '#888888', side: '#a0a0a0', bottom: '#707070', solid: true, tool: 'pickaxe', hardness: 3.0 },
+  door_stone:  { name: '石门',     top: '#777777', side: '#888888', bottom: '#666666', solid: true, tool: 'pickaxe', hardness: 2.5 },
+  door_gold:   { name: '金门',     top: '#c8a030', side: '#ffd54a', bottom: '#b89020', solid: true, tool: 'pickaxe', hardness: 2.0 },
+  door_diamond:{ name: '钻石门',   top: '#3aa8b8', side: '#5fe3e8', bottom: '#2a8898', solid: true, tool: 'pickaxe', hardness: 4.0 },
+  crafting_table: { name: '合成台', top: '#a0763a', side: '#8a6430', bottom: '#b08243', solid: true, tool: 'axe', hardness: 1.2 },
+  // 经典采矿循环方块:圆石 + 三种矿石
+  cobblestone: { name: '圆石',   top: '#828282', side: '#7a7a7a', bottom: '#6f6f6f', solid: true, tool: 'pickaxe', hardness: 2.0 },
+  coal_ore:     { name: '煤矿',   top: '#888888', side: '#7c7c7c', bottom: '#6e6e6e', solid: true, tool: 'pickaxe', hardness: 3.0 },
+  iron_ore:     { name: '铁矿',   top: '#888888', side: '#7c7c7c', bottom: '#6e6e6e', solid: true, tool: 'pickaxe', hardness: 3.0 },
+  diamond_ore:  { name: '钻石矿', top: '#888888', side: '#7c7c7c', bottom: '#6e6e6e', solid: true, tool: 'pickaxe', hardness: 3.0 },
+  tnt:          { name: 'TNT',     top: '#b03a2e', side: '#a83226', bottom: '#8a2820', solid: true, tool: 'any', hardness: 0.5 },
+  furnace:      { name: '熔炉',   top: '#888888', side: '#7c7c7c', bottom: '#6e6e6e', solid: true, tool: 'pickaxe', hardness: 3.5 },
+  glass:        { name: '玻璃',   top: '#c8e6f0', side: '#c8e6f0', bottom: '#c8e6f0', solid: true, tool: 'any', hardness: 0.4 },
+  bed:          { name: '床',     top: '#c0392b', side: '#8a2820', bottom: '#6e4f2a', solid: true, tool: 'axe', hardness: 0.3 },
+  chest:        { name: '箱子',   top: '#a0763a', side: '#96682e', bottom: '#8a5f28', solid: true, tool: 'axe', hardness: 1.8 },
+  ladder:       { name: '梯子',   top: '#9a6b3f', side: '#9a6b3f', bottom: '#9a6b3f', solid: false, tool: 'axe', hardness: 0.5 },
+  torch:        { name: '火把',   top: '#ffd86b', side: '#ffd86b', bottom: '#8a6430', solid: false, tool: 'any', hardness: 0.05, light: 14 },
+  rail:         { name: '铁轨',   top: '#b8b8c0', side: '#b8b8c0', bottom: '#b8b8c0', solid: false, tool: 'pickaxe', hardness: 0.5 },
+  enchanting_table: { name: '附魔台', top: '#2a1a3a', side: '#1a1024', bottom: '#1a1024', solid: true, tool: 'pickaxe', hardness: 3 },
+  bookshelf:    { name: '书架',   top: '#a0763a', side: '#96682e', bottom: '#8a5f28', solid: true, tool: 'axe', hardness: 1.5 },
+  slime:        { name: '黏液块', top: '#6fc05a', side: '#5eae4c', bottom: '#4f9c40', solid: true, tool: 'any', hardness: 0.4 },
+  spawner:      { name: '刷怪笼', top: '#2a2a33', side: '#232330', bottom: '#2a2a33', solid: true, tool: 'pickaxe', hardness: 5 },
+  redstone:     { name: '红石线', top: '#c03028', side: '#a02820', bottom: '#a02820', solid: false, tool: 'any', hardness: 0.05 },
+  redstone_torch:{ name: '红石火把', top: '#ff5040', side: '#ff5040', bottom: '#8a6430', solid: false, tool: 'any', hardness: 0.05 },
+  lever_off:    { name: '拉杆(关)', top: '#8a8a92', side: '#7a7a82', bottom: '#6a6a72', solid: false, tool: 'any', hardness: 0.5 },
+  lever_on:     { name: '拉杆(开)', top: '#e08030', side: '#d07028', bottom: '#6a6a72', solid: false, tool: 'any', hardness: 0.5 },
+  redstone_ore: { name: '红石矿', top: '#888888', side: '#7c7c7c', bottom: '#6e6e6e', solid: true, tool: 'pickaxe', hardness: 3.0 },
+  iron_block:  { name: '铁块',   top: '#d8d8e0', side: '#c8c8d2', bottom: '#b8b8c4', solid: true, tool: 'pickaxe', hardness: 5.0 },
+  sugarcane:   { name: '甘蔗',   top: '#7ec850', side: '#6ab840', bottom: '#5aa838', solid: false, tool: 'any', hardness: 0.05 },
+  cake:        { name: '蛋糕',   top: '#f8f0e8', side: '#f0e0d0', bottom: '#d8b890', solid: true, tool: 'any', hardness: 0.5 },
+  slab_planks: { name: '木台阶', top: '#b08243', side: '#a0763a', bottom: '#8a6430', solid: true, tool: 'axe', hardness: 1.0, slab: true },
+  slab_cobble: { name: '石台阶', top: '#828282', side: '#7a7a7a', bottom: '#6f6f6f', solid: true, tool: 'pickaxe', hardness: 2.0, slab: true },
+  stairs_planks:{ name: '木楼梯', top: '#b08243', side: '#a0763a', bottom: '#8a6430', solid: true, tool: 'axe', hardness: 1.0, stair: true },
+  stairs_cobble:{ name: '石楼梯', top: '#828282', side: '#7a7a7a', bottom: '#6f6f6f', solid: true, tool: 'pickaxe', hardness: 2.0, stair: true },
+  fence:       { name: '栅栏',   top: '#a0763a', side: '#96702f', bottom: '#8a6430', solid: true, tool: 'axe', hardness: 1.5, fence: true },
+  repeater_off:{ name: '中继器(关)', top: '#a8a8a0', side: '#98988f', bottom: '#88887f', solid: false, tool: 'any', hardness: 0.5 },
+  repeater_on: { name: '中继器(开)', top: '#e05040', side: '#c04030', bottom: '#88887f', solid: false, tool: 'any', hardness: 0.5 },
+  piston:      { name: '活塞',   top: '#b08243', side: '#96702f', bottom: '#8a6430', solid: true, tool: 'any', hardness: 1.5 },
+  piston_ext:  { name: '活塞(伸出)', top: '#c8c8d2', side: '#a0763a', bottom: '#8a6430', solid: true, tool: 'any', hardness: 1.5 },
+};
+const HOTBAR_ORDER = ['grass', 'dirt', 'stone', 'wood', 'leaves', 'sand', 'planks', 'brick'];
+
+// 方块数字 id(用于紧凑的 Uint8Array 区块存储)
+const BLOCK_ID = { air: 0, grass: 1, dirt: 2, stone: 3, wood: 4, leaves: 5, sand: 6, planks: 7, brick: 8, water: 9, snow: 10, gravel: 11, wool_red: 12, wool_yellow: 13, wool_white: 14, wool_black: 15, door: 16, door_iron: 17, door_stone: 18, door_gold: 19, door_diamond: 20, crafting_table: 21, cobblestone: 22, coal_ore: 23, iron_ore: 24, diamond_ore: 25, tnt: 26, furnace: 27, glass: 28, bed: 29, chest: 30, ladder: 31, bookshelf: 32, torch: 33, rail: 34, enchanting_table: 35, slime: 36, spawner: 37, redstone: 38, redstone_torch: 39, lever_off: 40, lever_on: 41, redstone_ore: 42, iron_block: 43, sugarcane: 44, cake: 45, slab_planks: 46, slab_cobble: 47, stairs_planks: 48, stairs_cobble: 49, fence: 50, repeater_off: 51, repeater_on: 52, piston: 53, piston_ext: 54 };
+const ID_TO_BLOCK = Object.keys(BLOCK_ID);
+
+// ============================================================
+// 第二部分:工具与物品定义(保持不变)
+// ============================================================
+const TOOL_TYPES = {
+  pickaxe_wood: { name: '木镐',   tool: 'pickaxe', durability: 60,  speed: 1.5, tier: 'wood' },
+  pickaxe_stone:{ name: '石镐',   tool: 'pickaxe', durability: 132, speed: 2.5, tier: 'stone' },
+  pickaxe_iron: { name: '铁镐',   tool: 'pickaxe', durability: 251, speed: 4.0, tier: 'iron' },
+  pickaxe_gold: { name: '金镐',   tool: 'pickaxe', durability: 33,  speed: 6.0, tier: 'gold' },
+  pickaxe_diamond:{ name: '钻石镐', tool: 'pickaxe', durability: 1562, speed: 8.0, tier: 'diamond' },
+  axe_wood:     { name: '木斧',   tool: 'axe',     durability: 60,  speed: 1.5, tier: 'wood' },
+  axe_stone:    { name: '石斧',   tool: 'axe',     durability: 132, speed: 2.5, tier: 'stone' },
+  axe_iron:     { name: '铁斧',   tool: 'axe',     durability: 251, speed: 4.0, tier: 'iron' },
+  axe_gold:     { name: '金斧',   tool: 'axe',     durability: 33,  speed: 6.0, tier: 'gold' },
+  axe_diamond:  { name: '钻石斧', tool: 'axe',     durability: 1562, speed: 8.0, tier: 'diamond' },
+  shovel_wood:  { name: '木铲',   tool: 'shovel',  durability: 60,  speed: 1.5, tier: 'wood' },
+  shovel_stone: { name: '石铲',   tool: 'shovel',  durability: 132, speed: 2.5, tier: 'stone' },
+  shovel_iron:  { name: '铁铲',   tool: 'shovel',  durability: 251, speed: 4.0, tier: 'iron' },
+  shovel_gold:  { name: '金铲',   tool: 'shovel',  durability: 33,  speed: 6.0, tier: 'gold' },
+  shovel_diamond:{ name: '钻石铲', tool: 'shovel', durability: 1562, speed: 8.0, tier: 'diamond' },
+  sword_wood:   { name: '木剑',   tool: 'sword',   durability: 60,  damage: 3,  tier: 'wood' },
+  sword_stone:  { name: '石剑',   tool: 'sword',   durability: 132, damage: 4,  tier: 'stone' },
+  sword_iron:   { name: '铁剑',   tool: 'sword',   durability: 251, damage: 6,  tier: 'iron' },
+  sword_gold:   { name: '金剑',   tool: 'sword',   durability: 33,  damage: 4,  tier: 'gold' },
+  sword_diamond:{ name: '钻石剑', tool: 'sword',   durability: 1562, damage: 8, tier: 'diamond' },
+  shield_wood:  { name: '木盾',   tool: 'shield',  durability: 80,  tier: 'wood' },
+  shield_iron:  { name: '铁盾',   tool: 'shield',  durability: 400, tier: 'iron' },
+  shield_diamond:{ name: '钻石盾', tool: 'shield', durability: 800, tier: 'diamond' },
+  // ---- 护甲(4 部位 × 4 材质;armor=护甲点数,每点 4% 减伤,经典数值) ----
+  helmet_leather:      { name: '皮革帽子',  tool: 'armor', slot: 'head',  armor: 1, durability: 55,  tier: 'leather' },
+  chestplate_leather:  { name: '皮革上衣',  tool: 'armor', slot: 'chest', armor: 3, durability: 80,  tier: 'leather' },
+  leggings_leather:    { name: '皮革裤子',  tool: 'armor', slot: 'legs',  armor: 2, durability: 75,  tier: 'leather' },
+  boots_leather:       { name: '皮革鞋子',  tool: 'armor', slot: 'feet',  armor: 1, durability: 65,  tier: 'leather' },
+  helmet_iron:         { name: '铁头盔',    tool: 'armor', slot: 'head',  armor: 2, durability: 165, tier: 'iron' },
+  chestplate_iron:     { name: '铁胸甲',    tool: 'armor', slot: 'chest', armor: 6, durability: 240, tier: 'iron' },
+  leggings_iron:       { name: '铁护腿',    tool: 'armor', slot: 'legs',  armor: 5, durability: 225, tier: 'iron' },
+  boots_iron:          { name: '铁靴子',    tool: 'armor', slot: 'feet',  armor: 2, durability: 195, tier: 'iron' },
+  helmet_gold:         { name: '金头盔',    tool: 'armor', slot: 'head',  armor: 2, durability: 77,  tier: 'gold' },
+  chestplate_gold:     { name: '金胸甲',    tool: 'armor', slot: 'chest', armor: 5, durability: 112, tier: 'gold' },
+  leggings_gold:       { name: '金护腿',    tool: 'armor', slot: 'legs',  armor: 3, durability: 105, tier: 'gold' },
+  boots_gold:          { name: '金靴子',    tool: 'armor', slot: 'feet',  armor: 1, durability: 91,  tier: 'gold' },
+  helmet_diamond:      { name: '钻石头盔',  tool: 'armor', slot: 'head',  armor: 3, durability: 363, tier: 'diamond' },
+  chestplate_diamond:  { name: '钻石胸甲',  tool: 'armor', slot: 'chest', armor: 8, durability: 528, tier: 'diamond' },
+  leggings_diamond:    { name: '钻石护腿',  tool: 'armor', slot: 'legs',  armor: 6, durability: 495, tier: 'diamond' },
+  boots_diamond:       { name: '钻石靴子',  tool: 'armor', slot: 'feet',  armor: 3, durability: 461, tier: 'diamond' },
+  bow:          { name: '弓',     tool: 'bow',     durability: 384, tier: 'wood' },
+  fishing_rod:  { name: '钓鱼竿', tool: 'rod',     durability: 64,  tier: 'wood' },
+  shears:       { name: '剪刀',   tool: 'shears',  durability: 238, tier: 'iron' },
+};
+const TOOL_ORDER = [
+  'sword_diamond','sword_gold','sword_iron','sword_stone','sword_wood',
+  'pickaxe_diamond','pickaxe_gold','pickaxe_iron','pickaxe_stone','pickaxe_wood',
+  'axe_diamond','axe_gold','axe_iron','axe_stone','axe_wood',
+  'shovel_diamond','shovel_gold','shovel_iron','shovel_stone','shovel_wood',
+  'bow',
+  'fishing_rod',
+  'shears',
+  'shield_diamond','shield_iron','shield_wood',
+  'chestplate_diamond','leggings_diamond','helmet_diamond','boots_diamond',
+  'chestplate_iron','leggings_iron','helmet_iron','boots_iron',
+  'chestplate_gold','leggings_gold','helmet_gold','boots_gold',
+  'chestplate_leather','leggings_leather','helmet_leather','boots_leather',
+];
+const ITEM_TYPES = {
+  gem_diamond: { name: '钻石',   color: '#5fe3e8', shape: 'gem' },
+  gem_gold:    { name: '金锭',   color: '#ffd54a', shape: 'ingot' },
+  gem_emerald: { name: '绿宝石', color: '#3fd17a', shape: 'gem' },
+  arrow:       { name: '箭',     color: '#caa472', shape: 'arrow' },
+  porkchop:    { name: '猪排',   color: '#e8938a', shape: 'meat' },
+  apple:       { name: '苹果',   color: '#d63a2f', shape: 'apple' },
+  stick:       { name: '木棍',   color: '#9a6b3f', shape: 'stick' },
+  coal:        { name: '煤炭',   color: '#262626', shape: 'gem' },
+  iron_ingot:  { name: '铁锭',   color: '#d8d8e0', shape: 'ingot' },
+  cooked_porkchop: { name: '熟猪排', color: '#b56b46', shape: 'meat' },
+  beef:        { name: '生牛肉', color: '#c04040', shape: 'meat' },
+  steak:       { name: '牛排',   color: '#8a4a2e', shape: 'meat' },
+  mutton:      { name: '羊肉',   color: '#d07868', shape: 'meat' },
+  leather:     { name: '皮革',   color: '#a8784a', shape: 'ingot' },
+  book:        { name: '书',     color: '#b03030', shape: 'book' },
+  minecart:    { name: '矿车',   color: '#b8b8c0', shape: 'cart' },
+  string:      { name: '蛛丝',   color: '#e8e8e8', shape: 'stick' },
+  ender_pearl: { name: '末影珍珠', color: '#b06ee0', shape: 'gem' },
+  wheat:       { name: '小麦',   color: '#d8c86a', shape: 'stick' },
+  bread:       { name: '面包',   color: '#c89858', shape: 'meat' },
+  raw_fish:    { name: '生鱼',   color: '#9ab8c8', shape: 'meat' },
+  cooked_fish: { name: '烤鱼',   color: '#c8a06a', shape: 'meat' },
+  slime_ball:  { name: '黏液球', color: '#7ec850', shape: 'gem' },
+  bucket:      { name: '铁桶',   color: '#c8c8d0', shape: 'bucket' },
+  water_bucket:{ name: '水桶',   color: '#2a8fd6', shape: 'bucket' },
+  redstone_dust:{ name: '红石粉', color: '#c03028', shape: 'gem' },
+  sugar:       { name: '糖',     color: '#f0f0f0', shape: 'gem' },
+  egg:         { name: '蛋',     color: '#f0e8d0', shape: 'gem' },
+  raw_chicken: { name: '生鸡肉', color: '#e8c8b0', shape: 'meat' },
+  cooked_chicken:{ name: '烤鸡肉', color: '#c89058', shape: 'meat' },
+  feather:     { name: '羽毛',   color: '#f4f4f4', shape: 'stick' },
+};
+const ITEM_ORDER = ['gem_diamond','gem_gold','gem_emerald','arrow','porkchop','cooked_porkchop','beef','steak','mutton','apple','stick','coal','iron_ingot','leather','book','minecart','string','ender_pearl','wheat','bread','raw_fish','cooked_fish','slime_ball','bucket','water_bucket','redstone_dust','sugar','egg','raw_chicken','cooked_chicken','feather'];
+// 食物表与堆叠上限来自纯函数模块 inventory.js(INVLIB)
+const FOODS = INVLIB.FOODS;
+

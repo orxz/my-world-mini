@@ -4,16 +4,20 @@
 // 否则 worldgen.js(UMD,Node 端用 require/module.exports)会被当成 ESM 导致测试失败。
 //
 // 说明:
-// - game.js / worldgen.js 由 index.html 以经典 <script src> 直引(非 ES module),
-//   故 sourceType 设为 "script",顶层声明视为全局(可被 HTML onclick 等外部调用)。
-// - game.js 调用 worldgen.js 暴露的全局函数(hash2/fbm2D/biomeAt/heightAt 等),
-//   需在 globals 显式声明(它们由另一个 <script> 提供,ESLint 无法跨文件推断)。
+// - 游戏脚本由 index.html 以经典 <script src> 直引(非 ES module),按加载顺序共享全局
+//   词法环境。game.js 家族 17 个分片(game-defs/atlas/.../save + game.js 启动入口)是
+//   原 9000 行单文件按行序的字节等价切分(R54),顺序不得调换。
+// - 各分片调用其他分片/worldgen.js 暴露的全局符号,ESLint 无法跨文件推断:
+//   worldgen/craft 侧用下方手工清单;game 家族分片在配置期自动读取各分片顶层声明
+//   (function/async function/const/let/var/class 及顶层解构)互评 readonly globals,
+//   并为"定义于本文件、被其他分片引用"的符号生成 varsIgnorePattern,免手工维护。
 // - worldgen.js 是 UMD(浏览器挂全局 + Node module.exports),故同时给 browser + node 全局。
 // - test/ 为 Node 脚本,给 node 全局。
 // - three.min.js 为第三方压缩库,必须忽略。
 
 import js from '@eslint/js';
 import globals from 'globals';
+import fs from 'node:fs';
 
 // worldgen.js 在浏览器以 <script> 加载后挂到全局的函数/常量(game.js 直接调用)
 const WORLDGEN_GLOBALS = {
@@ -39,6 +43,67 @@ const CRAFTLIB_GLOBALS = {
   INVLIB: 'readonly',
   MACHINES: 'readonly',
 };
+
+// —— game.js 家族分片的跨文件符号自动推导 ——
+// 按index.html 加载顺序排列(顺序本身无 eslint 语义,仅为可读与对照)。
+const GAME_FILES = [
+  'game.js', 'game-defs.js', 'game-atlas.js', 'game-chunks.js', 'game-scene.js',
+  'game-init.js', 'game-ui.js', 'game-interact.js', 'game-redstone.js',
+  'game-entities.js', 'game-systems.js', 'game-block-entities.js',
+  'game-physics.js', 'game-render.js', 'game-panels.js', 'game-audio.js', 'game-save.js',
+];
+
+const GAME_TEXT = Object.fromEntries(GAME_FILES.map((f) => [f, fs.readFileSync(f, 'utf8')]));
+
+// 按顶层逗号切分声明列表(忽略 ()[]{} 与引号内的逗号;// 注释直接截断)
+const splitTopLevel = (s) => {
+  const parts = []; let depth = 0, cur = '', q = null;
+  for (const ch of s) {
+    if (q) { cur += ch; if (ch === q) q = null; continue; }
+    if (ch === '"' || ch === "'" || ch === '`') { q = ch; cur += ch; continue; }
+    if (!cur.trim() && ch === '/') { break; }              // 行内 // 注释开头
+    if ('([{'.includes(ch)) depth++;
+    if (')]}'.includes(ch)) depth--;
+    if (ch === ',' && depth === 0) { parts.push(cur); cur = ''; continue; }
+    cur += ch;
+  }
+  parts.push(cur);
+  return parts;
+};
+
+// 提取一个分片顶层声明的 [名字, 可变性]:
+// function/async function/class 直取名;const/let/var 按顶层逗号拆多声明,
+// 每段取首标识符(含 {a, b} / [x, y] 解构形态,剥 :默认值/=初始化器)。
+// let/var 声明是跨分片可变共享状态(globals 标 writable),const/function 标 readonly。
+const topLevelNames = (f) => GAME_TEXT[f].split('\n').flatMap((line) => {
+  let m = line.match(/^(?:async\s+)?(function|class)\s+([A-Za-z_$][\w$]*)/);
+  if (m) return [[m[2], false]];
+  m = line.match(/^(const|let|var)\s+(.+?);?\s*$/);
+  if (!m) return [];
+  const mut = m[1] !== 'const';
+  return splitTopLevel(m[2]).map((seg) => {
+    const id = seg.trim().match(/^(?:\{([^}]*)\}|\[([^\]]*)\]|([A-Za-z_$][\w$]*))/);
+    if (!id) return [];
+    if (id[3]) return [[id[3], mut]];
+    const inner = id[1] || id[2] || '';
+    return inner.split(',').map((s) => s.trim().split(/[:=]/)[0].trim()).filter((n) => /^[A-Za-z_$][\w$]*$/.test(n)).map((n) => [n, mut]);
+  }).flat();
+});
+
+// 每个分片:其他分片定义的符号 → globals(let/var=writable 可变共享,const/function=readonly)
+const gameSiblingGlobals = GAME_FILES.map((f, i) => {
+  const set = {};
+  GAME_FILES.forEach((g, j) => { if (i !== j) topLevelNames(g).forEach(([n, mut]) => { if (!set[n]) set[n] = mut ? 'writable' : 'readonly'; }); });
+  return set;
+});
+
+// 每个分片:定义于本文件、且被任一其他分片文本引用的符号 → varsIgnorePattern
+// (这些符号是跨文件"导出",no-unused-vars 在本文件内看不到引用,会误报 unused)
+const gameExportedPattern = GAME_FILES.map((f, i) => {
+  const others = GAME_FILES.filter((_, j) => j !== i).map((g) => GAME_TEXT[g]).join('\n');
+  const names = topLevelNames(f).map(([n]) => n).filter((n) => new RegExp(`\\b${n.replace(/\$/g, '\\$')}\\b`).test(others));
+  return names.length ? `^(?:${names.map((n) => n.replace(/\$/g, '\\$')).join('|')})$` : '(?!)';
+});
 
 export default [
   // —— 全局忽略 ——
@@ -76,9 +141,9 @@ export default [
   // —— 基础规则集 ——
   js.configs.recommended,
 
-  // —— 浏览器脚本:game.js(经典 script,调用 worldgen.js 的全局函数)——
-  {
-    files: ['game.js'],
+  // —— 浏览器脚本:game.js 家族 17 个分片(经典 script,共享全局词法环境)——
+  ...GAME_FILES.map((f, i) => ({
+    files: [f],
     languageOptions: {
       ecmaVersion: 2021,
       sourceType: 'script',
@@ -86,19 +151,20 @@ export default [
         ...globals.browser,
         ...WORLDGEN_GLOBALS,
         ...CRAFTLIB_GLOBALS,
+        ...gameSiblingGlobals[i],
       },
     },
     rules: {
-      // 故意留空的 catch 块(吞掉可忽略的错误)是本项目的既有写法
+      // catch 块自 R54 起统一带 console.debug 日志;允许空块仅作兜底
       'no-empty': ['error', { allowEmptyCatch: true }],
-      // 经典 script 顶层声明可被 HTML/其他脚本引用;catch 的 e 普遍未用
+      // 经典 script 顶层声明可被 HTML/其他分片引用;catch 的 e 普遍未用
       'no-unused-vars': ['warn', {
         argsIgnorePattern: '^_',
-        varsIgnorePattern: '^_',
+        varsIgnorePattern: gameExportedPattern[i],
         caughtErrors: 'none',
       }],
     },
-  },
+  })),
 
   // —— UMD 模块:worldgen.js(浏览器挂全局 + Node module.exports)——
   {

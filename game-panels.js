@@ -53,10 +53,12 @@ function toggleInventory(open) {
   if (open) {
     buildInventoryPanel();
     panel.classList.remove('hidden');
+    if (typeof syncPanelDim === 'function') syncPanelDim();
     if (document.pointerLockElement) document.exitPointerLock();
   } else {
     panel.classList.add('hidden');
     clearCraftGrid();
+    if (typeof syncPanelDim === 'function') syncPanelDim();
     tryRelockPointer();   // 交互:关背包无缝回到游戏
   }
 }
@@ -66,7 +68,11 @@ function buildInventoryPanel() {
   const grid = panel.querySelector('.inv-grid');
   grid.innerHTML = '';
   const hint = panel.querySelector('.inv-hint');
-  hint.textContent = `点击物品放入快捷栏第 ${currentSlot + 1} 格;合成格点击切换方块,再次点击清空`;
+  hint.textContent = gameMode === 'creative'
+    ? `创造模式:点击物品放入快捷栏第 ${currentSlot + 1} 格;右键放入合成格`
+    : `生存模式:图鉴仅供查看,物品靠采集/合成获得;右键放入合成格,点「📖 配方书」查配方`;
+  const titleEl = document.getElementById('inv-title');
+  if (titleEl) titleEl.textContent = '背包 · ' + (gameMode === 'creative' ? '创造' : '生存');
 
   // 绑定合成按钮(每次打开背包都重新绑定,避免重复绑定/失效)
   const craftBtn = document.getElementById('craft-btn');
@@ -98,9 +104,18 @@ function buildInventoryPanel() {
     cell.appendChild(cv);
     const label = document.createElement('span');
     label.className = 'inv-label';
-    label.textContent = itemName(item);
+    const known = gameMode === 'creative' || discovered.has(item.id);
+    label.textContent = known ? itemName(item) : '???';
+    cell.dataset.search = (itemName(item) + ' ' + item.id).toLowerCase();
     cell.appendChild(label);
+    cell.addEventListener('mouseenter', () => showItemTooltip(item, cell));
+    cell.addEventListener('mouseleave', hideItemTooltip);
     cell.addEventListener('click', () => {
+      if (gameMode !== 'creative') {
+        showToast(known ? '生存模式:通过采集/合成获得 ' + itemName(item) : '尚未发现:先采集或合成一次');
+        showItemTooltip(item, cell);
+        return;
+      }
       let copy;
       if (item.kind === 'tool') {
         copy = { kind: 'tool', id: item.id, durability: TOOL_TYPES[item.id].durability };
@@ -154,9 +169,34 @@ function buildInventoryPanel() {
   addSection(grid, '方块');
   HOTBAR_ORDER.forEach(id => addCell({ kind: 'block', id }));
   // 新增方块也可取用
-  ['water', 'snow', 'gravel', 'door', 'door_iron', 'door_stone', 'door_gold', 'door_diamond', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'bed', 'chest', 'ladder', 'bookshelf', 'torch', 'rail', 'enchanting_table', 'slime'].forEach(id => addCell({ kind: 'block', id }));
+  ['water', 'snow', 'gravel', 'door', 'door_iron', 'door_stone', 'door_gold', 'door_diamond', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'gold_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'bed', 'chest', 'ladder', 'bookshelf', 'torch', 'rail', 'enchanting_table', 'slime', 'iron_bars', 'beacon'].forEach(id => addCell({ kind: 'block', id }));
   addSection(grid, '材料 · 宝石');
   ITEM_ORDER.forEach(id => addCell({ kind: 'item', id, count: 64 }));
+
+  // R55 UX:物品搜索(按名称/id 过滤,隐藏空分组标题与护甲槽)
+  const search = document.getElementById('inv-search');
+  if (search) {
+    search.value = '';
+    const applyFilter = () => {
+      const q = (search.value || '').trim().toLowerCase();
+      let visible = 0;
+      grid.querySelectorAll('.inv-cell').forEach(cell => {
+        if (!cell.dataset.search) { cell.style.display = q ? 'none' : ''; return; }
+        const hit = !q || cell.dataset.search.indexOf(q) >= 0;
+        cell.style.display = hit ? '' : 'none';
+        if (hit) visible++;
+      });
+      armorRow.style.display = q ? 'none' : 'flex';
+      grid.querySelectorAll('.inv-section-title').forEach(h => { h.style.display = q ? 'none' : ''; });
+      const empty = document.getElementById('inv-empty');
+      if (empty) empty.classList.toggle('hidden', !q || visible > 0);
+    };
+    search.oninput = applyFilter;
+    search.onkeydown = (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); toggleInventory(false); }
+    };
+    applyFilter();
+  }
 }
 
 function addSection(grid, title) {
@@ -222,9 +262,23 @@ function refreshCraftResult() {
   }
 }
 
+// R55:生存模式合成消耗真实材料(快捷栏);创造模式不受限
+function consumeCraftMaterials(r) {
+  if (gameMode !== 'survival') return true;
+  const need = CRAFTLIB.recipeMaterials(r);
+  const counts = INVLIB.hotbarCounts(hotbar);
+  const miss = [];
+  for (const id in need) if ((counts[id] || 0) < need[id]) miss.push(itemDisplayName(id) + '×' + (need[id] - (counts[id] || 0)));
+  if (miss.length) { showToast('材料不足:' + miss.join('、')); return false; }
+  for (const id in need) INVLIB.consumeFromHotbar(hotbar, id, need[id]);
+  buildHotbar(); selectSlot(currentSlot); markDirtySave();   // selectSlot 同时刷新 selectedType,防材料耗尽后还能放旧方块
+  return true;
+}
+
 function performCraft() {
   const r = matchRecipe();
   if (!r) return;
+  if (!consumeCraftMaterials(r)) return;
   craftGiveResult(r);
   // 生存模式:消耗合成格内物品(每格 1 个)
   for (let i = 0; i < 4; i++) {
@@ -242,12 +296,14 @@ function craftGiveResult(r) {
   const res = { ...r.result };
   if (res.kind === 'tool' && !res.durability) res.durability = TOOL_TYPES[res.id].durability;
   if (!res.count) res.count = r.count || 1;
+  discovered.add(res.id);   // R55:合成解锁图鉴
   // R44 可玩性修复:结果并入快捷栏(同 id 叠加/入空格),不再盲覆写当前格 ——
   // 此前连续合成会销毁当前格残留物品(合成木板后,剩余木板被木棍结果覆盖丢失);
   // 满栏时余量掉在脚下(经典行为,不再静默消失)
   const got = pickupIntoInventory(res.kind, res.id, res.count, res.durability);
-  if (got < res.count) spawnDroppedItem(playerPos.x - 0.5, playerPos.y - 0.2, playerPos.z - 0.5, res.id, res.count - got, res.kind, res.durability);
-  showToast('合成:' + r.name + ' ×' + res.count);
+  const overflow = got < res.count;
+  if (overflow) spawnDroppedItem(playerPos.x - 0.5, playerPos.y - 0.2, playerPos.z - 0.5, res.id, res.count - got, res.kind, res.durability);
+  showToast('合成:' + r.name + ' ×' + res.count + (overflow ? ' · 快捷栏已满,余量掉在脚下' : ''));
   audio.play('place');
   const ca = CRAFT_ACHV[res.id];   // 成就:合成里程碑(R34,2×2 与合成台共用此路径)
   if (ca) unlockAchv(ca);
@@ -279,7 +335,7 @@ function openTablePanel() {
   if (closeBtn) closeBtn.onclick = closeTablePanel;
   // 目录循环列表:方块 + 材料物品(矿石/圆石/木棍等,按 kind 区分图标)
   const catalog = HOTBAR_ORDER.map(id => ({ kind: 'block', id }))
-    .concat(['water', 'snow', 'gravel', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'sand', 'bed', 'chest', 'ladder', 'bookshelf', 'wool_red', 'wool_white', 'torch', 'rail', 'enchanting_table', 'slime', 'redstone', 'redstone_torch', 'lever_off', 'iron_block', 'sugarcane', 'cake', 'slab_planks', 'slab_cobble', 'stairs_planks', 'stairs_cobble', 'fence', 'repeater_off', 'piston'].map(id => ({ kind: 'block', id })))
+    .concat(['water', 'snow', 'gravel', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'gold_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'sand', 'bed', 'chest', 'ladder', 'bookshelf', 'wool_red', 'wool_white', 'torch', 'rail', 'enchanting_table', 'slime', 'redstone', 'redstone_torch', 'lever_off', 'iron_block', 'sugarcane', 'cake', 'slab_planks', 'slab_cobble', 'stairs_planks', 'stairs_cobble', 'fence', 'repeater_off', 'piston', 'iron_bars', 'beacon'].map(id => ({ kind: 'block', id })))
     .concat(['leather', 'book'].map(id => ({ kind: 'item', id })))
     .concat(['gem_gold', 'gem_diamond', 'gem_emerald', 'arrow', 'stick', 'coal', 'iron_ingot'].map(id => ({ kind: 'item', id })));
   document.querySelectorAll('#table-grid .inv-cell').forEach((cell, i) => {
@@ -350,6 +406,7 @@ function refreshTableResult() {
 function performTableCraft() {
   const r = matchRecipeGrid(tableGrid, 3, CRAFTLIB.RECIPES);
   if (!r) return;
+  if (!consumeCraftMaterials(r)) return;
   craftGiveResult(r);
   // 消耗合成格内物品(每格 1 个)
   for (let i = 0; i < 9; i++) {

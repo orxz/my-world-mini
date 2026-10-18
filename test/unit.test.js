@@ -12,13 +12,17 @@ const assert = require('assert');
 const { hash2, hash3, valueNoise2D, valueNoise3D, fbm2D, BIOMES, biomeAt, heightAt, caveAt, villageInCell, hutBlockAt, dungeonInCell, dungeonBlockAt } = require('../worldgen.js');
 
 // ---- 从 craft.js 模块加载(合成/破坏计算的单一数据源) ----
-const { RECIPES, matchRecipe, matchRecipeGrid, breakCost } = require('../craft.js');
+const { RECIPES, matchRecipe, matchRecipeGrid, breakCost, canHarvest, recipeCategory, recipeMaterials, recipeMissing, recipeFits, filterRecipes } = require('../craft.js');
+
+// ---- 从 balance.js 加载(R55:数值单一来源) ----
+const BALANCE_LIB = require('../balance.js');
+const { BALANCE } = BALANCE_LIB;
 
 // ---- 从 machines.js 模块加载(状态机纯函数:教程/熔炉/天气/存档 schema,R25) ----
-const { TUTORIAL_STEPS, advanceTutorial, SMELT, furnaceCanSmelt, furnaceTick, weatherNext, cartNextDir, xpToNext, xpGain, rollEnchants, ACHIEVEMENTS, ACHV_BY_ID, awardAchievement, redstonePower, SAVE_SCHEMA_FIELDS, validateSaveRecord } = require('../machines.js');
+const { TUTORIAL_STEPS, advanceTutorial, SMELT, furnaceCanSmelt, furnaceTick, weatherNext, cartNextDir, xpToNext, xpGain, rollEnchants, ACHIEVEMENTS, ACHV_BY_ID, awardAchievement, GOALS, GOAL_TOTAL, goalState, goalDoneCount, redstonePower, SAVE_SCHEMA_FIELDS, validateSaveRecord } = require('../machines.js');
 
 // ---- 从 inventory.js 模块加载(库存/掉落/饥饿/护甲纯函数) ----
-const { STACK_MAX, FOODS, ARMOR_MAX_POINTS, armorReduce, pickupIntoInventory, normalizeHotbar, hungerTick, VILLAGER_TRADES, countInHotbar, consumeFromHotbar, canTrade, DUNGEON_LOOT_TABLE, rollDungeonLoot } = require('../inventory.js');
+const { STACK_MAX, FOODS, ARMOR_MAX_POINTS, armorReduce, pickupIntoInventory, normalizeHotbar, hungerTick, VILLAGER_TRADES, countInHotbar, consumeFromHotbar, canTrade, DUNGEON_LOOT_TABLE, rollDungeonLoot, mergeStacks, hotbarCounts } = require('../inventory.js');
 
 // ---- 测试用例 ----
 let passed = 0, failed = 0;
@@ -205,8 +209,8 @@ test('3×3:有序配方允许网格内平移(木门 放右下角)', () => {
   const r = matchRecipeGrid(G9([null, null, null, null, null, null, 'planks', 'planks', null]), 3, RECIPES);
   assert(r && r.name === '木门', 'got: ' + (r && r.name));
 });
-test('3×3:铁镐(3 金锭 + 2 箭)精确图案', () => {
-  const r = matchRecipeGrid(G9(['gem_gold', 'gem_gold', 'gem_gold', null, 'arrow', null, null, 'arrow', null]), 3, RECIPES);
+test('3×3:铁镐(3 铁锭 + 2 木棍)精确图案', () => {
+  const r = matchRecipeGrid(G9(['iron_ingot', 'iron_ingot', 'iron_ingot', null, 'stick', null, null, 'stick', null]), 3, RECIPES);
   assert(r && r.name === '铁镐' && r.result.kind === 'tool', 'got: ' + (r && r.name));
 });
 test('3×3:有序配方允许网格内平移(石门竖排居中列)', () => {
@@ -214,7 +218,7 @@ test('3×3:有序配方允许网格内平移(石门竖排居中列)', () => {
   assert(r && r.name === '石门', 'got: ' + (r && r.name));
 });
 test('3×3:缺一格不匹配铁镐', () => {
-  const r = matchRecipeGrid(G9(['gem_gold', 'gem_gold', null, null, 'arrow', null, null, 'arrow', null]), 3, RECIPES);
+  const r = matchRecipeGrid(G9(['iron_ingot', 'iron_ingot', null, null, 'stick', null, null, 'stick', null]), 3, RECIPES);
   assert(r === null || r.name !== '铁镐', '不应匹配铁镐');
 });
 test('3×3:环形 8 石头→石砖(大量)', () => {
@@ -498,11 +502,11 @@ test('consumeFromHotbar 不足时消耗到 0 为止', () => {
   assert.strictEqual(hb[0], null);
 });
 test('canTrade 边界:足量 true / 差 1 false / 空栏 false', () => {
-  const tr = VILLAGER_TRADES[0];   // 小麦 ×18 → 绿宝石
+  const tr = VILLAGER_TRADES[0];   // 小麦 ×12 → 绿宝石(R55)
   assert.strictEqual(tr.give.id, 'wheat');
   const mk = (n) => [{ kind: 'item', id: 'wheat', count: n }];
-  assert.strictEqual(canTrade(mk(18), tr), true);
-  assert.strictEqual(canTrade(mk(17), tr), false);
+  assert.strictEqual(canTrade(mk(12), tr), true);
+  assert.strictEqual(canTrade(mk(11), tr), false);
   assert.strictEqual(canTrade(new Array(9).fill(null), tr), false);
   assert.strictEqual(canTrade(mk(99), null), false);   // 非法交易对象
 });
@@ -737,20 +741,20 @@ test('铁轨配方:6 铁锭 + 1 木棍 → 16 节(3×3)', () => {
 // ===== 经验与附魔(R28) =====
 console.log('\n=== 经验系统(xpToNext/xpGain) ===');
 test('xpToNext 阈值随等级递增', () => {
-  assert.strictEqual(xpToNext(0), 8);
-  assert.strictEqual(xpToNext(1), 12);
-  assert.strictEqual(xpToNext(5), 28);
+  assert.strictEqual(xpToNext(0), 10);
+  assert.strictEqual(xpToNext(1), 15);
+  assert.strictEqual(xpToNext(5), 35);
 });
 test('xpGain 升级结算(单级/多级/不足)', () => {
   const st = { level: 0, points: 0 };
   assert.strictEqual(xpGain(st, 5), 0);
   assert.strictEqual(st.points, 5);
-  assert.strictEqual(xpGain(st, 3), 1);       // 5+3=8 恰好达标 → 升 1 级
+  assert.strictEqual(xpGain(st, 5), 1);       // 5+5=10 恰好达标 → 升 1 级
   assert.strictEqual(st.level, 1);
   assert.strictEqual(st.points, 0);
-  assert.strictEqual(xpGain(st, 30), 2);      // 30:升2级余12→升3级余2 → 共升 2 级到 level 3
-  assert.strictEqual(st.level, 3);
-  assert.strictEqual(st.points, 2);
+  assert.strictEqual(xpGain(st, 30), 1);      // 30:升 2 级(15)→余 15,不足 20(3 级)
+  assert.strictEqual(st.level, 2);
+  assert.strictEqual(st.points, 15);
 });
 
 console.log('\n=== 附魔选项(rollEnchants) ===');
@@ -765,7 +769,7 @@ test('rollEnchants 确定性(注入 rand)且 3 个选项合法', () => {
   for (const o of a) {
     assert.ok(['sharpness', 'unbreaking'].includes(o.type), '剑池外类型: ' + o.type);
     assert.ok(o.level >= 1 && o.level <= 3);
-    assert.strictEqual(o.cost, o.level);
+    assert.ok([2, 4, 6].includes(o.cost), '成本应为 2/4/6: ' + o.cost);
   }
 });
 test('rollEnchants 按物品类别取池(镐=效率/耐久)', () => {
@@ -975,6 +979,131 @@ test('红石扩展配方:中继器/活塞(R42)', () => {
   assert.ok(rep && rep.result.id === 'repeater_off', '2 火把 + 3 石 → 中继器(关)');
   const pist = matchRecipeGrid([mk('planks', 'block'), mk('planks', 'block'), mk('planks', 'block'), mk('cobblestone', 'block'), mk('iron_ingot', 'item'), mk('cobblestone', 'block'), mk('cobblestone', 'block'), mk('redstone_dust', 'item'), mk('cobblestone', 'block')], 3, RECIPES);
   assert.ok(pist && pist.result.id === 'piston', '3 板 4 圆石 1 铁 1 粉 → 活塞');
+});
+
+// ===== R55:数值地基 / 采矿层级 / 配方书 / 章节目标 =====
+console.log('\n=== R55:balance.js 数值派生 ===');
+test('坠落伤害曲线:3/5/10/20/30 格 = 0/1/6/15/20', () => {
+  assert.strictEqual(BALANCE_LIB.fallDamage(3), 0);
+  assert.strictEqual(BALANCE_LIB.fallDamage(5), 1);
+  assert.strictEqual(BALANCE_LIB.fallDamage(10), 6);
+  assert.strictEqual(BALANCE_LIB.fallDamage(20), 15);
+  assert.strictEqual(BALANCE_LIB.fallDamage(30), 20);
+  assert.strictEqual(BALANCE_LIB.fallDamage(99), 20);
+});
+test('坠落高度与速度换算一致(h=v²/2g)', () => {
+  const v = Math.sqrt(2 * BALANCE.player.gravity * 10);
+  assert.ok(Math.abs(BALANCE_LIB.fallHeightFromVelocity(-v) - 10) < 0.001);
+  assert.strictEqual(BALANCE_LIB.fallHeightFromVelocity(5), 0);
+});
+test('夜袭上限:2+2×天,上限 10', () => {
+  assert.strictEqual(BALANCE_LIB.nightCap(1), 4);
+  assert.strictEqual(BALANCE_LIB.nightCap(3), 8);
+  assert.strictEqual(BALANCE_LIB.nightCap(5), 10);
+  assert.strictEqual(BALANCE_LIB.nightCap(99), 10);
+});
+test('满饥饿耗尽时间:步行 364s / 静止 1000s / 冲刺 145s', () => {
+  assert.ok(Math.abs(BALANCE_LIB.timeToStarve(0.22) - 363.64) < 1);
+  assert.strictEqual(BALANCE_LIB.timeToStarve(0.08), 1000);
+  assert.ok(Math.abs(BALANCE_LIB.timeToStarve(0.55) - 145.45) < 1);
+});
+test('DPS 派生 + 附魔成本曲线', () => {
+  assert.strictEqual(BALANCE_LIB.attackDps(8, 0.45), 8 / 0.45);
+  assert.strictEqual(BALANCE_LIB.attackDps(8, 0), 0);
+  assert.deepStrictEqual([1, 2, 3].map(BALANCE_LIB.enchantCost), [2, 4, 6]);
+});
+
+console.log('\n=== R55:采矿层级(canHarvest) ===');
+test('层级表:木镐不能挖钻石,铁镐可以', () => {
+  const wood = { tool: 'pickaxe', level: 1 };
+  const stone = { tool: 'pickaxe', level: 2 };
+  const iron = { tool: 'pickaxe', level: 3 };
+  const dia = { tool: 'pickaxe', level: 4 };
+  assert.strictEqual(canHarvest({ tier: 1 }, wood), true);
+  assert.strictEqual(canHarvest({ tier: 2 }, wood), false);
+  assert.strictEqual(canHarvest({ tier: 2 }, stone), true);
+  assert.strictEqual(canHarvest({ tier: 3 }, iron), true);
+  assert.strictEqual(canHarvest({ tier: 3 }, stone), false);
+  assert.strictEqual(canHarvest({ tier: 4 }, dia), true);
+  assert.strictEqual(canHarvest({ tier: 0 }, null), true);
+});
+test('非镐工具不能收获有层级方块', () => {
+  assert.strictEqual(canHarvest({ tier: 2 }, { tool: 'axe', level: 3 }), false);
+  assert.strictEqual(canHarvest({ tier: 2 }, null), false);
+});
+test('层级不足时 breakCost ×2.5(木镐挖钻石矿 20 击)', () => {
+  const wood = { tool: 'pickaxe', level: 1, speed: 1.5 };
+  const mine = { tool: 'pickaxe', level: 4, speed: 8 };
+  const ore = { hardness: 4, tool: 'pickaxe', tier: 3 };
+  assert.strictEqual(breakCost(ore, wood), 20);
+  assert.strictEqual(breakCost(ore, mine), 2);
+});
+
+console.log('\n=== R55:配方书纯函数 ===');
+test('配方分类:镐=工具 / 剑=武器 / 护甲 / 建材 / 红石', () => {
+  const byId = (id) => RECIPES.find(r => r.result.id === id);
+  assert.strictEqual(recipeCategory(byId('pickaxe_iron')), '工具');
+  assert.strictEqual(recipeCategory(byId('sword_iron')), '武器');
+  assert.strictEqual(recipeCategory(byId('chestplate_iron')), '护甲');
+  assert.strictEqual(recipeCategory(byId('furnace')), '建材');
+  assert.strictEqual(recipeCategory(byId('repeater_off')), '红石');
+});
+test('配方材料统计 + 缺口计算', () => {
+  const r = RECIPES.find(x => x.name === '铁镐');
+  const need = recipeMaterials(r);
+  assert.deepStrictEqual(need, { iron_ingot: 3, stick: 2 });
+  assert.deepStrictEqual(recipeMissing(r, { iron_ingot: 3, stick: 2 }), []);
+  const miss = recipeMissing(r, { iron_ingot: 1, stick: 0 });
+  assert.strictEqual(miss.length, 2);
+});
+test('2×2 适配 + 搜索过滤', () => {
+  const pick = RECIPES.find(r => r.result.id === 'pickaxe_iron');
+  const planks = RECIPES.find(r => r.result.id === 'planks');
+  assert.strictEqual(recipeFits(pick, 2), false);
+  assert.strictEqual(recipeFits(planks, 2), true);
+  assert.ok(filterRecipes(RECIPES, '镐', '全部').length >= 5);
+  assert.ok(filterRecipes(RECIPES, '', '工具').every(r => recipeCategory(r) === '工具'));
+});
+test('R55 新配方:金镐/斧/铲/铁栏杆/金苹果/信标可匹配', () => {
+  const g = (ids) => ids.map(id => id === null ? null : ({ kind: /^(planks|cobblestone|iron_ingot|gem_gold|gem_diamond|stick|iron_block)$/.test(id) && id !== 'stick' ? 'block' : 'item', id }));
+  assert.ok(matchRecipeGrid(g(['gem_gold','gem_gold','gem_gold',null,'stick',null,null,'stick',null]), 3, RECIPES), '金镐');
+  assert.ok(matchRecipeGrid(g(['planks','planks',null,'planks','stick',null,null,'stick',null]), 3, RECIPES), '木斧');
+  assert.ok(matchRecipeGrid(g(['iron_ingot',null,null,'stick',null,null,'stick',null,null]), 3, RECIPES), '铁铲');
+  assert.ok(matchRecipeGrid(g(['iron_ingot','iron_ingot','iron_ingot','iron_ingot','iron_ingot','iron_ingot',null,null,null]), 3, RECIPES), '铁栏杆');
+  assert.strictEqual(SMELT.gold_ore.id, 'gem_gold');
+});
+
+console.log('\n=== R55:容器合并与快捷栏计数 ===');
+test('mergeStacks 合并同类且总数守恒', () => {
+  const items = [{ kind:'block', id:'stone', count:50 }, { kind:'block', id:'stone', count:30 }, null, { kind:'item', id:'coal', count:10 }];
+  const out = mergeStacks(items, 64);
+  const total = out.reduce((n, it) => n + (it.count || 1), 0);
+  assert.strictEqual(total, 90);
+  assert.ok(out.filter(it => it.id === 'stone').every(it => it.count <= 64));
+});
+test('hotbarCounts 跨格统计且忽略工具', () => {
+  const hb = [{ kind:'item', id:'wheat', count:5 }, { kind:'item', id:'wheat', count:7 }, { kind:'tool', id:'pickaxe_wood', durability:1 }, null];
+  assert.deepStrictEqual(hotbarCounts(hb), { wheat: 12 });
+});
+
+console.log('\n=== R55:章节目标 ===');
+test('5 章 × 3 目标,全部引用合法成就', () => {
+  assert.strictEqual(GOALS.length, 5);
+  assert.strictEqual(GOAL_TOTAL, 15);
+  for (const ch of GOALS) for (const g of ch.goals) assert.ok(ACHV_BY_ID[g.achv], '成就存在: ' + g.achv);
+});
+test('goalState:未完成时返回当前章与最多 3 个目标', () => {
+  const st = goalState(new Set(), 3);
+  assert.strictEqual(st.chapter, 1);
+  assert.strictEqual(st.goals.length, 3);
+  assert.strictEqual(st.goals[0].done, false);
+  assert.strictEqual(goalDoneCount(new Set()), 0);
+});
+test('goalState:完成第 1 章后推进到第 2 章', () => {
+  const done = new Set(['get_wood', 'workbench', 'stone_age']);
+  const st = goalState(done, 3);
+  assert.strictEqual(st.chapter, 2);
+  assert.strictEqual(goalDoneCount(done), 3);
 });
 
 console.log('\n=== 总结 ===');

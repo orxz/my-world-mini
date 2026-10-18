@@ -4,7 +4,9 @@
 function initInventory() {
   // 生存模式开局:仅一把木镐,其余靠破坏方块掉落拾取(经典 MC 采集循环)
   hotbar = new Array(HOTBAR_SIZE).fill(null);
-  hotbar[8] = { kind: 'tool', id: 'pickaxe_wood', durability: TOOL_TYPES.pickaxe_wood.durability };
+  // R55 体验:木镐放第 1 格并选中 —— 开局手里有工具,不让新玩家先找镐
+  hotbar[0] = { kind: 'tool', id: 'pickaxe_wood', durability: TOOL_TYPES.pickaxe_wood.durability };
+  discovered.add('pickaxe_wood');   // R55:开局木镐已发现
   selectSlot(0);
 }
 
@@ -281,6 +283,17 @@ function drawMaterialIcon(ctx, itemId, size) {
     ctx.beginPath();
     ctx.ellipse(-size * 0.08, -size * 0.02, size * 0.05, size * 0.08, 0.4, 0, Math.PI * 2);
     ctx.fill();
+  } else if (def.shape === 'seed') {
+    // 种子(R55):三粒小麦种子
+    ctx.fillStyle = def.color;
+    for (const [sx, sy, rot] of [[-0.12, 0.08, -0.5], [0.06, -0.06, 0.3], [0.14, 0.14, -0.2]]) {
+      ctx.save();
+      ctx.translate(size * sx, size * sy); ctx.rotate(rot);
+      ctx.beginPath(); ctx.ellipse(0, 0, size * 0.05, size * 0.11, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+    ctx.strokeStyle = '#8a7a3a'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(-size * 0.2, size * 0.24); ctx.lineTo(size * 0.2, -size * 0.2); ctx.stroke();
   } else if (def.shape === 'bucket') {
     // 铁桶(R36):梯形桶身 + 提梁;水桶 = 桶口蓝色水面 + 高光
     ctx.fillStyle = '#c8c8d0';
@@ -364,6 +377,8 @@ function buildHotbar() {
     slot.dataset.slot = i;
     slot.dataset.icon = item ? (item.kind + ':' + item.id) : '';   // 与 refreshHotbarSlot 的图标缓存约定一致
     slot.innerHTML = `<span class="num">${i + 1}</span><span class="name">${itemName(item)}</span>`;
+    slot.addEventListener('mouseenter', () => { if (hotbar[i]) showItemTooltip(hotbar[i], slot); });
+    slot.addEventListener('mouseleave', hideItemTooltip);
     const cv = document.createElement('canvas');
     cv.width = cv.height = 64;
     slot.appendChild(cv);
@@ -425,6 +440,308 @@ function putInSlot(i, item) {
 }
 
 // ============================================================
+// R55:物品提示 / 状态 HUD / 配方书 / 统计 / 按键重映射
+// ============================================================
+function itemDisplayName(id) {
+  if (BLOCK_TYPES[id]) return BLOCK_TYPES[id].name;
+  if (TOOL_TYPES[id]) return TOOL_TYPES[id].name;
+  if (ITEM_TYPES[id]) return ITEM_TYPES[id].name;
+  return id;
+}
+
+function showItemTooltip(item, anchor) {
+  const el = document.getElementById('tooltip');
+  if (!el || !item) return;
+  const id = item.id;
+  const lines = [];
+  let title = itemDisplayName(id);
+  if (gameMode === 'survival' && !discovered.has(id) && item.kind !== 'tool') title = '???';
+  lines.push('<b>' + title + '</b>');
+  if (item.kind === 'tool') {
+    const d = TOOL_TYPES[id] || {};
+    lines.push('<span class="tt-dim">' + (d.tool === 'armor' ? '护甲' : d.tool === 'sword' ? '武器' : '工具') + ' · ' + (d.tier || '') + '</span>');
+    if (d.durability) lines.push('耐久 ' + (item.durability === undefined ? d.durability : item.durability) + ' / ' + d.durability);
+    if (d.damage) lines.push('伤害 ' + d.damage);
+    if (d.speed) lines.push('挖掘速度 ' + d.speed.toFixed(1));
+    if (d.armor) {
+      let cmp = '';
+      const eq = d.slot && armorSlots[d.slot];
+      if (eq && TOOL_TYPES[eq.id] && TOOL_TYPES[eq.id].armor !== undefined) {
+        const diff = d.armor - TOOL_TYPES[eq.id].armor;
+        if (diff > 0) cmp = ' <span class="tt-good">(+' + diff + ')</span>';
+        else if (diff < 0) cmp = ' <span class="tt-bad">(' + diff + ')</span>';
+      }
+      lines.push('护甲 +' + d.armor + cmp);
+    }
+    if (d.tool === 'pickaxe') {
+      const lv = d.level || 0;
+      lines.push('<span class="tt-dim">可挖层级 ' + lv + ' · ' + (lv >= 4 ? '黑曜石' : lv >= 3 ? '钻石矿' : lv >= 2 ? '铁矿/金矿/红石' : '石/煤') + '</span>');
+    }
+    if (item.ench) lines.push('<span class="tt-good">' + Object.entries(item.ench).map(([k, v]) => MACHINES.ENCHANT_NAMES[k] + ' ' + 'I'.repeat(v)).join(' · ') + '</span>');
+  } else if (item.kind === 'block') {
+    const d = BLOCK_TYPES[id] || {};
+    lines.push('<span class="tt-dim">方块 · 硬度 ' + (d.hardness || 0) + (d.tier ? ' · 需要 ' + (d.tier >= 4 ? '钻石' : d.tier >= 3 ? '铁' : d.tier >= 2 ? '石' : '木') + '镐' : '') + '</span>');
+    if (d.light) lines.push('光照 ' + d.light);
+  } else {
+    const f = FOODS[id];
+    if (f) lines.push('饥饿 +' + f);
+    if (id === 'gold_apple') lines.push('<span class="tt-good">60 秒伤害吸收 4</span>');
+    if (id === 'seed') lines.push('<span class="tt-dim">种在草地上,60 秒成熟</span>');
+    if (item.count) lines.push('数量 ' + item.count);
+  }
+  el.innerHTML = lines.join('<br>');
+  el.style.display = 'block';
+  const r = anchor.getBoundingClientRect();
+  let x = r.right + 8, y = r.top;
+  if (x + 270 > innerWidth) x = Math.max(6, r.left - 272);
+  if (y + 150 > innerHeight) y = Math.max(6, innerHeight - 160);
+  el.style.left = x + 'px'; el.style.top = y + 'px';
+}
+function hideItemTooltip() {
+  const el = document.getElementById('tooltip');
+  if (el) el.style.display = 'none';
+}
+
+// R55:命中标记(普通白 X / 暴击金 X)
+function flashHitMarker(crit) {
+  const el = document.getElementById('hitmarker');
+  if (!el) return;
+  el.classList.remove('show', 'crit');
+  void el.offsetWidth;
+  if (crit) el.classList.add('crit');
+  el.classList.add('show');
+}
+
+// 状态 HUD:低血/低饥饿/受击方向/准星交互提示(每 0.1s 节流更新 DOM)
+let _statusT = 0;
+function interactHintFor(target, b) {
+  if (!b) return null;
+  if (b === 'vault') return { text: '右键 开启封印宝库(12 末影珍珠)' };
+  if (b === 'beacon') return { text: '右键 查看信标' };
+  if (b === 'chest' || b === 'furnace' || b === 'crafting_table' || b === 'enchanting_table') return { text: '右键 打开' + (BLOCK_TYPES[b] ? BLOCK_TYPES[b].name : '') };
+  if (b === 'bed') return { text: '右键 睡觉(设重生点)' };
+  if (b === 'tnt') return { text: '右键 点燃 TNT' };
+  if (b === 'cake') return { text: '右键 吃一片' };
+  if (b === 'door' || b === 'door_iron' || b === 'door_stone' || b === 'door_gold' || b === 'door_diamond') return { text: '右键 开关门 · 左键 拆门' };
+  if (b === 'lever_off' || b === 'lever_on') return { text: '右键 切换拉杆' };
+  // 手持工具时提示真实动作(剑/弓的左键不是挖掘;方块交互已在上面优先返回)
+  const held = hotbar[currentSlot];
+  if (held && held.kind === 'tool' && TOOL_TYPES[held.id]) {
+    const tt = TOOL_TYPES[held.id].tool;
+    if (tt === 'sword') return { text: '左键 攻击 · 右键 挥砍' };
+    if (tt === 'bow') return { text: '左键 射击(需箭)' };
+    if (tt === 'shield') return { text: '右键 举盾格挡' };
+  }
+  const def = BLOCK_TYPES[b] || {};
+  if (!canHarvestBlock(b)) return { text: '左键 挖掘' + def.name + ' · 需要' + harvestTierName(b) + '镐', color: '#ffb0a0' };
+  return { text: '左键 挖掘 ' + def.name };
+}
+function updateStatusHUD(dt) {
+  _statusT -= dt;
+  if (_statusT > 0) return;   // R55:10Hz 节流,避免每帧写 DOM
+  _statusT = 0.1;
+  // 低血/低饥饿
+  const hpBar = document.getElementById('hp-bar');
+  const hgBar = document.getElementById('hunger-bar');
+  document.body.classList.toggle('low-hp', playerHP <= 6 && playerHP > 0);
+  if (hgBar) hgBar.classList.toggle('low', hungerState.hunger <= BALANCE.hunger.lowWarn);
+  if (hpBar) hpBar.style.filter = playerHP <= 6 ? 'brightness(1.25)' : '';
+  // 受击方向
+  const dirEl = document.getElementById('damage-direction');
+  if (dirEl) {
+    const age = (performance.now() - lastDamageTime) / 1000;
+    if (age >= 0 && age < 0.5) {
+      dirEl.style.display = 'block';
+      dirEl.style.opacity = String(1 - age / 0.5);
+      dirEl.style.setProperty('--dmg-dir', lastDamageDir + 'rad');
+    } else dirEl.style.opacity = '0';
+  }
+  const hint = document.getElementById('interact-hint');
+  if (!hint) return;
+  const t = raycastTarget();
+  const b = t ? getBlock(t.x, t.y, t.z) : null;
+  let info = b ? interactHintFor(t, b) : null;
+  // R55:靠近南侧车站时提示过山车,降低儿童发现成本
+  if (!info && !ridingCart && Math.hypot(playerPos.x, playerPos.z - 20) < 7 && Math.abs(playerPos.y - 23) < 5) {
+    info = { text: '🎢 右键矿车乘坐过山车', color: '#9dff6a' };
+  }
+  if (info) {
+    hint.textContent = info.text;
+    hint.style.color = info.color || '#fff';
+    hint.style.opacity = '1';
+  } else {
+    hint.style.opacity = '0';
+  }
+  const cross = document.getElementById('crosshair');
+  if (cross) {
+    cross.classList.toggle('interact', !!(info && info.text.indexOf('右键') >= 0));
+    cross.classList.toggle('blocked', !!(info && info.color === '#ffb0a0'));
+  }
+}
+
+// 配方书
+let recipeCat = '全部';
+function openRecipeBook() {
+  if (document.pointerLockElement) document.exitPointerLock();
+  const panel = document.getElementById('recipe-panel');
+  if (!panel) return;
+  panel.classList.remove('hidden');
+  renderRecipeBook();
+}
+function closeRecipeBook() {
+  const panel = document.getElementById('recipe-panel');
+  if (panel) panel.classList.add('hidden');
+  hideItemTooltip();
+  tryRelockPointer();
+}
+function renderRecipeBook() {
+  const list = document.getElementById('recipe-list');
+  if (!list) return;
+  const q = (document.getElementById('recipe-search') || {}).value || '';
+  const counts = INVLIB.hotbarCounts(hotbar);
+  const recipes = CRAFTLIB.filterRecipes(CRAFTLIB.RECIPES, q, recipeCat);
+  list.innerHTML = '';
+  if (!recipes.length) { list.innerHTML = '<div style="grid-column:1/-1;color:#555;padding:12px;">没有匹配的配方</div>'; return; }
+  const frag = document.createDocumentFragment();
+  for (const r of recipes) {
+    const miss = CRAFTLIB.recipeMissing(r, counts);
+    const ok = gameMode === 'creative' || miss.length === 0;
+    const card = document.createElement('div');
+    card.className = 'recipe-card' + (ok ? '' : ' locked');
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 44;
+    drawItemIcon({ kind: r.result.kind, id: r.result.id }, cv);
+    card.appendChild(cv);
+    const box = document.createElement('div');
+    const nm = document.createElement('div'); nm.className = 'rc-name'; nm.textContent = r.name;
+    const mat = document.createElement('div'); mat.className = 'rc-mat';
+    const need = CRAFTLIB.recipeMaterials(r);
+    mat.textContent = Object.entries(need).map(([id, n]) => itemDisplayName(id) + '×' + n).join(' · ') + (ok ? '' : ' · 缺 ' + miss.map(m => itemDisplayName(m.id) + '×' + (m.need - m.have)).join('、'));
+    box.appendChild(nm); box.appendChild(mat); card.appendChild(box);
+    card.onclick = () => { fillRecipeToGrid(r); };
+    card.onmouseenter = () => showItemTooltip({ kind: r.result.kind, id: r.result.id }, card);
+    card.onmouseleave = hideItemTooltip;
+    frag.appendChild(card);
+  }
+  list.appendChild(frag);
+}
+function fillRecipeToGrid(r) {
+  const size = tableOpen ? 3 : 2;
+  if (!CRAFTLIB.recipeFits(r, size)) { showToast('这个配方需要合成台(3×3)'); return; }
+  if (gameMode === 'survival' && CRAFTLIB.recipeMissing(r, INVLIB.hotbarCounts(hotbar)).length) {
+    showToast('材料不足:' + CRAFTLIB.recipeMissing(r, INVLIB.hotbarCounts(hotbar)).map(m => itemDisplayName(m.id) + '×' + (m.need - m.have)).join('、'));
+    return;
+  }
+  if (!tableOpen && !inventoryOpen) toggleInventory(true);
+  const grid = tableOpen ? tableGrid : craftGrid;
+  for (let i = 0; i < grid.length; i++) grid[i] = null;
+  const w = 3, pat = r.pattern;
+  let minR = 9, minC = 9;
+  for (let i = 0; i < pat.length; i++) if (pat[i]) { minR = Math.min(minR, Math.floor(i / w)); minC = Math.min(minC, i % w); }
+  for (let i = 0; i < pat.length; i++) {
+    if (!pat[i]) continue;
+    const rr = Math.floor(i / w) - minR, cc = (i % w) - minC;
+    const gi = rr * size + cc;
+    grid[gi] = { kind: BLOCK_TYPES[pat[i]] ? 'block' : 'item', id: pat[i] };
+  }
+  if (tableOpen) { renderTableGrid(); refreshTableResult(); }
+  else { renderCraftGrid(); refreshCraftResult(); }
+  closeRecipeBook();
+}
+
+// 统计面板
+function openStatsPanel() {
+  if (document.pointerLockElement) document.exitPointerLock();
+  const panel = document.getElementById('stats-panel');
+  const list = document.getElementById('stats-list');
+  if (!panel || !list) return;
+  const st = Object.assign({ playTime: 0, blocksMined: 0, blocksPlaced: 0, distance: 0, deaths: 0, kills: 0, fish: 0, trades: 0 }, stats);
+  const mins = Math.floor((st.playTime || 0) / 60), secs = Math.floor((st.playTime || 0) % 60);
+  const rows = [
+    ['游戏时长', mins + ' 分 ' + secs + ' 秒'],
+    ['生存天数', '第 ' + (Number.isFinite(dayCount) ? dayCount : 1) + ' 天'],
+    ['挖掘方块', st.blocksMined || 0],
+    ['放置方块', st.blocksPlaced || 0],
+    ['行走距离', Math.round(st.distance || 0) + ' 格'],
+    ['死亡次数', st.deaths || 0],
+    ['击杀生物', st.kills || 0],
+    ['钓上鱼', st.fish || 0],
+    ['村民交易', st.trades || 0],
+    ['成就进度', achvUnlocked.size + ' / ' + MACHINES.ACHIEVEMENTS.length],
+    ['章节目标', MACHINES.goalDoneCount(achvUnlocked) + ' / ' + MACHINES.GOAL_TOTAL],
+  ];
+  list.innerHTML = rows.map(([k, v]) => '<div class="stat-row"><span>' + k + '</span><b>' + v + '</b></div>').join('');
+  panel.classList.remove('hidden');
+}
+function closeStatsPanel() {
+  const panel = document.getElementById('stats-panel');
+  if (panel) panel.classList.add('hidden');
+}
+
+// 按键重映射
+const KEYMAP_LABELS = { forward: '前进', back: '后退', left: '左移', right: '右移', jump: '跳跃', sneak: '潜行', sprint: '冲刺', inventory: '背包', drop: '丢弃', camera: '切视角' };
+let keymapCapture = null;
+function renderKeymapList() {
+  const el = document.getElementById('keymap-list');
+  if (!el) return;
+  el.innerHTML = '';
+  for (const k in KEYMAP_LABELS) {
+    const row = document.createElement('div');
+    row.className = 'keymap-row';
+    const label = document.createElement('span'); label.textContent = KEYMAP_LABELS[k];
+    const btn = document.createElement('button');
+    btn.textContent = keymapCapture === k ? '按新键…' : (keymap[k] || '—');
+    if (keymapCapture === k) btn.className = 'capture';
+    btn.onclick = () => { keymapCapture = k; renderKeymapList(); };
+    row.appendChild(label); row.appendChild(btn);
+    el.appendChild(row);
+  }
+}
+function applyUIScale() {
+  document.body.classList.toggle('ui-115', Math.abs((settings.fontScale || 1) - 1.15) < 0.01);
+  document.body.classList.toggle('ui-130', (settings.fontScale || 1) >= 1.3);
+  document.body.classList.toggle('reduce-motion', !!settings.reduceMotion);
+  const sel = document.getElementById('set-fontscale');
+  if (sel) sel.value = String(settings.fontScale || 1);
+  const rb = document.getElementById('set-reduce');
+  if (rb) rb.textContent = settings.reduceMotion ? '开' : '关';
+}
+
+// R55 视觉:面板打开时压暗世界(观察面板 class/style,避免每帧判断)
+const PANEL_IDS = ['inventory', 'craft-table-panel', 'furnace-panel', 'chest-panel', 'trade-panel',
+  'recipe-panel', 'stats-panel', 'save-manager', 'settings-panel', 'achv-panel', 'pause-menu', 'enchant-panel'];
+function syncPanelDim() {
+  const any = PANEL_IDS.some((id) => {
+    const el = document.getElementById(id);
+    if (!el) return false;
+    return !el.classList.contains('hidden') && el.style.display !== 'none';
+  });
+  document.body.classList.toggle('panel-open', any);
+}
+function observePanelDim() {
+  const obs = new MutationObserver(syncPanelDim);
+  for (const id of PANEL_IDS) {
+    const el = document.getElementById(id);
+    if (el) obs.observe(el, { attributes: true, attributeFilter: ['class', 'style'] });
+  }
+  // 附魔面板是运行时创建的,监听 body 的 childList 只处理它
+  obs.observe(document.body, { childList: true });
+  syncPanelDim();
+}
+
+document.addEventListener('keydown', (e) => {
+  if (!keymapCapture) return;
+  e.preventDefault(); e.stopPropagation();
+  if (e.code === 'Escape') { keymapCapture = null; renderKeymapList(); return; }
+  keymap[keymapCapture] = e.code;
+  keymapCapture = null;
+  saveSettings();
+  renderKeymapList();
+  showToast('按键已更新');
+}, true);
+
+
+// ============================================================
 // 第十三部分:输入(沿用旧实现 + 音频初始化钩子)
 // ============================================================
 function setupInput() {
@@ -437,42 +754,63 @@ function setupInput() {
       && document.getElementById('pause-menu').classList.contains('hidden');
     keys[e.code] = inPlay ? true : false;
     if (!inPlay) return;
+    // R55:配方书/统计面板打开时只允许 Esc 关闭,避免误触游戏键
+    const rp = document.getElementById('recipe-panel');
+    if (rp && !rp.classList.contains('hidden')) {
+      if (e.code === 'Escape') closeRecipeBook();
+      return;
+    }
+    const sp = document.getElementById('stats-panel');
+    if (sp && !sp.classList.contains('hidden')) {
+      if (e.code === 'Escape') closeStatsPanel();
+      return;
+    }
     if (tableOpen) {
-      if (e.code === 'KeyE' || e.code === 'Escape') closeTablePanel();
+      if (e.code === keymap.inventory || e.code === 'Escape') closeTablePanel();
       return;
     }
     if (furnaceOpen) {
-      if (e.code === 'KeyE' || e.code === 'Escape') closeFurnacePanel();
+      if (e.code === keymap.inventory || e.code === 'Escape') closeFurnacePanel();
       return;
     }
     if (chestOpen) {
-      if (e.code === 'KeyE' || e.code === 'Escape') closeChestPanel();
+      if (e.code === keymap.inventory || e.code === 'Escape') closeChestPanel();
       return;
     }
     if (tradeOpen) {
-      if (e.code === 'KeyE' || e.code === 'Escape') closeTradePanel();
+      if (e.code === keymap.inventory || e.code === 'Escape') closeTradePanel();
       return;
     }
     if (enchantOpen) {
-      if (e.code === 'KeyE' || e.code === 'Escape') closeEnchantPanel();
+      if (e.code === keymap.inventory || e.code === 'Escape') closeEnchantPanel();
       return;
     }
     if (inventoryOpen) {
-      if (e.code === 'KeyE' || e.code === 'Escape') toggleInventory(false);
+      if (e.code === keymap.inventory || e.code === 'Escape') toggleInventory(false);
       return;
     }
     if (e.code.startsWith('Digit')) {
       const n = parseInt(e.code.slice(5)) - 1;
       if (n >= 0 && n < HOTBAR_SIZE) selectSlot(n);
     }
-    if (e.code === 'Space') {
+    if (e.code === keymap.jump) {
       const now = performance.now();
       if (now - lastSpaceTime < 300) isFlying = !isFlying;
       lastSpaceTime = now;
     }
-    if (e.code === 'F5') { e.preventDefault(); cycleCameraMode(); }
-    if (e.code === 'KeyE') toggleInventory(true);
-    if (e.code === 'KeyQ') {
+    // R55:双击前进键进入冲刺(松开前进自动退出)
+    if (e.code === keymap.forward) {
+      const now = performance.now();
+      if (now - lastWDown < 300) sprintLock = true;
+      lastWDown = now;
+    }
+    if (e.code === keymap.camera) { e.preventDefault(); cycleCameraMode(); }
+    if (e.code === keymap.inventory) toggleInventory(true);
+    if (e.code === 'F3') { e.preventDefault(); document.body.classList.toggle('show-debug'); }
+    if (e.code === 'KeyJ') openRecipeBook();   // R55:配方书快捷键
+    if (e.code === 'KeyH') { const hud = document.getElementById('goals-hud'); if (hud) hud.classList.toggle('hidden'); }
+    if (e.code === 'KeyH') { const hud = document.getElementById('goals-hud'); if (hud) hud.classList.toggle('hidden'); }
+    if (e.code === keymap.drop) {
       // 经典丢弃:手持任意物品整组丢出(掉落物保留类型/数量/工具耐久,可再拾回)
       const it = hotbar[currentSlot];
       if (it) {
@@ -515,6 +853,12 @@ function setupInput() {
     enterGame();                        // 尝试锁定指针(失败也不影响进入)
     startTutorial(false);               // 首次游戏(未完成过教程)自动开启
   });
+  // R55:开始屏操作说明区不触发开局(移动端向下滚动/阅读时避免误触)
+  const ctrlBox = document.querySelector('#overlay .controls');
+  if (ctrlBox) {
+    ctrlBox.addEventListener('click', (e) => e.stopPropagation());
+    ctrlBox.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
+  }
   // 开始屏「新手教程」入口:强制开启
   const btnTut = document.getElementById('btn-tutorial');
   if (btnTut) btnTut.addEventListener('click', (e) => {
@@ -544,6 +888,8 @@ function setupInput() {
       overlay.classList.add('hidden');
       pauseMenu.classList.add('hidden');
     } else if (gameStarted && !inventoryOpen && !tableOpen && !furnaceOpen && !chestOpen && !tradeOpen && !enchantOpen) {
+      // R55:刚关面板主动请求重新锁定失败时,不要误弹暂停菜单
+      if (performance.now() - lastRelockRequest < 600) return;
       pauseMenu.classList.remove('hidden');
       autosave(true);
     }
@@ -551,6 +897,7 @@ function setupInput() {
 
   document.getElementById('btn-resume').addEventListener('click', enterGame);
   document.getElementById('btn-reset').addEventListener('click', () => {
+    if (!confirm('重置世界会生成新地形，并丢失当前未保存的建造进度。确定继续？')) return;
     resetWorld();
     enterGame();
   });
@@ -595,6 +942,7 @@ function setupInput() {
   const setSound = document.getElementById('set-sound');
   const setVolume = document.getElementById('set-volume');
   const setRender = document.getElementById('set-render');
+  const setFov = document.getElementById('set-fov');
   const setMobs = document.getElementById('set-mobs');
   const setHostiles = document.getElementById('set-hostiles');
   const setFpHeld = document.getElementById('set-fpheld');
@@ -615,6 +963,7 @@ function setupInput() {
     if (setSound) setSound.textContent = settings.soundEnabled ? '开' : '关';
     if (setVolume) setVolume.value = Math.round(settings.volume * 100);
     if (setRender) setRender.value = String(settings.renderDist);
+    if (setFov) setFov.value = String(settings.fov || 75);
     if (setMobs) setMobs.textContent = settings.mobs ? '开' : '关';
     if (setHostiles) setHostiles.textContent = settings.hostiles ? '开' : '关';
     if (setFpHeld) setFpHeld.textContent = settings.fpHeld ? '开' : '关';
@@ -625,6 +974,9 @@ function setupInput() {
         daynightControls.style.pointerEvents = settings.dayNightEnabled ? '' : 'none';  // 禁用交互
       }
     }
+    const setMode = document.getElementById('set-mode');
+    if (setMode) setMode.textContent = gameMode === 'survival' ? '生存' : '创造';
+    applyUIScale();
     if (setDNSpeed) setDNSpeed.value = String(settings.dayCycleSpeed);
     if (setDNTime) { setDNTime.value = Math.round(dayTime * 100); if (setDNTimeLabel) setDNTimeLabel.textContent = dayTimeToLabel(dayTime); }
   }
@@ -648,6 +1000,10 @@ function setupInput() {
     settings.renderDist = parseInt(setRender.value);
     RENDER_DISTANCE = Math.max(1, settings.renderDist | 0);
     FOG_FAR = (RENDER_DISTANCE * CHUNK_SIZE) + 8;
+    saveSettings();
+  });
+  if (setFov) setFov.addEventListener('change', () => {
+    settings.fov = parseInt(setFov.value) || 75;
     saveSettings();
   });
   if (setMobs) setMobs.addEventListener('click', () => {
@@ -827,6 +1183,9 @@ function setupInput() {
   addEventListener('blur', () => { keys['Space'] = false; });
     bindBtn('touch-break', () => { breakBlock(); touchBreakHeld = true; }, () => { touchBreakHeld = false; });
     bindBtn('touch-place', () => { placeBlock(); });
+    // R55:触屏冲刺(按住)/潜行(切换)
+    bindBtn('touch-sprint', () => { touchSprint = true; }, () => { touchSprint = false; });
+    bindBtn('touch-sneak', () => { touchSneak = !touchSneak; showToast(touchSneak ? '潜行:开' : '潜行:关'); }, null);
     // 拖拽转视角(画面右半区拖动)
     let lookActive = false, lastX = 0, lastY = 0;
     renderer.domElement.addEventListener('touchstart', (e) => {
@@ -847,6 +1206,73 @@ function setupInput() {
     }, { passive: true });
     renderer.domElement.addEventListener('touchend', () => { lookActive = false; }, { passive: true });
   }
+
+  // ---------- R55:统计/配方书/模式/字号/减少动态/按键 ----------
+  const btnStats = document.getElementById('btn-stats');
+  if (btnStats) btnStats.addEventListener('click', () => { document.getElementById('pause-menu').classList.add('hidden'); openStatsPanel(); });
+  const statsClose = document.getElementById('stats-close');
+  if (statsClose) statsClose.addEventListener('click', () => { closeStatsPanel(); document.getElementById('pause-menu').classList.remove('hidden'); });
+  const btnRecipes = document.getElementById('btn-recipes');
+  if (btnRecipes) btnRecipes.addEventListener('click', () => { document.getElementById('pause-menu').classList.add('hidden'); openRecipeBook(); });
+  const recipeClose = document.getElementById('recipe-close');
+  if (recipeClose) recipeClose.addEventListener('click', closeRecipeBook);
+  const recipeSearch = document.getElementById('recipe-search');
+  if (recipeSearch) recipeSearch.addEventListener('input', renderRecipeBook);
+  if (recipeSearch) recipeSearch.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); closeRecipeBook(); }
+  });
+  document.querySelectorAll('.recipe-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.recipe-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      recipeCat = tab.dataset.cat || '全部';
+      renderRecipeBook();
+    });
+  });
+  const invRecipes = document.getElementById('inv-recipes');
+  if (invRecipes) invRecipes.addEventListener('click', openRecipeBook);
+  const invGoals = document.getElementById('inv-goals');
+  if (invGoals) invGoals.addEventListener('click', () => {
+    const hud = document.getElementById('goals-hud');
+    if (hud) hud.classList.toggle('hidden');
+    showToast(hud && hud.classList.contains('hidden') ? '目标追踪:关' : '目标追踪:开');
+  });
+  const setMode = document.getElementById('set-mode');
+  if (setMode) setMode.addEventListener('click', () => {
+    const next = gameMode === 'creative' ? 'survival' : 'creative';
+    if (next === 'survival' && !confirm('切换到生存模式?创造目录将不再发放物品。')) return;
+    gameMode = next; settings.mode = next; saveSettings(); refreshSettingsUI();
+    if (inventoryOpen) buildInventoryPanel();
+    showToast('模式:' + (next === 'survival' ? '生存' : '创造'));
+  });
+  const setFont = document.getElementById('set-fontscale');
+  if (setFont) setFont.addEventListener('change', () => {
+    settings.fontScale = parseFloat(setFont.value) || 1;
+    applyUIScale(); saveSettings();
+  });
+  const setReduce = document.getElementById('set-reduce');
+  if (setReduce) setReduce.addEventListener('click', () => {
+    settings.reduceMotion = !settings.reduceMotion;
+    applyUIScale(); refreshSettingsUI(); saveSettings();
+  });
+  renderKeymapList();
+  applyUIScale();
+  observePanelDim();
+
+  // R55 UX:点击面板外的压暗区关闭常用面板(暂停菜单除外,避免误退出游戏)
+  const dimLayer = document.getElementById('panel-dim');
+  if (dimLayer) dimLayer.addEventListener('click', () => {
+    const rp = document.getElementById('recipe-panel');
+    if (rp && !rp.classList.contains('hidden')) { closeRecipeBook(); return; }
+    const sp = document.getElementById('stats-panel');
+    if (sp && !sp.classList.contains('hidden')) { closeStatsPanel(); return; }
+    if (inventoryOpen) { toggleInventory(false); return; }
+    if (tableOpen) { closeTablePanel(); return; }
+    if (furnaceOpen) { closeFurnacePanel(); return; }
+    if (chestOpen) { closeChestPanel(); return; }
+    if (tradeOpen) { closeTradePanel(); return; }
+    if (enchantOpen) { closeEnchantPanel(); return; }
+  });
 
   addEventListener('resize', () => {
     camera.aspect = innerWidth / innerHeight;

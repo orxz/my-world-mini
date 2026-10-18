@@ -31,8 +31,8 @@ function updateDayNight(dt, waterNow) {
   const _pm = document.getElementById('pause-menu');
   const _paused = _pm && !_pm.classList.contains('hidden');
   if (settings.dayNightEnabled && !_paused) {
-    dayTime += dt / (settings.dayCycleSpeed || 120);  // 速度可调(秒/周期)
-    if (dayTime >= 1) dayTime -= 1;
+    dayTime += dt / (settings.dayCycleSpeed || BALANCE.day.cycle);
+    if (dayTime >= 1) { dayTime -= 1; dayCount++; }   // R55:天数
   }
 
   // 太阳角度:0=午夜,0.25=日出(东升),0.5=正午,0.75=日落(西落)
@@ -60,7 +60,7 @@ function updateDayNight(dt, waterNow) {
     sunLight.position.set(Math.cos(sunAngle) * R, Math.sin(sunAngle) * R, -40);
   }
   if (ambientLight) {
-    ambientLight.intensity = 0.18 + dayFactor * 0.45;          // 夜 0.18 ~ 正午 ~0.63
+    ambientLight.intensity = 0.18 + dayFactor * 0.45 + (beaconAura ? 0.12 : 0);   // R55:信标夜视/照明
   }
   if (hemiLight) {
     hemiLight.intensity = 0.1 + dayFactor * 0.25;
@@ -114,7 +114,7 @@ function updateDayNight(dt, waterNow) {
   if (_daytimeEl) {
     const hh = Math.floor(dayTime * 24);
     const mm = Math.floor((dayTime * 24 - hh) * 60);
-    const str = (hh < 10 ? '0' + hh : hh) + ':' + (mm < 10 ? '0' + mm : mm);
+    const str = '第' + dayCount + '天 ' + (hh < 10 ? '0' + hh : hh) + ':' + (mm < 10 ? '0' + mm : mm);
     if (str !== _lastDaytimeStr) { _daytimeEl.textContent = str; _lastDaytimeStr = str; }
   }
 
@@ -159,10 +159,15 @@ function animate() {
   if (active && settings.mobs) updateMobs(dt);   // 生物(暂停时冻结)
   if (active) updateArrows(dt);                  // 箭矢(暂停时冻结,避免面板开着被骷髅射中)
   updateParticles(dt);   // 粒子效果
+  stats.playTime += active ? dt : 0;  // R55:统计(暂停不计时)
+  if (absorptionT > 0) { absorptionT -= dt; if (absorptionT <= 0) absorption = 0; }
+  if (active) updateBeaconAura(dt);   // R55:信标光环
+  updateStatusHUD(dt);   // R55:低血/低饥饿/受击方向/交互提示
   updateDoorAnim(dt);    // 门开关动画
   updateDamageVignette(dt);
   updateDeathOverlay(dt);
   updateClouds(dt);   // 云朵飘动(无论是否锁定都执行)
+  if (active && typeof updatePlaygroundRides === 'function') updatePlaygroundRides(dt, now);
 
   // 区块动态加载/卸载(无论是否锁定都执行,保证世界持续生成)
   updateChunks(playerPos.x, playerPos.z);
@@ -181,19 +186,35 @@ function animate() {
     playerModel.visible = false;
     setPlayerModelFade(1);
     camera.position.copy(playerPos);
+    if (isSneaking) camera.position.y += BALANCE.player.sneakEyeOffset;   // R55:潜行眼高下沉
     camera.rotation.order = 'YXZ';
     camera.rotation.y = yaw;
     camera.rotation.x = pitch;
-    if (camera.fov !== 75) { camera.fov = 75; camera.updateProjectionMatrix(); }
+    // R55:FOV 随冲刺平滑拉伸;基础 FOV 读设置(此前 settings.fov 未生效)
+    const targetFov = (settings.fov || 75) + (isSprinting ? BALANCE.player.sprintFov : 0);
+    if (Math.abs(camera.fov - targetFov) > 0.05) {
+      camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 10);
+      camera.updateProjectionMatrix();
+    }
     // 行走视角摆动(轻微起伏 + 微 roll,落地感/移动感)
     const hspd = Math.hypot(velocity.x, velocity.z);
-    const bobTarget = (onGround && !isFlying && hspd > 0.8) ? 1 : 0;
+    const bobTarget = (!settings.reduceMotion && onGround && !isFlying && hspd > 0.8) ? 1 : 0;
     bobAmp += (bobTarget - bobAmp) * Math.min(1, dt * 8);
     bobPhase += dt * hspd * 1.7;
     camera.position.y += Math.sin(bobPhase * 2) * 0.042 * bobAmp;
     camera.rotation.z = Math.sin(bobPhase) * 0.007 * bobAmp;
   } else {
     updateThirdPersonCamera();
+  }
+
+  // R55 视觉:镜头震动(受击/爆炸);用正弦而非随机,避免高频抖动
+  if (shakeT > 0 && !settings.reduceMotion) {
+    shakeT -= dt;
+    const k = Math.max(0, shakeT) / 0.35;
+    const s = shakeAmp * k;
+    camera.position.x += Math.sin(now * 0.11) * s;
+    camera.position.y += Math.cos(now * 0.14) * s * 0.7;
+    if (shakeT <= 0) { shakeT = 0; shakeAmp = 0; }
   }
 
   // 天空穹顶/星星跟随相机(无视差),缓慢旋转(星星周日视运动)
@@ -254,6 +275,11 @@ function animate() {
   if (target) {
     highlightBox.visible = true;
     highlightBox.position.set(target.x + 0.5, target.y + 0.5, target.z + 0.5);
+    // R55 视觉:可收获=黑色细框,层级不足=橙红框(与准星提示呼应)
+    const tb = getBlock(target.x, target.y, target.z);
+    const can = tb ? canHarvestBlock(tb) : true;
+    highlightBox.material.color.setHex(can ? 0x101010 : 0xff7040);
+    highlightBox.material.opacity = can ? 0.4 : 0.75;
   } else {
     highlightBox.visible = false;
   }
@@ -332,6 +358,13 @@ function tryPlantCrop(nx, ny, nz) {
   if (selectedType !== 'snow') return false;
   if (getBlock(nx, ny - 1, nz) !== 'grass') return false;
   if (setBlock(nx, ny, nz, 'snow')) { cropTimers.set(blockKey(nx, ny, nz), Date.now()); return true; }
+  return false;
+}
+// R55:种子种植(视觉仍用雪苗,兼容旧存档的雪苗计时器)
+function tryPlantSeed(nx, ny, nz) {
+  if (getBlock(nx, ny - 1, nz) !== 'grass') return false;
+  if (getBlock(nx, ny, nz)) return false;
+  if (setBlock(nx, ny, nz, 'snow')) { cropTimers.set(blockKey(nx, ny, nz), Date.now()); markDirtySave(); return true; }
   return false;
 }
 function updateCrops() {
@@ -420,7 +453,7 @@ function applySave(rec) {
   } else {
     // 存档位置异常 → 回广场中心
     const plazaH = SEA_LEVEL + 6;
-    playerPos.set(0.5, plazaH + 1 + PLAYER_HEIGHT * 0.5, 0.5);
+    playerPos.set(SPAWN_X, plazaH + 1 + PLAYER_HEIGHT * 0.5, SPAWN_Z);
   }
   yaw = rec.yaw || 0; pitch = rec.pitch || 0;
   if (typeof rec.dayTime === 'number' && Number.isFinite(rec.dayTime)) dayTime = ((rec.dayTime % 1) + 1) % 1;   // 带范围校验恢复世界时间(旧档无此字段则沿用 clearWorld 重置的早晨)
@@ -437,6 +470,7 @@ function applySave(rec) {
     // 旧存档归一化:无数量字段的方块格补满一组(逻辑在 inventory.js)
     INVLIB.normalizeHotbar(hotbar);
   } else initInventory();
+  for (const it of hotbar) if (it) discovered.add(it.id);   // R55:旧档已持有物品视为已发现
   currentSlot = Math.max(0, Math.min(HOTBAR_SIZE - 1, (rec.currentSlot | 0) || 0));
   // 预热玩家所在区域区块
   const pcx = Math.floor(playerPos.x / CHUNK_SIZE);
@@ -452,6 +486,7 @@ function applySave(rec) {
   if (rec.doorsData) {
     for (const [key, d] of rec.doorsData) {
       try {
+        if (!d || !Number.isFinite(d.x) || !Number.isFinite(d.y) || !Number.isFinite(d.z)) continue;
         // 确保门位置区块已生成(避免在未加载区块创建门)
         ensureChunk(Math.floor(d.x / CHUNK_SIZE), Math.floor(d.z / CHUNK_SIZE));
         const door = { x: d.x, y: d.y, z: d.z, type: d.type || 'door', open: !!d.open, facing: d.facing || 0 };
@@ -489,6 +524,25 @@ function applySave(rec) {
     for (const id of rec.achvData) if (MACHINES.ACHV_BY_ID[id]) achvUnlocked.add(id);
   }
   updateAchvBtn();
+  // R55:模式/天数/统计/目标/发现/信标/宝库
+  gameMode = rec.mode === 'creative' ? 'creative' : 'survival';
+  settings.mode = gameMode;
+  dayCount = (Number.isFinite(rec.dayCount) && rec.dayCount > 0) ? Math.floor(rec.dayCount) : 1;
+  if (rec.statsData && typeof rec.statsData === 'object') {
+    for (const k of ['playTime', 'blocksMined', 'blocksPlaced', 'distance', 'deaths', 'kills', 'fish', 'trades']) {
+      if (Number.isFinite(rec.statsData[k])) stats[k] = rec.statsData[k];
+    }
+  }
+  stats._lx = undefined; stats._lz = undefined;   // R55:读档首帧不累计出生点位移
+  goalClaimed.clear();
+  if (Array.isArray(rec.goalClaimedData)) for (const id of rec.goalClaimedData) goalClaimed.add(id);
+  discovered.clear();
+  if (Array.isArray(rec.discoveredData)) for (const id of rec.discoveredData) discovered.add(id);
+  beacons.clear();
+  if (Array.isArray(rec.beaconsData)) for (const k of rec.beaconsData) beacons.add(k);
+  vaults.clear();
+  if (Array.isArray(rec.vaultsData)) for (const k of rec.vaultsData) vaults.add(k);
+  if (typeof updateGoalsHUD === 'function') updateGoalsHUD(true);   // 读档不补发经验,避免改写入档 XP
   // 恢复蛋糕片数(R40;旧档无字段 = 全 6 片由 getCakeSlices 惰性补)
   cakes.clear();
   if (Array.isArray(rec.cakesData)) {
@@ -526,6 +580,9 @@ function applySave(rec) {
   }
   updateArmorBar();
   saveDirty = false;
+  // R55:读档期间 updateGoalsHUD 可能排入防抖自动保存;读档结束取消它,
+  // 避免刚读完 3 秒后又强制覆盖一次(旧档迁移时尤其容易发生)
+  if (typeof autosaveTimer !== 'undefined' && autosaveTimer) { clearTimeout(autosaveTimer); autosaveTimer = null; }
 }
 
 function updateInfoCount() {

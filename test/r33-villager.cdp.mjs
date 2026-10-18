@@ -128,7 +128,7 @@ async function main() {
   })()`);
   check('持麦右键村民 → 开交易(未被喂食截胡)', openPanel.panel && openPanel.isMob && openPanel.loveT === 0 && openPanel.wheat === 20, JSON.stringify(openPanel));
 
-  // ---- 6. 面板内容:7 行,首行小麦×18→绿宝石(n=1 无角标,与炉面板一致),买行角标 4 ----
+  // ---- 6. 面板内容:7 行,首行小麦×12→绿宝石(R55),买行角标 4 ----
   const panelState = await evl(`(() => {
     const rows = document.querySelectorAll('#trade-list .trade-row');
     const r0 = rows[0], r4 = rows[4];
@@ -139,7 +139,7 @@ async function main() {
              r4GetCnt: r4.children[2].querySelector('.cnt') ? r4.children[2].querySelector('.cnt').textContent : '',
              r1Locked: rows[1].classList.contains('locked') };
   })()`);
-  check('交易面板 7 行 + 角标 + 锁定态', panelState.rows === 7 && !panelState.r0Locked && panelState.r0GiveCnt === '18' && panelState.r0GetCnt === '' && panelState.r4GetCnt === '4' && panelState.r1Locked, JSON.stringify(panelState));
+  check('交易面板 7 行 + 角标 + 锁定态', panelState.rows === 7 && !panelState.r0Locked && panelState.r0GiveCnt === '12' && panelState.r0GetCnt === '' && panelState.r4GetCnt === '4' && panelState.r1Locked, JSON.stringify(panelState));
 
   // ---- 7. 卖出:小麦×18 → 绿宝石×1 ----
   const sell = await evl(`(() => {
@@ -148,7 +148,7 @@ async function main() {
     return { wheat: cnt('wheat'), emerald: cnt('gem_emerald'),
              row5Unlocked: !document.querySelectorAll('#trade-list .trade-row')[4].classList.contains('locked') };
   })()`);
-  check('交易:小麦 20→2,绿宝石 +1,买面包行解锁', sell.wheat === 2 && sell.emerald === 1 && sell.row5Unlocked, JSON.stringify(sell));
+  check('交易:小麦 20→8,绿宝石 +1,买面包行解锁(R55)', sell.wheat === 8 && sell.emerald === 1 && sell.row5Unlocked, JSON.stringify(sell));
 
   // ---- 8. 买入:绿宝石×1 → 面包×4 ----
   const buy = await evl(`(() => {

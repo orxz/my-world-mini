@@ -12,6 +12,16 @@ function collidePlayer(dt) {
 
 function moveAxis(axis, delta, r, H) {
   if (delta === 0) return;
+  // 潜行边缘保护(R55):着地潜行时,若前进方向脚下是空气/水则取消该轴位移。
+  // 只挡「走出边缘」,不挡正常上台阶(目标格脚下仍有实体)。
+  if ((axis === 'x' || axis === 'z') && isSneaking && onGround && !isFlying) {
+    const nx = axis === 'x' ? playerPos.x + delta : playerPos.x;
+    const nz = axis === 'z' ? playerPos.z + delta : playerPos.z;
+    const fy = Math.floor(playerPos.y - H * 0.5 - 0.08);
+    const below = getBlock(Math.floor(nx), fy, Math.floor(nz));
+    const support = below && BLOCK_TYPES[below] && BLOCK_TYPES[below].solid;
+    if (!support) { velocity[axis] = 0; return; }
+  }
   playerPos[axis] += delta;
   const px = playerPos.x, py = playerPos.y, pz = playerPos.z;
   const minX = Math.floor(px - r), maxX = Math.floor(px + r);
@@ -88,7 +98,7 @@ let lastStepTime = 0, lastJumpTime = 0, lastWaterTime = 0, wasInWater = false;
 function updatePlayer(dt, prevVy) {
   // 乘坐矿车(R26):位置由矿车驱动,玩家物理挂起;空格下车
   if (ridingCart) {
-    if (keys['Space']) dismountCart();
+    if (keys[keymap.jump]) dismountCart();
     return;
   }
   const forward = _fwd.set(-Math.sin(yaw), 0, -Math.cos(yaw));
@@ -104,48 +114,63 @@ function updatePlayer(dt, prevVy) {
     move.addScaledVector(forward, -tm.z);   // 池化:不 clone,零分配
     move.addScaledVector(right, tm.x);
   } else {
-    if (keys['KeyW']) move.add(forward);
-  if (keys['KeyS']) move.sub(forward);
-  if (keys['KeyD']) move.add(right);
-  if (keys['KeyA']) move.sub(right);
+    if (keys[keymap.forward]) move.add(forward);
+  if (keys[keymap.back]) move.sub(forward);
+  if (keys[keymap.right]) move.add(right);
+  if (keys[keymap.left]) move.sub(right);
   }
   if (move.lengthSq() > 0) move.normalize();
 
   const water = inWater();
-  const speed = isFlying ? FLY_SPEED : (water ? WALK_SPEED * 0.5 : WALK_SPEED);
-  const sprint = keys['ShiftLeft'] || keys['ShiftRight'];
+  const ladderHere = getBlock(Math.floor(playerPos.x), Math.floor(playerPos.y - 0.3), Math.floor(playerPos.z)) === 'ladder'
+    || getBlock(Math.floor(playerPos.x), Math.floor(playerPos.y + 0.3), Math.floor(playerPos.z)) === 'ladder';
+  const shiftDown = keys['ShiftLeft'] || keys['ShiftRight'] || (keys[keymap.sneak] || false);
+  // 潜行(R55):地面 + Shift/自定义键 + 非飞行/非水/非梯子;眼高在相机层下沉
+  isSneaking = !isFlying && !water && onGround && (!!shiftDown || touchSneak) && !ladderHere;
+  // 冲刺(R55):双击 W 锁定 / 触屏摇杆推满 / 冲刺键;需有前进输入、饥饿 > 6、非潜行
+  const touchMag = tm ? Math.hypot(tm.x, tm.z) : 0;
+  const wantSprint = !isFlying && !water && !isSneaking
+    && (touchMag > 0.9 || touchSprint || keys[keymap.sprint] || (sprintLock && keys[keymap.forward]));
+  if (wantSprint && hungerState.hunger > BALANCE.player.sprintMinHunger && move.lengthSq() > 0.1) {
+    isSprinting = true;
+  } else {
+    isSprinting = false;
+    if (!wantSprint) sprintLock = false;
+  }
+  const speed = isFlying ? FLY_SPEED
+    : water ? BALANCE.player.swimSpeed
+    : isSneaking ? SNEAK_SPEED
+    : isSprinting ? SPRINT_SPEED : WALK_SPEED;
+  const sprint = shiftDown;   // 飞行下降沿用 Shift
 
   if (isFlying) {
     velocity.x = move.x * speed;
     velocity.z = move.z * speed;
     velocity.y = 0;
-    if (keys['Space']) velocity.y = speed;
+    if (keys[keymap.jump]) velocity.y = speed;
     if (sprint) velocity.y = -speed;
   } else if (water) {
-    // 水中:有浮力(缓慢上浮到水面),按空格加速上浮;下落速度有上限避免一直沉底
+    // 水中:浮力缓慢上浮,空格加速上浮;潜水下落有上限
     velocity.x = move.x * speed;
     velocity.z = move.z * speed;
-    if (keys['Space']) {
-      velocity.y = 4.5;                       // 主动上浮
+    if (keys[keymap.jump]) {
+      velocity.y = BALANCE.player.swimUp;
     } else {
-      velocity.y -= GRAVITY * 0.3 * dt;       // 重力(被浮力部分抵消)
-      velocity.y += 6.0 * dt;                 // 浮力:净效果是缓慢上浮
-      if (velocity.y < -3) velocity.y = -3;   // 下沉速度上限,避免加速到海底
+      velocity.y -= GRAVITY * 0.3 * dt;
+      velocity.y += 6.0 * dt;
+      if (velocity.y < -BALANCE.player.sinkMax) velocity.y = -BALANCE.player.sinkMax;
     }
   } else {
     velocity.x = move.x * speed;
     velocity.z = move.z * speed;
-    // 梯子攀爬(经典):在梯子体积内 —— 空格上升 / Shift 悬停 / 其余缓慢下滑;
-    // 水平移动不受限,可左右挪出梯子
-    const onLadder = getBlock(Math.floor(playerPos.x), Math.floor(playerPos.y - 0.3), Math.floor(playerPos.z)) === 'ladder'
-      || getBlock(Math.floor(playerPos.x), Math.floor(playerPos.y + 0.3), Math.floor(playerPos.z)) === 'ladder';
-    if (onLadder) {
-      if (keys['Space']) velocity.y = 3.2;
-      else if (keys['ShiftLeft'] || keys['ShiftRight']) velocity.y = 0;
+    // 梯子攀爬(经典):空格上升 / Shift 悬停 / 其余缓慢下滑
+    if (ladderHere) {
+      if (keys[keymap.jump]) velocity.y = 3.2;
+      else if (shiftDown) velocity.y = 0;
       else velocity.y = Math.max(velocity.y - GRAVITY * dt, -1.8);
     } else {
       velocity.y -= GRAVITY * dt;
-      if (keys['Space'] && onGround) {
+      if (keys[keymap.jump] && onGround) {
         velocity.y = JUMP_SPEED;
         const now = performance.now();
         if (now - lastJumpTime > 250) { audio.play('jump'); lastJumpTime = now; }
@@ -171,14 +196,25 @@ function updatePlayer(dt, prevVy) {
       if (!water) spawnParticles(playerPos.x, playerPos.y - 0.7, playerPos.z, 0x9a8a6a, 6);   // 落地尘土
     }
   }
-  // Fall damage: when landing with prevVy < -15 (~4+ blocks), scale by speed. Flying immune.
-  if (onGround && !wasOnGround && !isFlying && prevVy < -15 && !inWater() && !landedOnSlime) {
-    const dmg = Math.floor((-prevVy - 15) / 3);
-    if (dmg > 0) damagePlayer(dmg, 'fall');
+  // 坠落伤害(R55):安全 3 格,每格 0.9,上限 20;水/黏液块/飞行免疫
+  if (onGround && !wasOnGround && !isFlying && prevVy < 0 && !inWater() && !landedOnSlime) {
+    const fallH = BALANCE_LIB.fallHeightFromVelocity(prevVy);
+    const dmg = BALANCE_LIB.fallDamage(fallH);
+    if (dmg > 0) {
+      damagePlayer(dmg, 'fall');
+      if (dmg >= 10) showToast('💥 重摔!(-' + dmg + ' HP)');
+    }
   }
   wasOnGround = onGround;
   // 记录最后安全位置(用于虚空救援):仅当稳稳站在实体方块上时更新
   if (onGround && !isFlying) lastSafePos.copy(playerPos);
+  // 统计(R55):只累计着地行走,飞行/传送/重生不计入
+  {
+    const dsx = playerPos.x - (stats._lx === undefined ? playerPos.x : stats._lx);
+    const dsz = playerPos.z - (stats._lz === undefined ? playerPos.z : stats._lz);
+    stats._lx = playerPos.x; stats._lz = playerPos.z;
+    if (onGround && !isFlying) stats.distance += Math.hypot(dsx, dsz);
+  }
   // 教程:累计移动距离(仅落地行走计入)
   if (tutorial.active) {
     const dx = playerPos.x - (tutorial._lx === undefined ? playerPos.x : tutorial._lx);
@@ -194,7 +230,8 @@ function updatePlayer(dt, prevVy) {
       const now = performance.now();
       const interval = 320;
       if (now - lastStepTime > interval) {
-        audio.play('step');
+        const under = getBlock(Math.floor(playerPos.x), Math.floor(playerPos.y - PLAYER_HEIGHT * 0.5 - 0.1), Math.floor(playerPos.z));
+        audio.play('step', under);
         lastStepTime = now;
       }
     }
@@ -206,12 +243,12 @@ function updatePlayer(dt, prevVy) {
     if (now - lastWaterTime > 500) { audio.play('water'); lastWaterTime = now; }
   }
   wasInWater = water;
-  // Drowning: head underwater continuously >15s -> 1 HP/sec. Reset on surfacing.
+  // 窒息:头部在水下连续 20 秒后每秒 1 HP;浮出重置
   const headInWater = getBlock(Math.floor(playerPos.x), Math.floor(playerPos.y + 0.2), Math.floor(playerPos.z)) === 'water';
   if (headInWater) {
     breathTimer += dt;
-    if (breathTimer > 15) {
-      const over = breathTimer - 15;
+    if (breathTimer > BALANCE.player.breath) {
+      const over = breathTimer - BALANCE.player.breath;
       const before = Math.floor(over - dt);
       const after = Math.floor(over);
       if (after > before) damagePlayer(after - before, 'drown');
@@ -220,15 +257,15 @@ function updatePlayer(dt, prevVy) {
     breathTimer = 0;
   }
 
-  // 饥饿系统(状态机在 inventory.js:hungerTick):移动消耗更快(飞行减半);
-  // 速率平衡:移动 0.7(≈5.7 秒 1 点,20 点约 2 分钟)/ 静止 0.25(16 秒 1 点)
-  const hres = INVLIB.hungerTick(hungerState, dt,
-    (Math.hypot(velocity.x, velocity.z) > 0.5 ? 0.7 : 0.25) * (isFlying ? 0.4 : 1),
-    playerHP < PLAYER_MAX_HP);
+  // 饥饿系统:速率来自 BALANCE.hunger(移动 0.22 / 静止 0.08 / 冲刺 0.55)
+  const moveRate = Math.hypot(velocity.x, velocity.z) > 0.5;
+  let rate = moveRate ? BALANCE.hunger.drainWalk : BALANCE.hunger.drainIdle;
+  if (isSprinting) rate = BALANCE.hunger.drainSprint;
+  if (isFlying) rate *= 0.4;
+  const hres = INVLIB.hungerTick(hungerState, dt, rate, playerHP < PLAYER_MAX_HP);
   if (hres.hungerChanged) {
     updateHungerBar();
-    // 低饥饿一次性警告(R45):饿伤前可感知(6 = 鸡腿图标将空过半)
-    if (hungerState.hunger === 6) showToast('🍗 你饿了:饥饿低于 18 不再回血,归零会持续掉血');
+    if (hungerState.hunger === BALANCE.hunger.lowWarn) showToast('🍗 你饿了:饥饿低于 18 不再回血,归零会持续掉血');
   }
   if (hres.regen) {
     // 回血消耗食物(R45 经典收敛):每次 +1 血附加 0.5 点饥饿消耗
@@ -254,7 +291,7 @@ function updatePlayer(dt, prevVy) {
     // 兜底:lastSafePos 不可用 → 回出生广场中心(确定性安全)
     if (!rescued) {
       const plazaH = SEA_LEVEL + 6;
-      playerPos.set(0.5, plazaH + 1 + PLAYER_HEIGHT * 0.5, 0.5);
+      playerPos.set(SPAWN_X, plazaH + 1 + PLAYER_HEIGHT * 0.5, SPAWN_Z);
     }
     velocity.set(0, 0, 0);
     showToast('已从虚空中救回');

@@ -7,6 +7,8 @@ let RENDER_DISTANCE = 5;  // let:可被设置修改      // 加载半径(chunk �
 const FOG_NEAR = 30;
 let FOG_FAR = (RENDER_DISTANCE * CHUNK_SIZE) + 8;  // let:随 RENDER_DISTANCE 设置变化
 const SEA_LEVEL = 14;           // 海平面
+const PLAZA_RADIUS = 28;        // R55:出生广场半径(与 buildSpawnPlaza 一致)
+const PLAZA_HEIGHT = SEA_LEVEL + 6;
 
 // 区块存储: key "cx,cz" -> chunk
 const chunks = new Map();
@@ -31,6 +33,9 @@ const villageTorches = new Map();
 // dungeonSpawns 刷怪笼 {x,y,z,mob} / dungeonLootSpots 战利品箱 {x,y,z}
 const dungeonSpawns = new Map();
 const dungeonLootSpots = new Map();
+// R55:核心地牢的宝库/远古铁傀儡登记(生成侧,零存档 diff)
+const vaultSpots = new Map();          // chunkKey -> [{x,y,z}]
+const ancientGolemSpots = new Map();   // chunkKey -> [{x,y,z}]
 // 红石元件登记表(R38):chunkKey → Map("x,y,z" → 方块 id);
 // 放置/破坏/拉杆切换走 setBlock 实时更新,区块(重)装载时从 diff 桶扫描登记
 const REDSTONE_FAMILY = { redstone: 1, redstone_torch: 1, lever_off: 1, lever_on: 1, repeater_off: 1, repeater_on: 1, piston: 1, piston_ext: 1 };   // R42 +中继器/活塞(登记/采样破坏共用)
@@ -76,7 +81,11 @@ function generateChunkData(cx, cz) {
       const wx = ox + lx, wz = oz + lz;
       const mtn = fbm2D(wx * 0.008, wz * 0.008, worldSeed + 555, 4);  // 山地强度(算一次,biome/height 共用)
       const biome = biomeAt(wx, wz, worldSeed, mtn);
-      const height = heightAt(wx, wz, worldSeed, mtn);
+      const rawHeight = heightAt(wx, wz, worldSeed, mtn);
+      // R55:广场范围内削平山地 —— 否则山地会高过广场,玩家出生在石壳里,
+      // 且上方天然方块不属于 modifications,读档也不会被修正
+      const height = (Math.abs(wx) <= PLAZA_RADIUS && Math.abs(wz) <= PLAZA_RADIUS)
+        ? Math.min(rawHeight, PLAZA_HEIGHT) : rawHeight;
       const b = BIOMES[biome];
       const yTop = Math.max(height, SEA_LEVEL);
 
@@ -116,16 +125,17 @@ function generateChunkData(cx, cz) {
         }
       }
 
-      // 矿石(确定性,复刻经典采矿循环):石头层内按 hash 生成矿点;
-      // 煤 1.2% / 铁 0.7%,钻石 0.3% 且仅在 y<12 深层
+      // 矿石(确定性):煤 1.2% / 铁 0.7% / 金 0.4%(y<20) /
+      // 钻石 0.3%(y<12)/ 红石 0.4%(y<14)
       for (let y = 1; y < height - 3; y++) {
         const idx2 = chunkIdx(lx, y, lz);
         if (data[idx2] !== BLOCK_ID.stone) continue;
         const r = hash3(wx, y, wz, worldSeed + 4242);
         if (r < 0.012) data[idx2] = BLOCK_ID.coal_ore;
         else if (r < 0.019) data[idx2] = BLOCK_ID.iron_ore;
-        else if (r < 0.022 && y < 12) data[idx2] = BLOCK_ID.diamond_ore;
-        else if (r < 0.026 && y < 14) data[idx2] = BLOCK_ID.redstone_ore;   // 红石矿(R38,深层)
+        else if (r < 0.023 && y < 20) data[idx2] = BLOCK_ID.gold_ore;
+        else if (r < 0.026 && y < 12) data[idx2] = BLOCK_ID.diamond_ore;
+        else if (r < 0.030 && y < 14) data[idx2] = BLOCK_ID.redstone_ore;   // 红石矿(R38,深层)
       }
 
       // 洞穴挖空(R24,经典):3D 噪声隧道 + 深处空腔。保护:
@@ -143,7 +153,7 @@ function generateChunkData(cx, cz) {
     }
   }
 
-  // 地牢(R37):确定性生成侧结构(石室+刷怪笼+战利品箱),先于村庄写入;
+  // 地牢(R37/R55):确定性生成侧结构(石室+刷怪笼+战利品箱),先于村庄写入;
   // 覆盖洞穴空气保证石室完整;玩家 diff 在其后应用(挖掉的笼自然为 null)
   {
     const dc0 = Math.floor(ox / 64) - 1, dc1 = Math.floor((ox + 15) / 64) + 1;
@@ -152,8 +162,9 @@ function generateChunkData(cx, cz) {
     for (let dcx = dc0; dcx <= dc1; dcx++) for (let dcz = dn0; dcz <= dn1; dcz++) {
       const dg = dungeonInCell(dcx, dcz, worldSeed);
       if (!dg) continue;
-      const gx0 = dg.cx - 3, gz0 = dg.cz - 3;
-      for (let lx = 0; lx < 7; lx++) for (let lz = 0; lz < 7; lz++) {
+      const half = dg.size >> 1;
+      const gx0 = dg.cx - half, gz0 = dg.cz - half;
+      for (let lx = 0; lx < dg.size; lx++) for (let lz = 0; lz < dg.size; lz++) {
         const wx2 = gx0 + lx, wz2 = gz0 + lz;
         const bx = wx2 - ox, bz = wz2 - oz;
         if (bx < 0 || bx > 15 || bz < 0 || bz > 15) continue;
@@ -172,12 +183,26 @@ function generateChunkData(cx, cz) {
             if (t === 'chest') {
               let arr = dungeonLootSpots.get(ck);
               if (!arr) { arr = []; dungeonLootSpots.set(ck, arr); }
+              if (!arr.some(e => e.x === wx2 && e.y === y && e.z === wz2)) arr.push({ x: wx2, y, z: wz2, tier: dg.tier });
+            }
+            if (t === 'vault') {
+              let arr = vaultSpots.get(ck);
+              if (!arr) { arr = []; vaultSpots.set(ck, arr); }
               if (!arr.some(e => e.x === wx2 && e.y === y && e.z === wz2)) arr.push({ x: wx2, y, z: wz2 });
             }
           } else {
             data[idx3] = 0;   // 室内空气
           }
         }
+      }
+      // 核心档:第一室中央登记远古铁傀儡(首次靠近时唤醒)
+      if (dg.guard) {
+        const r0 = dg.rooms[0];
+        const gx = gx0 + Math.floor((r0.x0 + r0.x1) / 2);
+        const gz = gz0 + Math.floor((r0.z0 + r0.z1) / 2);
+        let arr = ancientGolemSpots.get(ck);
+        if (!arr) { arr = []; ancientGolemSpots.set(ck, arr); }
+        if (!arr.some(e => e.x === gx && e.z === gz)) arr.push({ x: gx, y: dg.floor + 1, z: gz });
       }
     }
   }
@@ -305,6 +330,7 @@ function applyPendingBlocks(ch) {
 
 // 获取/创建 chunk 对象(仅数据,不含 mesh)
 function ensureChunk(cx, cz) {
+  if (!Number.isFinite(cx) || !Number.isFinite(cz)) return null;   // 防御 NaN 坐标生成"幽灵区块"
   const key = chunkKey(cx, cz);
   let ch = chunks.get(key);
   if (!ch) {
@@ -339,6 +365,8 @@ function growTreesInChunk(cx, cz) {
   for (let lx = 0; lx < CHUNK_SIZE; lx++) {
     for (let lz = 0; lz < CHUNK_SIZE; lz++) {
       const wx = ox + lx, wz = oz + lz;
+      // R55:广场内不种自然树(广场自带树篱/灯塔/Owen 字样),避免树冠盖住出生点
+      if (Math.abs(wx) <= PLAZA_RADIUS && Math.abs(wz) <= PLAZA_RADIUS) continue;
       const r = hash2(wx, wz, worldSeed + 999);
       if (r >= 0.12) continue;   // 预过滤:所有群系 treeChance ≤ 0.12,r 偏大必不种树
       const mtnT = fbm2D(wx * 0.008, wz * 0.008, worldSeed + 555, 4);
@@ -378,6 +406,7 @@ function setBlock(x, y, z, type) {
   if (y === 0) return false;  // 基岩层(y=0)不可破坏/覆盖,防止挖穿掉入虚空
   const cx = Math.floor(x / CHUNK_SIZE), cz = Math.floor(z / CHUNK_SIZE);
   const ch = ensureChunk(cx, cz);
+  if (!ch) return false;
   const lx = x - cx * CHUNK_SIZE, lz = z - cz * CHUNK_SIZE;
   const idx = chunkIdx(lx, y, lz);
   const newId = type ? BLOCK_ID[type] : 0;
@@ -553,6 +582,11 @@ function registerWaterMesh(wm) { waterMeshes.push(wm); }
 function unregisterWaterMesh(wm) { const i = waterMeshes.indexOf(wm); if (i >= 0) waterMeshes.splice(i, 1); }
 
 function buildChunkMesh(ch) {
+  // 防御:NaN/空 chunk 不得进入网格构建(否则每帧动画在 buildChunkMesh 抛错)
+  if (!ch || !Number.isFinite(ch.cx) || !Number.isFinite(ch.cz)) {
+    if (ch) dirtyChunks.delete(ch);
+    return;
+  }
   const ox = ch.cx * CHUNK_SIZE, oz = ch.cz * CHUNK_SIZE;
   const data = ch.data;
   const positions = [], normals = [], uvs = [], indices = [], colors = [];
@@ -727,6 +761,12 @@ function updateChunks(playerWX, playerWZ) {
       }
       dirtyChunks.delete(ch);   // 已卸载的区块不再参与 mesh 重建
       chunks.delete(key);
+      // R55:生成侧登记表随区块卸载清理,防无限世界长期游玩时 Map 只增不减
+      dungeonSpawns.delete(key);
+      dungeonLootSpots.delete(key);
+      vaultSpots.delete(key);
+      ancientGolemSpots.delete(key);
+      redstoneParts.delete(key);
     }
   }
   // 门与渲染范围联动:超出(渲染范围 + 2 chunk)仅释放 mesh 保留表项(数据轻),
@@ -769,11 +809,15 @@ function updateChunks(playerWX, playerWZ) {
   // 分帧构建 mesh:从 dirtyChunks 挑最近的 budget 个(不分配数组、不排序)
   let buildLeft = chunkMeshBuildBudget;
   while (buildLeft > 0 && dirtyChunks.size > 0) {
+    // 清理异常条目(旧档/损坏门数据可能带入 NaN 坐标)
+    for (const ch of dirtyChunks) if (!ch || !Number.isFinite(ch.cx) || !Number.isFinite(ch.cz)) dirtyChunks.delete(ch);
+    if (dirtyChunks.size === 0) break;
     let best = null, bestD = Infinity;
     for (const ch of dirtyChunks) {
       const d = (ch.cx - pcx) * (ch.cx - pcx) + (ch.cz - pcz) * (ch.cz - pcz);
       if (d < bestD) { bestD = d; best = ch; }
     }
+    if (!best) { dirtyChunks.clear(); break; }
     buildChunkMesh(best);   // 内部重置 meshDirty 并从 dirtyChunks 移除
     buildLeft--;
   }

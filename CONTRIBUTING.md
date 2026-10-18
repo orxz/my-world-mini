@@ -11,7 +11,7 @@
 # 安装开发依赖(ESLint 等)
 npm install
 
-# 跑确定性函数单元测试(143 项)
+# 跑确定性函数单元测试(160 项)
 npm test
 
 # 静态检查
@@ -39,7 +39,7 @@ myword/
 ├── inventory.js        # 库存/饥饿/护甲纯函数模块(可独立测试)
 ├── machines.js         # 状态机纯函数模块(教程/熔炉/天气/红石/成就/存档 schema)
 ├── three.min.js        # Three.js r160(第三方,已内置,离线可玩 —— 请勿改动)
-├── test/unit.test.js   # Node 单元测试(确定性函数验证,143 项)
+├── test/unit.test.js   # Node 单元测试(确定性函数验证,160 项)
 ├── test/*.cdp.mjs      # CDP 实机套件(headless Chrome,冒烟 + 各轮回归)
 ├── docs/               # 架构与模块文档
 │   ├── architecture.md
@@ -85,7 +85,7 @@ myword/
 
 提交 PR 前,请确认:
 
-- [ ] `npm test` 通过(143 项全绿)
+- [ ] `npm test` 通过(160 项全绿)
 - [ ] `npm run lint` 通过(无 error)
 - [ ] 浏览器手动验证:游戏可启动、移动/破坏/放置正常、无控制台报错
 - [ ] 若改了 `worldgen.js` / `craft.js`,测试已同步更新

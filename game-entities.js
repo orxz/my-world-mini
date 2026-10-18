@@ -84,6 +84,7 @@ function pickupIntoInventory(kind, id, count, durability) {
     defaultDurability: TOOL_TYPES[id] ? TOOL_TYPES[id].durability : undefined,
   });
   if (absorbed > 0) {
+    discovered.add(id);   // R55:图鉴解锁
     tutEvent('pickup', absorbed);
     const pa = PICKUP_ACHV[id];   // 成就:材料里程碑(R34)
     if (pa) unlockAchv(pa);
@@ -168,7 +169,6 @@ function clearDroppedItems() {
 // ============================================================
 const mobs = [];
 const MOB_CAP = 10;        // 被动生物上限(猪)
-const HOSTILE_CAP = 8;     // 敌对生物上限(僵尸 + 苦力怕)
 let mobSpawnTimer = 2;
 let hostileSpawnTimer = 4;
 
@@ -184,6 +184,7 @@ const MOB_DEFS = {
   villager: { hp: 20, hostile: false },    // R33:村庄 NPC,右键交易(绿宝石经济)
   slime:    { hp: 16, hostile: true },     // R35:跳跃移动,死亡分裂(大→中→小)
   golem:    { hp: 100, hostile: false },   // R39:铁傀儡,村庄守护(构造生成)
+  golem_ancient: { hp: 180, hostile: true },  // R55:核心地牢的远古铁傀儡(精英)
   chicken:  { hp: 4,  hostile: false },   // R40:被动生物,产蛋+小麦繁殖
 };
 function countHostiles() {
@@ -271,9 +272,11 @@ function spawnMob(x, groundY, z, type, opts) {
     : t === 'villager' ? buildVillagerMesh()
     : t === 'slime' ? buildSlimeMesh()
     : t === 'golem' ? buildGolemMesh()
+    : t === 'golem_ancient' ? buildGolemMesh(true)
     : t === 'chicken' ? buildChickenMesh()
     : buildPigMesh();
   mesh.position.set(x, groundY + 0.45, z);   // 身体中心离地 0.45
+  if (t === 'golem_ancient') mesh.scale.setScalar(1.25);   // R55:精英体型
   scene.add(mesh);
   mobs.push({
     mesh, type: t, vy: 0, kvx: 0, kvz: 0,
@@ -299,7 +302,7 @@ function spawnMob(x, groundY, z, type, opts) {
 // 各类型生物的接地阴影直径(格)
 const MOB_SHADOW_SIZE = {
   pig: 0.7, cow: 0.8, sheep: 0.75, chicken: 0.45, villager: 0.7,
-  zombie: 0.65, creeper: 0.6, skeleton: 0.6, spider: 0.9, enderman: 0.6, golem: 0.95,
+  zombie: 0.65, creeper: 0.6, skeleton: 0.6, spider: 0.9, enderman: 0.6, golem: 0.95, golem_ancient: 0.85,
 };
 
 // 僵尸模型:绿皮人形,-z 为前,双臂经典前平举;userData 携带腿/臂引用
@@ -758,12 +761,12 @@ function buildChickenMesh() {
 }
 
 // 铁傀儡模型(R39):2.4 格高铁块人形 —— 宽躯干 + 小头 + 垂肩长臂 + 短腿
-function buildGolemMesh() {
+function buildGolemMesh(ancient) {
   const g = new THREE.Group();
-  const ironMat = new THREE.MeshLambertMaterial({ color: 0xc8c8d2 });
-  const ironDark = new THREE.MeshLambertMaterial({ color: 0x9a9aa8 });
-  const mossMat = new THREE.MeshLambertMaterial({ color: 0x5e8a4c });   // 胸口苔痕(经典)
-  const eyeMat = new THREE.MeshLambertMaterial({ color: 0xd05030 });
+  const ironMat = new THREE.MeshLambertMaterial({ color: ancient ? 0x7a6a4a : 0xc8c8d2 });
+  const ironDark = new THREE.MeshLambertMaterial({ color: ancient ? 0x5a4a32 : 0x9a9aa8 });
+  const mossMat = new THREE.MeshLambertMaterial({ color: ancient ? 0x8a5a3a : 0x5e8a4c });   // 胸口苔痕/远古锈迹
+  const eyeMat = new THREE.MeshLambertMaterial({ color: ancient ? 0xff3020 : 0xd05030 });
   const torso = new THREE.Mesh(new THREE.BoxGeometry(0.85, 1.05, 0.5), ironMat);
   torso.position.y = 1.35;
   const moss = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.3, 0.06), mossMat);
@@ -797,7 +800,7 @@ function buildGolemMesh() {
     return lg;
   };
   g.add(torso, moss, head, eyeL, eyeR, nose, mkArm(-1), mkArm(1), mkLeg(-1), mkLeg(1));
-  g.userData = { legs: legGroups, arms, mats: [ironMat, ironDark, mossMat], baseColors: [0xc8c8d2, 0x9a9aa8, 0x5e8a4c] };
+  g.userData = { legs: legGroups, arms, mats: [ironMat, ironDark, mossMat], baseColors: ancient ? [0x7a6a4a, 0x5a4a32, 0x8a5a3a] : [0xc8c8d2, 0x9a9aa8, 0x5e8a4c] };
   return g;
 }
 
@@ -985,8 +988,8 @@ function endermanAI(m, dt, distP) {
   }
   m.attackCd -= dt;
   if (m.angered && distP < 1.8 && m.attackCd <= 0) {
-    m.attackCd = 1.0;
-    damagePlayer(7, 'combat');
+    m.attackCd = 1.2;
+    damagePlayer(6, 'combat');
     const inv = 1 / Math.max(0.001, distP);
     velocity.x += (playerPos.x - m.mesh.position.x) * inv * 7;
     velocity.z += (playerPos.z - m.mesh.position.z) * inv * 7;

@@ -197,6 +197,9 @@ async function main() {
   // 10.5 crafting: shapeless 配方匹配 + 数量注入(R44 起产物并入热栏,不盲覆写当前格)
   const craft = await evl(`(() => {
     hotbar.fill(null); currentSlot = 0;
+    // R55:生存合成消耗快捷栏真实材料,先放 1 木头
+    hotbar[0] = { kind: 'block', id: 'wood', count: 1 };
+    buildHotbar();
     craftGrid[0] = { kind: 'block', id: 'wood', count: 1 };
     const r = matchRecipe();
     performCraft();

@@ -42,6 +42,8 @@ const CRAFTLIB_GLOBALS = {
   matchRecipeGrid: 'readonly',
   INVLIB: 'readonly',
   MACHINES: 'readonly',
+  BALANCE: 'readonly',
+  BALANCE_LIB: 'readonly',
 };
 
 // —— game.js 家族分片的跨文件符号自动推导 ——
@@ -134,6 +136,8 @@ export default [
       'test/r50-final.cdp.mjs',      // R50 收官细审(同上)
       'test/r51-visual.cdp.mjs',     // R51 视觉/视角修复回归(同上)
       'test/r52-verify.cdp.mjs',     // R52 视角体验修复复验(同上)
+      'test/r55-verify.cdp.mjs',     // R55 生存地基验收(同上)
+      'test/r56-playground.cdp.mjs', // R56 出生地游乐场验收(同上)
       'test/reload.cdp.mjs',         // 回归运行助手:套件连跑前重载新世界(同上)
     ],
   },
@@ -189,13 +193,15 @@ export default [
 
   // —— UMD 模块:craft.js / inventory.js(浏览器挂全局 + Node module.exports)——
   {
-    files: ['craft.js', 'inventory.js', 'machines.js'],
+    files: ['craft.js', 'inventory.js', 'machines.js', 'balance.js'],
     languageOptions: {
       ecmaVersion: 2021,
       sourceType: 'script',
       globals: {
         ...globals.browser,
         ...globals.node,   // UMD 用到 module/require/global
+        BALANCE: 'readonly',
+        BALANCE_LIB: 'readonly',
       },
     },
     rules: {

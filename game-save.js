@@ -6,14 +6,19 @@
 // 设置持久化(localStorage)
 // ============================================================
 const SETTINGS_KEY = 'myword_settings';
-let settings = { volume: 0.35, soundEnabled: true, fov: 75, renderDist: 5, dayNightEnabled: true, dayCycleSpeed: 120, mobs: true, hostiles: true, weather: true, fpHeld: false };
+let settings = { volume: 0.35, soundEnabled: true, fov: 75, renderDist: 5, dayNightEnabled: true, dayCycleSpeed: 480, mobs: true, hostiles: true, weather: true, fpHeld: false, mode: 'survival', fontScale: 1, reduceMotion: false, keymap: null };
 function loadSettings() {
   try {
     const s = localStorage.getItem(SETTINGS_KEY);
     if (s) { const parsed = JSON.parse(s); Object.assign(settings, parsed); }
     settings.renderDist = Math.max(1, Math.min(10, settings.renderDist|0 || 5));
     let _vol = Number(settings.volume); settings.volume = Math.max(0, Math.min(1, Number.isFinite(_vol) ? _vol : 0.35));
+    settings.dayCycleSpeed = [240, 480, 900].includes(settings.dayCycleSpeed) ? settings.dayCycleSpeed : 480;
+    settings.fontScale = [1, 1.15, 1.3].includes(settings.fontScale) ? settings.fontScale : 1;
+    settings.fov = [65, 75, 85, 100].includes(settings.fov) ? settings.fov : 75;
+    if (settings.keymap && typeof settings.keymap === 'object') Object.assign(keymap, settings.keymap);
   } catch (e) { console.debug('设置读取失败(用默认值):', e); }
+  gameMode = settings.mode === 'creative' ? 'creative' : 'survival';
   // 应用设置
   if (audio.masterGain) audio.masterGain.gain.value = settings.soundEnabled ? settings.volume : 0;
   audio.enabled = settings.soundEnabled;
@@ -31,6 +36,7 @@ function loadSettings() {
   if (bw) bw.textContent = '天气:' + (settings.weather ? '开' : '关');
 }
 function saveSettings() {
+  settings.keymap = Object.assign({}, keymap);
   try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) { console.debug('设置写入失败(忽略):', e); }
 }
 
@@ -130,6 +136,13 @@ function buildSaveRecord() {
     minecartsData: minecarts.map(c => ({ x: c.cx, y: Math.round(c.y), z: c.cz })),
     mobsData: mobs.map(mm => ({ t: mm.type, x: Math.round(mm.mesh.position.x * 100) / 100, y: Math.round(mm.mesh.position.y * 100) / 100, z: Math.round(mm.mesh.position.z * 100) / 100, hp: mm.hp, baby: !!mm.baby, s: mm.type === 'slime' ? mm.slimeSize : undefined })),
     xpData: { level: xpState.level, points: xpState.points },
+    mode: gameMode,
+    dayCount,
+    statsData: { playTime: stats.playTime, blocksMined: stats.blocksMined, blocksPlaced: stats.blocksPlaced, distance: stats.distance, deaths: stats.deaths, kills: stats.kills, fish: stats.fish, trades: stats.trades },
+    goalClaimedData: Array.from(goalClaimed),
+    discoveredData: Array.from(discovered),
+    beaconsData: Array.from(beacons),
+    vaultsData: Array.from(vaults),
     achvData: Array.from(achvUnlocked),   // 成就解锁清单(R34)
     cakesData: Array.from(cakes.entries()),   // 蛋糕剩余片数(R40)
     pistonsData: Array.from(pistons.entries()),   // 活塞朝向(R42)

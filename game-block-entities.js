@@ -89,7 +89,7 @@ function openFurnacePanel(x, y, z) {
   const closeBtn = document.getElementById('furnace-close');
   if (closeBtn) closeBtn.onclick = closeFurnacePanel;
   // 放入循环目录(可冶炼物 + 燃料)
-  const inList = ['iron_ore', 'sand', 'cobblestone', 'porkchop', 'beef'].map(id => ({ kind: SMELT[id].kind, id }));
+  const inList = ['iron_ore', 'gold_ore', 'sand', 'cobblestone', 'porkchop', 'beef'].map(id => ({ kind: SMELT[id] ? SMELT[id].kind : 'block', id }));
   const fuelList = ['coal', 'wood', 'planks', 'stick'].map(id => ({ kind: 'item', id }));
   const bindCycle = (el, slot, list) => {
     el.onclick = () => {
@@ -122,6 +122,7 @@ function tryRelockPointer() {
   if (!renderer || document.pointerLockElement === renderer.domElement) return;
   if (inventoryOpen || tableOpen || furnaceOpen || chestOpen || tradeOpen || enchantOpen) return;   // 还有面板开着则不抢
   try {
+    lastRelockRequest = performance.now();
     const p = renderer.domElement.requestPointerLock();
     if (p && typeof p.catch === 'function') p.catch(() => {});
   } catch (e) { /* 忽略 */ }
@@ -180,6 +181,7 @@ function trySleep(x, y, z) {
   }
   spawnPoint = { x: x + 0.5, y: y + 1.1, z: z + 0.5 };
   dayTime = 0.3;   // 直接跳到早晨
+  dayCount++;      // R55:睡一夜 = 第 N+1 天
   playerHP = PLAYER_MAX_HP; updateHPBar();
   hungerState.hunger = Math.min(20, hungerState.hunger + 2); updateHungerBar();
   showToast('😴 睡了个好觉,重生点已设在此床');
@@ -224,10 +226,11 @@ function openChestPanel(x, y, z) {
     }
   }
   document.querySelectorAll('#chest-grid .inv-cell').forEach((cell, i) => {
-    cell.onclick = () => {
+    cell.onclick = (e) => {
+      const quick = !!(e && e.shiftKey);
       const it = c.slots[i];
       if (it) {
-        // 有物:整组取出到快捷栏(工具带耐久)
+        // 有物:整组取出到快捷栏(工具带耐久);Shift+点击 = 快速移动整叠
         const want = it.count || 1;
         const got = pickupIntoInventory(it.kind || 'block', it.id, want, it.durability);
         if (got >= want) c.slots[i] = null;
@@ -243,10 +246,46 @@ function openChestPanel(x, y, z) {
           markDirtySave();   // 箱子内容变化需触发自动保存
         }
       }
+      if (quick) showToast('快速移动');
       renderChestPanel();
     };
     cell.oncontextmenu = (e) => { e.preventDefault(); c.slots[i] = null; renderChestPanel(); markDirtySave(); };
   });
+  // R55:整理 / 全部存入
+  const sortBtn = document.getElementById('chest-sort');
+  if (sortBtn) sortBtn.onclick = () => {
+    c.slots = INVLIB.mergeStacks(c.slots, 64);
+    while (c.slots.length < CHEST_SLOTS) c.slots.push(null);
+    c.slots.length = CHEST_SLOTS;
+    renderChestPanel(); markDirtySave();
+    showToast('📦 已整理');
+  };
+  const storeBtn = document.getElementById('chest-store');
+  if (storeBtn) storeBtn.onclick = () => {
+    for (let h = 0; h < HOTBAR_SIZE; h++) {
+      const it = hotbar[h];
+      if (!it) continue;
+      // 先合并同类,再放空格
+      let placed = false;
+      for (let s = 0; s < CHEST_SLOTS && it.count; s++) {
+        const ex = c.slots[s];
+        if (ex && ex.kind === it.kind && ex.id === it.id && (ex.count || 1) < 64) {
+          const take = Math.min(64 - (ex.count || 1), it.count || 1);
+          ex.count = (ex.count || 1) + take;
+          it.count = (it.count || 1) - take;
+          if (it.count <= 0) { hotbar[h] = null; placed = true; break; }
+        }
+      }
+      if (hotbar[h]) {
+        for (let s = 0; s < CHEST_SLOTS; s++) {
+          if (!c.slots[s]) { c.slots[s] = hotbar[h]; hotbar[h] = null; placed = true; break; }
+        }
+      }
+      if (!placed) break;
+    }
+    buildHotbar(); updateHoldItem(); renderChestPanel(); markDirtySave();
+    showToast('📦 已存入');
+  };
   renderChestPanel();
 }
 
@@ -318,6 +357,23 @@ function fillDungeonLoot(c) {
   let i = 0;
   const rand = () => hash3(c.x * 31 + (i++), c.y * 7 + (i * 3), c.z * 13, worldSeed + 5150);
   c.slots = INVLIB.rollDungeonLoot(rand);
+  // R55:分层保底(核心钻石 / 深层铁+红石 / 浅层铁)
+  const ck = chunkKey(Math.floor(c.x / CHUNK_SIZE), Math.floor(c.z / CHUNK_SIZE));
+  const spot = (dungeonLootSpots.get(ck) || []).find(e => e.x === c.x && e.y === c.y && e.z === c.z);
+  const has = (id) => c.slots.some(it => it && it.id === id);
+  const put = (id, count) => {
+    if (has(id)) return;
+    let idx = c.slots.findIndex(s => !s);
+    if (idx < 0) idx = c.slots.findIndex(s => s && s.id !== 'gem_diamond');
+    if (idx >= 0) c.slots[idx] = { kind: 'item', id, count };
+  };
+  if (spot && spot.tier === 'core') put('gem_diamond', 1);
+  if (spot && (spot.tier === 'core' || spot.tier === 'deep')) {
+    put('iron_ingot', 2 + Math.floor(rand() * 3));
+    put('redstone_dust', 2 + Math.floor(rand() * 3));
+  } else if (spot) {
+    put('iron_ingot', 1 + Math.floor(rand() * 3));
+  }
   markDirtySave();
   unlockAchv('dungeon_loot');   // 成就:宝箱猎人(R37)
   showToast('🗝️ 地牢战利品箱!');
@@ -354,6 +410,27 @@ function updateSpawners(dt) {
           spawnParticles(bx + 0.5, by + 1, bz + 0.5, 0xff8830, 6);
           break;
         }
+      }
+    }
+  }
+  // R55:核心地牢的远古铁傀儡 —— 玩家 24 格内首次唤醒(每处只唤醒一只)
+  for (const arr of ancientGolemSpots.values()) {
+    for (const s of arr) {
+      const dx = s.x + 0.5 - playerPos.x, dz = s.z + 0.5 - playerPos.z;
+      if (dx * dx + dz * dz > 576) continue;
+      unlockAchv('core_dungeon');
+      if (!settings.mobs || tutorial.active) continue;
+      let exists = false;
+      for (const m of mobs) {
+        if (m.type !== 'golem_ancient') continue;
+        const mdx = m.mesh.position.x - s.x, mdz = m.mesh.position.z - s.z;
+        if (mdx * mdx + mdz * mdz < 400) { exists = true; break; }
+      }
+      if (!exists) {
+        spawnMob(s.x + 0.5, s.y, s.z + 0.5, 'golem_ancient');
+        spawnParticles(s.x + 0.5, s.y + 1, s.z + 0.5, 0x8a7a5a, 16);
+        showToast('🗿 远古铁傀儡苏醒了!');
+        audio.play('fuse');
       }
     }
   }
@@ -425,6 +502,7 @@ function doTrade(tr) {
   audio.play('place');
   markDirtySave();
   unlockAchv('trade');   // 成就:交易大师(R34)
+  stats.trades++;
 }
 
 // ============================================================
@@ -450,11 +528,59 @@ function unlockAchv(id) {
   audio.play('place');
   markDirtySave();
   updateAchvBtn();
+  updateGoalsHUD();
 }
 
 function updateAchvBtn() {
   const btn = document.getElementById('btn-achv');
   if (btn) btn.textContent = '🏆 成就 (' + achvUnlocked.size + '/' + MACHINES.ACHIEVEMENTS.length + ')';
+}
+
+// R55:章节目标 HUD(当前章 + 最多 3 个未完成目标;完成即勾选并发 5 XP)
+function updateGoalsHUD(noReward) {
+  const el = document.getElementById('goals-hud');
+  if (!el) return;
+  // 教程期间隐藏目标卡,避免与教程卡/操作提示争夺注意力
+  if (typeof tutorial !== 'undefined' && tutorial.active) { el.style.display = 'none'; return; }
+  el.style.display = '';
+  const st = MACHINES.goalState(achvUnlocked, 3);
+  el.innerHTML = '';
+  const head = document.createElement('div');
+  head.className = 'goal-head';
+  head.textContent = st.title;
+  const cnt = document.createElement('span');
+  cnt.textContent = ' ' + MACHINES.goalDoneCount(achvUnlocked) + '/' + MACHINES.GOAL_TOTAL;
+  head.appendChild(cnt);
+  el.appendChild(head);
+  for (const g of st.goals) {
+    const row = document.createElement('div');
+    row.className = 'goal-row' + (g.done ? ' done' : '');
+    row.textContent = (g.done ? '✓ ' : '○ ') + g.title;
+    el.appendChild(row);
+  }
+  if (!st.goals.length) {
+    const row = document.createElement('div');
+    row.className = 'goal-row done';
+    row.textContent = '✓ 全部章节完成';
+    el.appendChild(row);
+  }
+  // 奖励:每个目标只发一次
+  let claimedNow = false;
+  for (const ch of MACHINES.GOALS) {
+    for (const g of ch.goals) {
+      if (achvUnlocked.has(g.achv) && !goalClaimed.has(g.id)) {
+        goalClaimed.add(g.id);
+        claimedNow = true;
+        if (!noReward) {
+          const up = MACHINES.xpGain(xpState, 5);
+          updateXPBar();
+          if (up) { audio.play('levelup'); }
+          showToast('📋 目标完成:' + g.title + '(+5 经验)');
+        }
+      }
+    }
+  }
+  if (claimedNow) markDirtySave();
 }
 
 function showAchvToast(a) {
@@ -529,7 +655,7 @@ function closeAchvPanel() {
 // ============================================================
 // 生命系统(无怪物,先建立基础设施:跌落/溺水伤害 + HUD + 存档)
 // ============================================================
-const PLAYER_MAX_HP = 20;   // 10 颗心,每心 2 点
+const PLAYER_MAX_HP = BALANCE.player.maxHP;   // 10 颗心,每心 2 点
 const HEART_COUNT = 10;     // HUD 心数
 
 // 渲染 HP 条(每颗心 = 2 HP;半心红、满心深红、空心黑)
@@ -553,6 +679,7 @@ function updateHPBar() {
     else if (seg === 1) el.className = 'heart half';
     else el.className = 'heart empty';
   }
+  bar.dataset.value = hp + '/' + PLAYER_MAX_HP;   // R55:色盲友好的数字读法
 }
 
 // 渲染护甲条(左侧 10 面盾,每盾 = 2 护甲点;无护甲时隐藏 —— 经典)
@@ -598,6 +725,7 @@ function updateHungerBar() {
     const seg = hu - i * 2;
     bar.children[i].className = 'drumstick' + (seg >= 2 ? ' full' : seg >= 1 ? ' half' : ' empty');
   }
+  bar.dataset.value = hu + '/20';
 }
 
 // 红屏受击渐晕(伤害反馈):一个红色半透明遮罩,opacity 由 0.45 渐变到 0
@@ -627,6 +755,7 @@ function equipArmor(item) {
   selectSlot(currentSlot);      // 刷新 selectedType/手持模型
   updateArmorBar();
   markDirtySave();
+  if (def.tier === 'iron') unlockAchv('iron_armor');   // R55:铁甲在身
   showToast(prev ? `装备:${def.name}(换下 ${TOOL_TYPES[prev.id].name})` : `装备:${def.name} · 护甲 ${totalArmorPoints()}/${INVLIB.ARMOR_MAX_POINTS}`);
 }
 
@@ -677,10 +806,18 @@ function damageRaisedShield() {
 function damagePlayer(amount, kind) {
   if (amount <= 0) return;
   let dmg = amount;
+  // 金苹果伤害吸收(R55):先扣吸收,再走盾/护甲
+  if (absorption > 0) {
+    const take = Math.min(absorption, Math.round(dmg));
+    absorption -= take;
+    dmg -= take;
+    if (dmg <= 0) { showDamageVignette(); audio.play('hurt'); updateHPBar(); return; }
+  }
   if (kind !== 'fall' && kind !== 'drown' && kind !== 'starve') {
     // 格挡:仅当"举盾时刻手持的盾"仍在当前格时生效(切槽后盾已放下,不永久格挡)
     if (shieldActive > 0 && hotbar[currentSlot] === raisedShield) {
       damageRaisedShield();
+      unlockAchv('shield_block');   // R55:格挡成就
       if (kind !== 'explosion') { audio.play('place'); showToast('🛡 格挡!'); return; }
       dmg = dmg * 0.5;
     }
@@ -688,11 +825,102 @@ function damagePlayer(amount, kind) {
     if (pts > 0) { dmg = INVLIB.armorReduce(dmg, pts); wearArmorHit(); }
   }
   playerHP = Math.max(0, playerHP - Math.round(dmg));
+  // R55 视觉:受击/爆炸镜头轻震(减少动态设置下禁用)
+  if (!settings.reduceMotion && dmg > 0) {
+    shakeT = Math.max(shakeT, kind === 'explosion' ? 0.35 : 0.22);
+    shakeAmp = Math.max(shakeAmp, Math.min(0.18, 0.02 + dmg * 0.008));
+  }
+  // R55:受击方向(找最近的敌对生物作为来源;仅战斗/爆炸显示)
+  lastDamageTime = performance.now();
+  if (kind === 'combat' || kind === 'explosion') {
+    let nearest = null, nd = 100;
+    for (const m of mobs) {
+      if (!MOB_DEFS[m.type] || (!MOB_DEFS[m.type].hostile && m.type !== 'golem_ancient')) continue;
+      const dx = m.mesh.position.x - playerPos.x, dz = m.mesh.position.z - playerPos.z;
+      const d2 = dx * dx + dz * dz;
+      if (d2 < nd) { nd = d2; nearest = { dx, dz }; }
+    }
+    // 屏幕指示环的 0 弧度朝上;玩家前方是 -z,故取 atan2(dx, -dz)
+    if (nearest) lastDamageDir = Math.atan2(nearest.dx, -nearest.dz);
+  }
   showDamageVignette();
   audio.play('hurt');
   updateHPBar();
   markDirtySave();
-  if (playerHP <= 0) respawnPlayer();
+  if (playerHP <= 0) {
+    lastDeathCause = kind;
+    lastDeathPos = { x: Math.floor(playerPos.x), y: Math.floor(playerPos.y), z: Math.floor(playerPos.z) };
+    respawnPlayer();
+  }
+}
+
+// ---- R55:金苹果/铁傀儡修复/信标/宝库 ----
+function eatGoldApple(item) {
+  swingHoldItem();
+  absorption = 4;
+  absorptionT = 60;
+  item.count = (item.count || 1) - 1;
+  if (item.count <= 0) hotbar[currentSlot] = null;
+  buildHotbar(); updateHoldItem();
+  markDirtySave();
+  audio.play('eat');
+  showToast('🍎 金苹果:60 秒伤害吸收 4');
+}
+
+function repairGolem(m, item) {
+  const max = MOB_DEFS[m.type].hp;
+  if (m.hp >= max) { showToast('铁傀儡完好无损'); return; }
+  m.hp = Math.min(max, m.hp + BALANCE.mobs.villageGolemHeal);
+  item.count = (item.count || 1) - 1;
+  if (item.count <= 0) hotbar[currentSlot] = null;
+  buildHotbar(); updateHoldItem();
+  spawnParticles(m.mesh.position.x, m.mesh.position.y + 0.8, m.mesh.position.z, 0xd8d8e0, 8);
+  audio.play('place');
+  markDirtySave();
+  showToast('🤖 铁傀儡修复 +' + BALANCE.mobs.villageGolemHeal + ' HP');
+}
+
+// 封印宝库:12 颗末影珍珠开启,产出地心核心与高品质战利品
+function tryOpenVault(x, y, z) {
+  const key = blockKey(x, y, z);
+  if (vaults.has(key)) {
+    // 防御:登记已开启但方块仍在(旧档/测试状态残留)→ 视为未开启重试
+    if (getBlock(x, y, z) === 'vault') vaults.delete(key);
+    else { showToast('宝库已开启'); return; }
+  }
+  const have = INVLIB.countInHotbar(hotbar, 'ender_pearl');
+  if (have < 12) { showToast('🔐 需要 12 颗末影珍珠(当前 ' + have + ')'); return; }
+  INVLIB.consumeFromHotbar(hotbar, 'ender_pearl', 12);
+  buildHotbar(); updateHoldItem();
+  vaults.add(key);
+  setBlock(x, y, z, null);
+  spawnParticles(x + 0.5, y + 0.5, z + 0.5, 0xb06ee0, 24);
+  const drops = [['golem_core', 1, 'item'], ['gem_diamond', 2, 'item'], ['gem_gold', 3, 'item'], ['gold_apple', 1, 'item'], ['ender_pearl', 2, 'item']];
+  for (const [id, n, kind] of drops) spawnDroppedItem(x, y, z, id, n, kind);
+  unlockAchv('vault');
+  markDirtySave();
+  showToast('🔓 封印解除!获得地心核心');
+  audio.play('levelup');
+}
+
+function updateBeaconAura(dt) {
+  beaconAura = false;
+  for (const key of beacons) {
+    const p = key.split(',');
+    const bx = +p[0], by = +p[1], bz = +p[2];
+    // 未加载区块的 getBlock 也返回 null —— 不能据此删信标,否则走远再回来灯就没了
+    if (!chunks.has(chunkKey(Math.floor(bx / CHUNK_SIZE), Math.floor(bz / CHUNK_SIZE)))) continue;
+    if (getBlock(bx, by, bz) !== 'beacon') { beacons.delete(key); continue; }
+    const dx = (bx + 0.5) - playerPos.x, dz = (bz + 0.5) - playerPos.z;
+    if (dx * dx + dz * dz <= 64) { beaconAura = true; break; }
+  }
+  if (beaconAura) {
+    beaconRegenT += dt;
+    if (beaconRegenT >= 4) {
+      beaconRegenT -= 4;
+      if (playerHP < PLAYER_MAX_HP) { playerHP = Math.min(PLAYER_MAX_HP, playerHP + 1); updateHPBar(); }
+    }
+  } else beaconRegenT = 0;
 }
 
 // 死亡/重生:优先床重生点,否则回出生广场中心,满血;快捷栏(生存物资)保留
@@ -726,13 +954,16 @@ function dropInventoryOnDeath() {
 
 function respawnPlayer() {
   dropInventoryOnDeath();
+  stats.deaths++;
   isFlying = false;   // 死亡退出飞行(否则生存模式可借死亡重生飞天)
   if (spawnPoint) playerPos.set(spawnPoint.x, spawnPoint.y, spawnPoint.z);
   else {
     const plazaH = SEA_LEVEL + 6;
-    playerPos.set(0.5, plazaH + 1 + PLAYER_HEIGHT * 0.5, 0.5);
+    playerPos.set(SPAWN_X, plazaH + 1 + PLAYER_HEIGHT * 0.5, SPAWN_Z);
   }
   velocity.set(0, 0, 0);
+  shakeT = 0; shakeAmp = 0;
+  stats._lx = undefined; stats._lz = undefined;   // R55:重生不把死亡点→重生点计入行走距离
   playerHP = PLAYER_MAX_HP;
   breathTimer = 0;
   hungerState.hunger = 20; hungerState.drain = 0; hungerState.regenT = 0; hungerState.starveT = 0;   // 经典:死亡重置饥饿
@@ -740,10 +971,18 @@ function respawnPlayer() {
   xpState.points = Math.floor(xpState.points / 2);
   updateXPBar();
   updateHPBar(); updateHungerBar();
-  // 显示"你死了"遮罩,2 秒后淡出
+  // 显示"你死了"遮罩,2 秒后淡出;带回死因与掉落坐标
   const el = document.getElementById('death-overlay');
-  if (el) { el.style.opacity = '1'; el.style.display = 'flex'; }
+  if (el) {
+    const cause = { combat: '被怪物击杀', explosion: '爆炸', fall: '摔落', drown: '溺水', starve: '饥饿' }[lastDeathCause] || '意外';
+    const p = el.querySelector('p');
+    if (p) p.textContent = lastDeathPos
+      ? '死因:' + cause + ' · 物品掉落在 (' + lastDeathPos.x + ', ' + lastDeathPos.y + ', ' + lastDeathPos.z + ')'
+      : '已重生到出生广场';
+    el.style.opacity = '1'; el.style.display = 'flex';
+  }
   deathOverlayTimer = 2.0;
+  lastDeathPos = null;
   showToast('你死了');
   markDirtySave();
 }

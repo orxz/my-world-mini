@@ -40,6 +40,16 @@ const audio = {
       this._noise(0.12, freq, 0.4, t);
       return;
     }
+    // R55 体验:脚步按脚下材质变调(草/土=闷,石=脆,木=中,沙/雪=沙沙)
+    if (type === 'step' && blockType) {
+      let freq = 1100;
+      if (blockType === 'grass' || blockType === 'dirt') freq = 750;
+      else if (blockType === 'stone' || blockType === 'cobblestone' || blockType === 'brick') freq = 1500;
+      else if (blockType === 'wood' || blockType === 'planks') freq = 950;
+      else if (blockType === 'sand' || blockType === 'snow' || blockType === 'gravel') freq = 1900;
+      this._noise(0.05, freq, 0.14, t);
+      return;
+    }
     switch (type) {
       case 'break': this._noise(0.12, 600, 0.4, t); break;
       case 'place': this._tone('square', 220, 0.07, 0.3, t); this._tone('square', 160, 0.06, 0.25, t + 0.03); break;

@@ -165,8 +165,9 @@ async function main() {
       for (let i = 0; i < 20 && droppedItems.includes(d); i++) updateDroppedItems(0.05);
     }
     const afterPickup = tutorial.step;
-    // 点选快捷栏第一格(真实 click,触屏合成同路径)
-    const slotEl = document.querySelector('#hotbar .slot');
+    // 点选有木板的格(真实 click;R55 开局第 1 格是木镐,不能假定第一格)
+    const plankSlot = hotbar.findIndex(h => h && h.id === 'planks');
+    const slotEl = document.querySelectorAll('#hotbar .slot')[Math.max(0, plankSlot)];
     slotEl.click();
     const selected = hotbar[currentSlot];
     // 显式站位放置(journey 模式)
@@ -206,11 +207,9 @@ async function main() {
 
   // ---- M7 移动端合成(真实 UI click,无右键)----
   const m7 = await evl(`(() => {
-    // 目录发放 wood 到当前格(真实点击目录里的木头格)
-    const cells = Array.from(document.querySelectorAll('#inventory .inv-grid .inv-cell'));
-    const woodCell = cells.find((c) => c.textContent.includes('木头') || (c.querySelector('.inv-label') || {}).textContent === '木头');
-    let granted = false;
-    if (woodCell) { woodCell.click(); granted = !!(hotbar[currentSlot] && hotbar[currentSlot].id === 'wood'); }
+    // R55 生存模式:目录只读,模拟采集到的木头入栏
+    pickupIntoInventory('block', 'wood', 1);
+    const granted = INVLIB.countInHotbar(hotbar, 'wood') >= 1;
     // 合成格点击循环到 wood(HOTBAR_ORDER 第 4 位,从空起 4 次点击)
     const gridCell = document.querySelector('#craft-grid .inv-cell');
     let clicks = 0;
@@ -220,7 +219,7 @@ async function main() {
     const planks = INVLIB.countInHotbar(hotbar, 'planks');
     return { granted, woodInGrid, clicks, planks };
   })()`);
-  check('M7 移动端合成:目录发放木头 → 合成格点击到木头 → 合成出木板', m7.granted && m7.woodInGrid && m7.planks >= 1, JSON.stringify(m7));
+  check('M7 移动端合成:采集木头入栏 → 合成格点击到木头 → 合成出木板(R55 生存)', m7.granted && m7.woodInGrid && m7.planks >= 1, JSON.stringify(m7));
 
   // ---- M8 保存与继续(真实按钮 + IndexedDB + 重载还原)----
   const m8a = await evl(`(async () => {

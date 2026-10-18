@@ -85,14 +85,14 @@ async function main() {
     out.pos0 = pos0.x.toFixed(1) + ',' + pos0.y.toFixed(1) + ',' + pos0.z.toFixed(1);
     out.water0 = inWater(); out.fly0 = isFlying;
     out.ride0 = !!ridingCart; out.tut0 = tutorial.active;
-    out.wiringMove = Math.abs(hungerState.drain - 0.07) < 1e-9;   // 0.1s × 0.7
+    out.wiringMove = Math.abs(hungerState.drain - 0.022) < 1e-9;   // 0.1s × 0.22(R55)
     // A2 静止态活动率 0.25
     velocity.set(0, 0, 0); updatePlayer(0.1);
-    out.wiringIdle = Math.abs(hungerState.drain - (0.07 + 0.025)) < 1e-9;
+    out.wiringIdle = Math.abs(hungerState.drain - (0.022 + 0.008)) < 1e-9;   // R55:静止 0.08/s
     // A3 全程计时(状态机=主循环同一函数同参数):移动 20→0 点秒数 + 饿伤害全程
     const s1 = { hunger: 20, drain: 0, regenT: 0, starveT: 0 };
     let t1 = 0;
-    while (s1.hunger > 0 && t1 < 400) { const r = INVLIB.hungerTick(s1, 0.1, 0.7, false); t1 += 0.1; if (r.hungerChanged && s1.hunger === 0) break; }
+    while (s1.hunger > 0 && t1 < 500) { const r = INVLIB.hungerTick(s1, 0.1, 0.22, false); t1 += 0.1; if (r.hungerChanged && s1.hunger === 0) break; }
     out.moveEmptySec = Math.round(t1);
     // 饿到 floor:主循环条件 playerHP > 2 时 damagePlayer(1,'starve')
     const s2 = { hunger: 0, drain: 0, regenT: 0, starveT: 0 };
@@ -110,8 +110,8 @@ async function main() {
     hungerState.hunger = 20; hungerState.drain = 0; updateHungerBar();
     return out;
   })()`);
-  check('A1 挨饿接线:移动 0.7 / 静止 0.25 活动率(真实 updatePlayer)', starve.wiringMove && starve.wiringIdle, JSON.stringify(starve));
-  check('A2 挨饿全程:移动 20→0 点约 114s(±10)', starve.moveEmptySec >= 104 && starve.moveEmptySec <= 124, 'moveEmptySec=' + starve.moveEmptySec);
+  check('A1 挨饿接线:移动 0.22 / 静止 0.08 活动率(真实 updatePlayer,R55)', starve.wiringMove && starve.wiringIdle, JSON.stringify(starve));
+  check('A2 挨饿全程:移动 20→0 点约 364s(±15,R55)', starve.moveEmptySec >= 349 && starve.moveEmptySec <= 379, 'moveEmptySec=' + starve.moveEmptySec);
   check('A3 饿伤触底:停在该难度下限(2 HP),不饿死', starve.starveFloor === 2, 'floor=' + starve.starveFloor + ' seq=' + starve.starveSeq);
 
   // ---- B. 回血节奏+食物经济(真实 updatePlayer 全链路,R45 回血消耗食物)----
@@ -294,7 +294,7 @@ async function main() {
     const toasts = [];
     const origToast = showToast;
     window.showToast = (m) => toasts.push(String(m));
-    hungerState.hunger = 8; hungerState.drain = 0;
+    hungerState.hunger = 7; hungerState.drain = 0;
     keys['KeyW'] = true;
     for (let i = 0; i < 200 && hungerState.hunger > 4; i++) { playerPos.copy(stand); velocity.set(0, 0, 0); updatePlayer(0.1); }
     keys['KeyW'] = false;
@@ -303,7 +303,7 @@ async function main() {
     return { toasts: toasts.join(' / '), hunger: hungerState.hunger };
   })()`);
   const warnToasts = warn.toasts.split(' / ').filter((s) => s.includes('你饿了'));
-  check('G1 低饥饿警告:到 6 时提醒恰好一次', warnToasts.length === 1 && warn.hunger <= 5, warn.toasts + ' | hunger=' + warn.hunger);
+  check('G1 低饥饿警告:到 6 时提醒恰好一次', warnToasts.length === 1 && warn.hunger <= 6, warn.toasts + ' | hunger=' + warn.hunger);
 
   // ---- H. 全程 0 JS error ----
   check('H 页面 0 JS error(全程真实路径)', jsErrors.length === 0, jsErrors.slice(0, 2).join(' | '));

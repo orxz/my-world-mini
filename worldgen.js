@@ -164,39 +164,92 @@
     return null;
   }
 
-  // ---- 地牢(R37):确定性生成侧结构(石室+刷怪笼+战利品箱),零存档 diff ----
-  const DUNGEON_CELL = 64;   // 地牢格边长(7×7 石室不跨格)
-  // 地牢格判定:~35% 格子有地牢;广场保护区(±44)不生成;
-  // 顶板埋深 ≥2(顶上至少两层岩层)且不泡海水;floor 8..12(地下浅层)
+  // ---- 地牢(R37/R55):确定性生成侧结构 + 三档分级 ----
+  const DUNGEON_CELL = 64;   // 地牢格边长(最大 11×11 石室不跨格)
+  // 档位:浅层 7×7 单室 / 深层 9×9 双室 / 核心 11×11 三室(仅高山)
+  function dungeonLayout(tier) {
+    if (tier === 'core') {
+      return { size: 11, rooms: [
+        { x0: 1, z0: 1, x1: 2, z1: 9 },
+        { x0: 4, z0: 1, x1: 6, z1: 9 },
+        { x0: 8, z0: 1, x1: 9, z1: 9 },
+      ], corridors: [{ x0: 3, z0: 4, x1: 3, z1: 6 }, { x0: 7, z0: 4, x1: 7, z1: 6 }] };
+    }
+    if (tier === 'deep') {
+      return { size: 9, rooms: [
+        { x0: 1, z0: 1, x1: 3, z1: 7 },
+        { x0: 5, z0: 1, x1: 7, z1: 7 },
+      ], corridors: [{ x0: 4, z0: 3, x1: 4, z1: 5 }] };
+    }
+    return { size: 7, rooms: [{ x0: 1, z0: 1, x1: 5, z1: 5 }], corridors: [] };
+  }
+  function rectHas(r, x, z) { return x >= r.x0 && x <= r.x1 && z >= r.z0 && z <= r.z1; }
+  // 地牢格判定:~42% 格子有地牢;广场保护区(±44)不生成;
+  // 顶板以上至少 3 层岩层;核心档仅在 surf≥28 的高山地下
   function dungeonInCell(dcx, dcz, seed) {
-    if (hash2(dcx, dcz, seed + 733) > 0.35) return null;
-    const ox = 8 + Math.floor(hash2(dcx, dcz, seed + 734) * (DUNGEON_CELL - 16));
-    const oz = 8 + Math.floor(hash2(dcx, dcz, seed + 735) * (DUNGEON_CELL - 16));
+    if (hash2(dcx, dcz, seed + 733) > 0.42) return null;
+    const ox = 8 + Math.floor(hash2(dcx, dcz, seed + 734) * (DUNGEON_CELL - 24));
+    const oz = 8 + Math.floor(hash2(dcx, dcz, seed + 735) * (DUNGEON_CELL - 24));
     const cx = dcx * DUNGEON_CELL + ox, cz = dcz * DUNGEON_CELL + oz;
     if (cx > -44 && cx < 44 && cz > -44 && cz < 44) return null;   // 出生广场保护区
-    const floor = 8 + Math.floor(hash2(dcx, dcz, seed + 736) * 5);
     const mtn = fbm2D(cx * 0.008, cz * 0.008, seed + 555, 4);
-    const surf = heightAt(cx, cz, seed, mtn);   // 注意:第 4 参是 preMtn(误传 biome 会吞掉山体抬升)
-    if (surf < floor + 6 || surf <= 13) return null;   // 埋深不足 / 海床下
+    const surf = heightAt(cx, cz, seed, mtn);
+    if (surf <= 13) return null;
     const hr = hash2(dcx, dcz, seed + 737);
-    const mob = hr < 0.4 ? 'zombie' : hr < 0.75 ? 'skeleton' : 'spider';
-    const chests = hr > 0.5 ? 2 : 1;
-    return { cx, cz, floor, mob, chests };
+    let tier = 'shallow', floor = 8 + Math.floor(hash2(dcx, dcz, seed + 736) * 5);
+    if (surf >= 28 && hr < 0.55) {
+      tier = 'core'; floor = 24 + Math.floor(hash2(dcx, dcz, seed + 739) * 7);
+    } else if (surf >= 20 && hr < 0.72) {
+      tier = 'deep'; floor = 16 + Math.floor(hash2(dcx, dcz, seed + 739) * 7);
+    }
+    if (surf < floor + 6) return null;   // 顶板(floor+4)以上至少 2 层岩层,防破地表/漏水
+    const lay = dungeonLayout(tier);
+    const mob = tier === 'shallow'
+      ? (hr < 0.6 ? 'zombie' : 'spider')
+      : (hr < 0.5 ? 'skeleton' : 'spider');
+    const chests = tier === 'core' ? 3 : tier === 'deep' ? 2 : (hr > 0.5 ? 2 : 1);
+    // 刷怪笼:每室中央;箱子:每室对角;核心档额外一只地牢守卫
+    const spawners = lay.rooms.map(r => ({ x: Math.floor((r.x0 + r.x1) / 2), z: Math.floor((r.z0 + r.z1) / 2) }));
+    const chestSpots = [];
+    for (let i = 0; i < chests; i++) {
+      const r = lay.rooms[i % lay.rooms.length];
+      chestSpots.push(i % 2 === 0 ? { x: r.x0, z: r.z0 } : { x: r.x1, z: r.z1 });
+    }
+    const vault = tier === 'core' ? { x: lay.size - 1, z: Math.floor(lay.size / 2) } : null;
+    return { cx, cz, floor, tier, size: lay.size, rooms: lay.rooms, corridors: lay.corridors, spawners, chestSpots, mob, chests, guard: tier === 'core', vault };
   }
-  // 石室局部方块(7×7,lx/lz ∈ 0..6;rel ∈ 0..4 = 地板..顶):
-  // 0=圆石地板 / 4=顶(边石中砖) / 边墙圆石(砖点缀,世界坐标 hash) /
-  // 中央刷怪笼 + 角箱(按 dg.chests 放 1-2 个)/ 其余室内空气
+  // 石室局部方块(lx/lz ∈ 0..size-1;rel ∈ 0..4 = 地板..顶)。
+  // 房间/走廊内为空;房间之间是墙;核心档后墙嵌 3×3 黑曜石封印框 + 中央宝库。
   function dungeonBlockAt(lx, lz, rel, dg, seed) {
-    const per = lx === 0 || lx === 6 || lz === 0 || lz === 6;
+    const size = dg.size || 7;
+    const rooms = dg.rooms || [{ x0: 1, z0: 1, x1: size - 2, z1: size - 2 }];   // 旧测试/旧调用兼容
+    const corridors = dg.corridors || [];
+    const spawners = dg.spawners || [{ x: 3, z: 3 }];
+    const chestSpots = dg.chestSpots || (dg.chests >= 2 ? [{ x: 1, z: 1 }, { x: size - 2, z: size - 2 }] : [{ x: 1, z: 1 }]);
+    const per = lx === 0 || lx === size - 1 || lz === 0 || lz === size - 1;
+    // 封印框(核心档):后墙 x=size-1,z=center±1,rel 1..3
+    if (dg.vault) {
+      const vx = dg.vault.x, vz = dg.vault.z;
+      if (lx === vx && Math.abs(lz - vz) <= 1 && rel >= 1 && rel <= 3) {
+        return (lz === vz && rel === 2) ? 'vault' : 'obsidian';
+      }
+    }
     if (rel === 0) return 'cobblestone';
     if (rel === 4) return per ? 'stone' : 'brick';
-    if (per) return hash3(dg.cx - 3 + lx, rel, dg.cz - 3 + lz, seed + 738) < 0.25 ? 'brick' : 'cobblestone';
-    if (rel === 1) {
-      if (lx === 3 && lz === 3) return 'spawner';
-      if (lx === 1 && lz === 1) return 'chest';
-      if (dg.chests >= 2 && lx === 5 && lz === 5) return 'chest';
+    if (per) return hash3(dg.cx - Math.floor(size / 2) + lx, rel, dg.cz - Math.floor(size / 2) + lz, seed + 738) < 0.25 ? 'brick' : 'cobblestone';
+    // 房间/走廊内:先放功能方块,其余空气
+    let inside = false;
+    for (const r of rooms) if (rectHas(r, lx, lz)) { inside = true; break; }
+    if (!inside) for (const c of corridors) if (rectHas(c, lx, lz)) { inside = true; break; }
+    if (inside) {
+      if (rel === 1) {
+        if (spawners.some(s => s.x === lx && s.z === lz)) return 'spawner';
+        if (chestSpots.some(s => s.x === lx && s.z === lz)) return 'chest';
+      }
+      return null;
     }
-    return null;
+    // 房间之间的隔墙
+    return hash3(dg.cx - Math.floor(size / 2) + lx, rel, dg.cz - Math.floor(size / 2) + lz, seed + 741) < 0.2 ? 'brick' : 'cobblestone';
   }
 
   // 导出(Node 环境)

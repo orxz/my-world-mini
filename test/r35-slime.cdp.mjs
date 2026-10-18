@@ -126,6 +126,7 @@ async function main() {
   const pool = await evl(`(() => {
     clearMobs(); clearDroppedItems(); clearXPOrbs();
     dayTime = 0.8;   // 夜间
+    dayCount = 4;    // R55:史莱姆第 4 夜起进入生成池
     let seen = 0;
     for (let i = 0; i < 260 && seen === 0; i++) {
       clearHostiles();

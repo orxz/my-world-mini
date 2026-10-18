@@ -16,7 +16,7 @@
     { id: 'pickup', title: '④ 拾取掉落物', desc: '走近地上旋转的小方块,自动拾取 2 个', goal: { type: 'pickup', n: 2 } },
     { id: 'place',  title: '⑤ 放置方块', desc: '手持方块对准地面按右键放置,放 2 个', descTouch: '手持方块对准地面点右下「放」按钮,放 2 个', goal: { type: 'place', n: 2 } },
     { id: 'slot',   title: '⑥ 切换快捷栏', desc: '按数字键 1-9 或滚轮切换手持物品,切换 2 次', descTouch: '点按底部快捷栏格子切换手持物品,切换 2 次', goal: { type: 'slot', n: 2 } },
-    { id: 'inventory', title: '⑦ 背包与合成', desc: '按 E 打开背包 —— 上方是物品目录(点击发放 ×64),下方有 2×2 合成格(试试 1 木头→4 木板)', descTouch: '点右上「≡」→「🎒 背包」打开背包 —— 上方是物品目录(点击发放 ×64),下方有 2×2 合成格(试试 1 木头→4 木板)', goal: { type: 'inventory', n: 1 } },
+    { id: 'inventory', title: '⑦ 背包与配方书', desc: '按 E 打开背包 —— 上方是已发现物品图鉴(生存模式不再直接发放),下方有 2×2 合成格与配方书(试试 1 木头→4 木板)', descTouch: '点右上「≡」→「🎒 背包」打开背包 —— 图鉴 + 2×2 合成格 + 配方书(试试 1 木头→4 木板)', goal: { type: 'inventory', n: 1 } },
     { id: 'survival1', title: '💡 生存须知(上)', desc: '夜晚会刷新僵尸/骷髅/苦力怕,白天它们会燃烧 —— 入夜前砍树做一张床(3 羊毛+3 木板),右键睡觉跳到早晨并设重生点;怪物太近时睡不了。', goal: null },
     { id: 'survival2', title: '💡 生存须知(下)', desc: '发展链:挖圆石→合成台(4 木板)→熔炉(8 圆石,烧铁锭/玻璃/熟肉);猪排烤熟回饥饿更多。按 Q 丢弃;死亡会掉落全部物品,回原地可拾回。', goal: null },
     { id: 'done',   title: '🎓 教程完成!', desc: '背包(E)里有全部物品目录随时取用;暂停菜单(Esc)→「操作说明」有完整手册。祝玩得开心!', descTouch: '背包(≡ 菜单)里有全部物品目录随时取用;≡ 菜单 →「操作说明」有完整手册。祝玩得开心!', goal: null },
@@ -42,6 +42,7 @@
   const COOK_TIME = 5;   // 每个产物冶炼秒数
   const SMELT = {
     iron_ore: { kind: 'item', id: 'iron_ingot' },
+    gold_ore: { kind: 'item', id: 'gem_gold' },
     sand: { kind: 'block', id: 'glass' },
     cobblestone: { kind: 'block', id: 'stone' },
     porkchop: { kind: 'item', id: 'cooked_porkchop' },
@@ -116,8 +117,12 @@
     return (ahead.length ? ahead : opts)[0];
   }
 
-  // ---- 经验系统(R28):等级/进度;升级阈值随等级递增(纯函数可单测) ----
-  function xpToNext(level) { return 8 + level * 4; }
+  // ---- 经验系统(R28):等级/进度;R55 起曲线与附魔成本统一读 balance.js ----
+  function xpToNext(level) {
+    const l = Math.max(0, Math.floor(level) || 0);
+    if (typeof BALANCE !== 'undefined' && BALANCE && BALANCE.xp) return BALANCE.xp.base + BALANCE.xp.perLevel * l;
+    return 10 + 5 * l;
+  }
   // 就地修改 state:{level, points};返回本次升了几级
   function xpGain(state, amount) {
     state.points += amount;
@@ -142,14 +147,16 @@
     armor: ['protection', 'unbreaking'],
     shield: ['unbreaking'],
   };
-  // rand 注入保证可测;返回 3 个选项 [{type, level(1-3), cost(=level)}]
-  function rollEnchants(toolKind, rand) {
+  // rand 注入保证可测;返回 3 个选项 [{type, level(1-3), cost(经验等级)}]
+  // R55:金装备附魔等级下限 +1(1-3 → 2-3);成本 2/4/6 级(balance.js)
+  function rollEnchants(toolKind, rand, isGold) {
     const pool = ENCHANT_POOL[toolKind] || ['unbreaking'];
     const opts = [];
+    const costs = (typeof BALANCE !== 'undefined' && BALANCE && BALANCE.xp && BALANCE.xp.enchantCosts) ? BALANCE.xp.enchantCosts : [2, 4, 6];
     for (let i = 0; i < 3; i++) {
       const type = pool[Math.floor(rand() * pool.length) % pool.length];
-      const level = 1 + Math.floor(rand() * 3);
-      opts.push({ type, level, cost: level });
+      const level = isGold ? (2 + Math.floor(rand() * 2)) : (1 + Math.floor(rand() * 3));
+      opts.push({ type, level, cost: costs[level - 1] || level });
     }
     return opts;
   }
@@ -180,6 +187,13 @@
     { id: 'golem',      icon: '🤖', name: '铁壁守护',     desc: '用铁块召唤一只铁傀儡' },
     { id: 'cake',       icon: '🍰', name: '蛋糕时刻',     desc: '吃一片蛋糕' },
     { id: 'piston',     icon: '⚙️', name: '精密机械',     desc: '用红石激活一只活塞' },
+    // R55:铁与终局
+    { id: 'iron_armor', icon: '🛡️', name: '铁甲在身',     desc: '穿上任意一件铁护甲' },
+    { id: 'shield_block',icon:'🛡', name: '格挡大师',     desc: '用盾牌格挡一次攻击' },
+    { id: 'core_dungeon',icon:'🕳️', name: '深入地心',     desc: '进入核心地牢(y≤30)' },
+    { id: 'vault',      icon: '🔐', name: '封印解除',     desc: '用 12 颗末影珍珠开启封印宝库' },
+    { id: 'beacon',     icon: '🔆', name: '灯塔',         desc: '放置一座信标' },
+    { id: 'ancient_golem',icon:'🗿', name: '远古铁卫',    desc: '击败远古铁傀儡' },
   ];
   const ACHV_BY_ID = {};
   for (const a of ACHIEVEMENTS) ACHV_BY_ID[a.id] = a;
@@ -188,6 +202,52 @@
     const a = ACHV_BY_ID[id];
     if (!a || unlocked.has(id)) return null;
     return a;
+  }
+
+  // ---- 章节目标(R55):5 章 × 3 目标,复用成就埋点 ----
+  const GOALS = [
+    { chapter: 1, title: '第 1 章 · 落地', goals: [
+      { id: 'g_wood', achv: 'get_wood', title: '拾取一段原木' },
+      { id: 'g_table', achv: 'workbench', title: '合成一张合成台' },
+      { id: 'g_stone', achv: 'stone_age', title: '拾取一块圆石' },
+    ] },
+    { chapter: 2, title: '第 2 章 · 温饱', goals: [
+      { id: 'g_furnace', achv: 'furnace', title: '合成一台熔炉' },
+      { id: 'g_iron', achv: 'iron_age', title: '烧出第一枚铁锭' },
+      { id: 'g_sleep', achv: 'sleep', title: '在床上睡到天亮' },
+    ] },
+    { chapter: 3, title: '第 3 章 · 武装', goals: [
+      { id: 'g_armor', achv: 'iron_armor', title: '穿上一件铁护甲' },
+      { id: 'g_shield', achv: 'shield_block', title: '用盾格挡一次' },
+      { id: 'g_enchant', achv: 'enchant', title: '附魔一件装备' },
+    ] },
+    { chapter: 4, title: '第 4 章 · 深入', goals: [
+      { id: 'g_loot', achv: 'dungeon_loot', title: '打开一个地牢箱' },
+      { id: 'g_diamond', achv: 'diamonds', title: '获得一颗钻石' },
+      { id: 'g_redstone', achv: 'redstone', title: '放置一支红石火把' },
+    ] },
+    { chapter: 5, title: '第 5 章 · 终局', goals: [
+      { id: 'g_core', achv: 'core_dungeon', title: '进入核心地牢' },
+      { id: 'g_vault', achv: 'vault', title: '开启封印宝库' },
+      { id: 'g_beacon', achv: 'beacon', title: '点亮信标' },
+    ] },
+  ];
+  const GOAL_TOTAL = GOALS.reduce((n, c) => n + c.goals.length, 0);
+  // 返回当前章与最多 limit 个未完成目标(全部完成时停在最后一章)
+  function goalState(unlocked, limit) {
+    const lim = limit || 3;
+    for (const ch of GOALS) {
+      const goals = ch.goals.map(g => ({ id: g.id, title: g.title, done: unlocked.has(g.achv) }));
+      const open = goals.filter(g => !g.done);
+      if (open.length) return { chapter: ch.chapter, title: ch.title, goals: open.slice(0, lim), done: goals.length - open.length, total: goals.length };
+    }
+    const last = GOALS[GOALS.length - 1];
+    return { chapter: last.chapter, title: last.title, goals: [], done: 3, total: 3 };
+  }
+  function goalDoneCount(unlocked) {
+    let n = 0;
+    for (const ch of GOALS) for (const g of ch.goals) if (unlocked.has(g.achv)) n++;
+    return n;
   }
 
   // ---- 红石信号(R38):BFS 传播纯函数(经典衰减 -1/格,多源取最大) ----
@@ -225,6 +285,7 @@
     'cropTimersData', 'furnacesData', 'chestsData', 'spawnPoint',
     'armorSlotsData', 'doorsData', 'minecartsData', 'mobsData', 'xpData',
     'achvData', 'cakesData', 'pistonsData', 'plazaBuilt', 'timestamp',
+    'mode', 'dayCount', 'statsData', 'goalClaimedData', 'discoveredData', 'beaconsData', 'vaultsData',
   ];
   // 返回缺失字段名数组(空数组 = 完整)
   function validateSaveRecord(rec) {
@@ -233,13 +294,14 @@
 
   // 导出(Node 环境)
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { TUTORIAL_STEPS, advanceTutorial, COOK_TIME, SMELT, FUELS, furnaceCanSmelt, furnaceTick, weatherNext, cartNextDir, xpToNext, xpGain, ENCHANT_NAMES, ENCHANT_POOL, rollEnchants, ACHIEVEMENTS, ACHV_BY_ID, awardAchievement, redstonePower, SAVE_SCHEMA_FIELDS, validateSaveRecord };
+    module.exports = { TUTORIAL_STEPS, advanceTutorial, COOK_TIME, SMELT, FUELS, furnaceCanSmelt, furnaceTick, weatherNext, cartNextDir, xpToNext, xpGain, ENCHANT_NAMES, ENCHANT_POOL, rollEnchants, ACHIEVEMENTS, ACHV_BY_ID, awardAchievement, GOALS, GOAL_TOTAL, goalState, goalDoneCount, redstonePower, SAVE_SCHEMA_FIELDS, validateSaveRecord };
   }
   // 浏览器:挂到全局
   global.MACHINES = {
     TUTORIAL_STEPS, advanceTutorial, COOK_TIME, SMELT, FUELS, furnaceCanSmelt, furnaceTick,
     weatherNext, cartNextDir, xpToNext, xpGain, ENCHANT_NAMES, ENCHANT_POOL, rollEnchants,
-    ACHIEVEMENTS, ACHV_BY_ID, awardAchievement, redstonePower, SAVE_SCHEMA_FIELDS, validateSaveRecord,
+    ACHIEVEMENTS, ACHV_BY_ID, awardAchievement, GOALS, GOAL_TOTAL, goalState, goalDoneCount,
+    redstonePower, SAVE_SCHEMA_FIELDS, validateSaveRecord,
   };
 
 })(typeof window !== 'undefined' ? window : globalThis);

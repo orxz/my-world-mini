@@ -581,11 +581,12 @@ function drawBlockFace(ctx, type, face, s, seedRand) {
     }
     case 'coal_ore':
     case 'iron_ore':
+    case 'gold_ore':
     case 'diamond_ore': {
       // 矿石:石底 + 分层色斑(暗色外圈 → 矿色内芯 → 高光点),立体矿粒感
       noise(25);
-      const speck = type === 'coal_ore' ? '#232323' : type === 'iron_ore' ? '#d8af8a' : '#5fe3e8';
-      const speckDark = type === 'coal_ore' ? 'rgba(10,10,10,0.55)' : type === 'iron_ore' ? 'rgba(120,80,50,0.5)' : 'rgba(30,110,130,0.5)';
+      const speck = type === 'coal_ore' ? '#232323' : type === 'iron_ore' ? '#d8af8a' : type === 'gold_ore' ? '#e8c040' : '#5fe3e8';
+      const speckDark = type === 'coal_ore' ? 'rgba(10,10,10,0.55)' : type === 'iron_ore' ? 'rgba(120,80,50,0.5)' : type === 'gold_ore' ? 'rgba(120,90,20,0.55)' : 'rgba(30,110,130,0.5)';
       const spots = 4 + Math.floor(seedRand() * 2);
       for (let i = 0; i < spots; i++) {
         const px = 1 + Math.floor(seedRand() * (s - 4));
@@ -627,6 +628,58 @@ function drawBlockFace(ctx, type, face, s, seedRand) {
         }
       }
       break;
+    case 'iron_bars': {
+      // 铁栏杆:透明底 + 三根竖栏 + 两道横栏(alphaTest 镂空)
+      ctx.clearRect(0, 0, s, s);
+      ctx.fillStyle = '#b8b8c4';
+      const bw = Math.max(1, Math.floor(s * 0.1));
+      for (const fx of [0.2, 0.45, 0.7]) ctx.fillRect(Math.floor(s * fx), 0, bw, s);
+      ctx.fillStyle = '#8a8a96';
+      ctx.fillRect(0, Math.floor(s * 0.25), s, Math.max(1, Math.floor(s * 0.08)));
+      ctx.fillRect(0, Math.floor(s * 0.67), s, Math.max(1, Math.floor(s * 0.08)));
+      ctx.fillStyle = 'rgba(255,255,255,0.3)';
+      ctx.fillRect(Math.floor(s * 0.2), 0, 1, s);
+      break;
+    }
+    case 'obsidian': {
+      // 黑曜石:深紫黑底 + 紫色裂纹高光
+      noise(20);
+      ctx.strokeStyle = 'rgba(120,80,180,0.45)'; ctx.lineWidth = 1;
+      for (let i = 0; i < 4; i++) {
+        let cx = seedRand() * s, cy = seedRand() * s;
+        ctx.beginPath(); ctx.moveTo(cx, cy);
+        for (let k = 0; k < 4; k++) { cx = Math.max(0, Math.min(s - 1, cx + (seedRand() - 0.5) * 9)); cy = Math.max(0, Math.min(s - 1, cy + (seedRand() - 0.5) * 9)); ctx.lineTo(cx, cy); }
+        ctx.stroke();
+      }
+      ctx.fillStyle = 'rgba(180,140,240,0.5)';
+      ctx.fillRect(Math.floor(s * 0.3), Math.floor(s * 0.3), 1, 1);
+      ctx.fillRect(Math.floor(s * 0.7), Math.floor(s * 0.6), 1, 1);
+      break;
+    }
+    case 'vault': {
+      // 封印宝库:黑曜石框 + 中央紫色符文
+      ctx.fillStyle = '#1a1226'; ctx.fillRect(0, 0, s, s);
+      ctx.strokeStyle = '#6a4a9a'; ctx.lineWidth = 1;
+      ctx.strokeRect(1, 1, s - 2, s - 2);
+      ctx.fillStyle = '#b06ee0';
+      ctx.fillRect(Math.floor(s * 0.28), Math.floor(s * 0.28), Math.floor(s * 0.44), Math.floor(s * 0.44));
+      ctx.fillStyle = '#e8c8ff';
+      ctx.fillRect(Math.floor(s * 0.4), Math.floor(s * 0.4), Math.floor(s * 0.2), Math.floor(s * 0.2));
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      ctx.fillRect(Math.floor(s * 0.42), Math.floor(s * 0.42), 1, 1);
+      break;
+    }
+    case 'beacon': {
+      // 信标:深青石框 + 中央发光核
+      ctx.fillStyle = '#2a8898'; ctx.fillRect(0, 0, s, s);
+      ctx.fillStyle = '#1a5a68';
+      ctx.fillRect(0, 0, s, 2); ctx.fillRect(0, s - 2, s, 2); ctx.fillRect(0, 0, 2, s); ctx.fillRect(s - 2, 0, 2, s);
+      ctx.fillStyle = '#7fe8d8';
+      ctx.fillRect(Math.floor(s * 0.3), Math.floor(s * 0.3), Math.floor(s * 0.4), Math.floor(s * 0.4));
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(Math.floor(s * 0.44), Math.floor(s * 0.44), Math.floor(s * 0.12), Math.floor(s * 0.12));
+      break;
+    }
     default:
       noise(40);
   }
@@ -662,13 +715,14 @@ function buildAtlas() {
     });
     const u0 = (ci * ATLAS_TILE) / c.width;
     const u1 = ((ci + 1) * ATLAS_TILE) / c.width;
-    const vTop0 = 0, vTop1 = ATLAS_TILE / c.height;
-    const vSide0 = ATLAS_TILE / c.height, vSide1 = (2 * ATLAS_TILE) / c.height;
-    const vBot0 = (2 * ATLAS_TILE) / c.height, vBot1 = 1;
     atlasUV[type] = {
-      top:    [u0, vTop1, u1, vTop0],  // [u0,v0,u1,v1] 注意纹理 v 朝上,canvas y 朝下
-      side:   [u0, vSide1, u1, vSide0],
-      bottom: [u0, vBot1, u1, vBot0],
+      // CanvasTexture 默认 flipY=true:UV v=0 对应画布底部。
+      // 画布行序为 top(0..15)/side(16..31)/bottom(32..47),
+      // 因此 top 必须取 v=2/3..1、side 取 1/3..2/3、bottom 取 0..1/3;
+      // 旧映射把 top/bottom 取反,导致草方块顶面显示成泥土色(整体偏棕)。
+      top:    [u0, 1, u1, 2 / 3],
+      side:   [u0, 2 / 3, u1, 1 / 3],
+      bottom: [u0, 1 / 3, u1, 0],
     };
   });
 
@@ -708,8 +762,8 @@ function makeBlockMaterials(type) {
     const lm = M(side); lm.transparent = true; lm.alphaTest = 0.1;
     return [lm, lm.clone(), M(top), M(bottom), lm.clone(), lm.clone()];
   }
-  if (type === 'torch' || type === 'fence') {
-    // 火把/栅栏:透明贴图(镂空,alphaTest;R41 栅栏接入)
+  if (type === 'torch' || type === 'fence' || type === 'ladder' || type === 'iron_bars') {
+    // 透明贴图(镂空,alphaTest;R55 铁栏杆接入)
     const tm = M(side); tm.transparent = true; tm.alphaTest = 0.1;
     return [tm, tm.clone(), M(top), M(bottom), tm.clone(), tm.clone()];
   }

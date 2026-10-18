@@ -28,7 +28,7 @@
     // 木门:2 木板(横向)→1 门
     { name: '木门', pattern: ['planks', 'planks', null, null], result: { kind: 'block', id: 'door' }, count: 1, shapeless: false },
     // 铁门:4 铁锭(2×2)→1 铁门
-    { name: '铁门', pattern: ['gem_gold', 'gem_gold', 'gem_gold', 'gem_gold'], result: { kind: 'block', id: 'door_iron' }, count: 1, shapeless: false },
+    { name: '铁门', pattern: ['iron_ingot', 'iron_ingot', 'iron_ingot', 'iron_ingot'], result: { kind: 'block', id: 'door_iron' }, count: 1, shapeless: false },
     // 石门:2 石头(纵向)→1 石门(有序,与石砖的4石头区分)
     { name: '石门', pattern: ['stone', null, 'stone', null], result: { kind: 'block', id: 'door_stone' }, count: 1, shapeless: false },
     // 金门:2 金锭(横向)→1 金门(有序,与铁门的4金锭区分)
@@ -36,10 +36,10 @@
     // 钻石门:4 钻石(2×2)→1 钻石门
     { name: '钻石门', pattern: ['gem_diamond', 'gem_diamond', 'gem_diamond', 'gem_diamond'], result: { kind: 'block', id: 'door_diamond' }, count: 1, shapeless: false },
     // ---- 以下为 3×3 专属配方(合成台内可用) ----
-    // 铁镐:3 金锭(代铁)上排 + 2 箭(代木棍)中列
-    { name: '铁镐', pattern: ['gem_gold', 'gem_gold', 'gem_gold', null, 'arrow', null, null, 'arrow', null], result: { kind: 'tool', id: 'pickaxe_iron' }, shapeless: false },
-    // 钻石镐:3 钻石上排 + 2 箭(代木棍)中列
-    { name: '钻石镐', pattern: ['gem_diamond', 'gem_diamond', 'gem_diamond', null, 'arrow', null, null, 'arrow', null], result: { kind: 'tool', id: 'pickaxe_diamond' }, shapeless: false },
+    // 铁镐:3 铁锭上排 + 2 木棍中列(经典镐形)
+    { name: '铁镐', pattern: ['iron_ingot', 'iron_ingot', 'iron_ingot', null, 'stick', null, null, 'stick', null], result: { kind: 'tool', id: 'pickaxe_iron' }, shapeless: false },
+    // 钻石镐:3 钻石上排 + 2 木棍中列
+    { name: '钻石镐', pattern: ['gem_diamond', 'gem_diamond', 'gem_diamond', null, 'stick', null, null, 'stick', null], result: { kind: 'tool', id: 'pickaxe_diamond' }, shapeless: false },
     // 石砖墙块:8 石头围一圈(中心空)→ 4 石砖(3×3 专属,演示环形图案)
     { name: '石砖(大量)', pattern: ['stone', 'stone', 'stone', 'stone', null, 'stone', 'stone', 'stone', 'stone'], result: { kind: 'block', id: 'brick' }, count: 4, shapeless: false },
     // 圆石→石头(经典烧制的合成演示;无熔炉版本)
@@ -109,11 +109,24 @@
     // ---- 工具配方(3×3:3 材料上排 + 2 木棍中列,经典镐形)----
     { name: '木镐', pattern: ['planks', 'planks', 'planks', null, 'stick', null, null, 'stick', null], result: { kind: 'tool', id: 'pickaxe_wood' }, shapeless: false },
     { name: '石镐', pattern: ['cobblestone', 'cobblestone', 'cobblestone', null, 'stick', null, null, 'stick', null], result: { kind: 'tool', id: 'pickaxe_stone' }, shapeless: false },
-    { name: '铁镐(矿石)', pattern: ['iron_ore', 'iron_ore', 'iron_ore', null, 'stick', null, null, 'stick', null], result: { kind: 'tool', id: 'pickaxe_iron' }, shapeless: false },
+    { name: '金镐', pattern: ['gem_gold', 'gem_gold', 'gem_gold', null, 'stick', null, null, 'stick', null], result: { kind: 'tool', id: 'pickaxe_gold' }, shapeless: false },
+    // ---- 斧(2 材料上排 + 材料/木棍中排 + 木棍底)----
+    { name: '木斧', pattern: ['planks', 'planks', null, 'planks', 'stick', null, null, 'stick', null], result: { kind: 'tool', id: 'axe_wood' }, shapeless: false },
+    { name: '石斧', pattern: ['cobblestone', 'cobblestone', null, 'cobblestone', 'stick', null, null, 'stick', null], result: { kind: 'tool', id: 'axe_stone' }, shapeless: false },
+    { name: '铁斧', pattern: ['iron_ingot', 'iron_ingot', null, 'iron_ingot', 'stick', null, null, 'stick', null], result: { kind: 'tool', id: 'axe_iron' }, shapeless: false },
+    { name: '金斧', pattern: ['gem_gold', 'gem_gold', null, 'gem_gold', 'stick', null, null, 'stick', null], result: { kind: 'tool', id: 'axe_gold' }, shapeless: false },
+    { name: '钻石斧', pattern: ['gem_diamond', 'gem_diamond', null, 'gem_diamond', 'stick', null, null, 'stick', null], result: { kind: 'tool', id: 'axe_diamond' }, shapeless: false },
+    // ---- 铲(1 材料 + 2 木棍竖列)----
+    { name: '木铲', pattern: ['planks', null, null, 'stick', null, null, 'stick', null, null], result: { kind: 'tool', id: 'shovel_wood' }, shapeless: false },
+    { name: '石铲', pattern: ['cobblestone', null, null, 'stick', null, null, 'stick', null, null], result: { kind: 'tool', id: 'shovel_stone' }, shapeless: false },
+    { name: '铁铲', pattern: ['iron_ingot', null, null, 'stick', null, null, 'stick', null, null], result: { kind: 'tool', id: 'shovel_iron' }, shapeless: false },
+    { name: '金铲', pattern: ['gem_gold', null, null, 'stick', null, null, 'stick', null, null], result: { kind: 'tool', id: 'shovel_gold' }, shapeless: false },
+    { name: '钻石铲', pattern: ['gem_diamond', null, null, 'stick', null, null, 'stick', null, null], result: { kind: 'tool', id: 'shovel_diamond' }, shapeless: false },
     // ---- 剑配方(3×3:2 材料竖列 + 1 木棍底,经典剑形)----
     { name: '木剑', pattern: ['planks', null, null, 'planks', null, null, 'stick', null, null], result: { kind: 'tool', id: 'sword_wood' }, shapeless: false },
     { name: '石剑', pattern: ['cobblestone', null, null, 'cobblestone', null, null, 'stick', null, null], result: { kind: 'tool', id: 'sword_stone' }, shapeless: false },
     { name: '铁剑', pattern: ['iron_ingot', null, null, 'iron_ingot', null, null, 'stick', null, null], result: { kind: 'tool', id: 'sword_iron' }, shapeless: false },
+    { name: '金剑', pattern: ['gem_gold', null, null, 'gem_gold', null, null, 'stick', null, null], result: { kind: 'tool', id: 'sword_gold' }, shapeless: false },
     { name: '钻石剑', pattern: ['gem_diamond', null, null, 'gem_diamond', null, null, 'stick', null, null], result: { kind: 'tool', id: 'sword_diamond' }, shapeless: false },
     // ---- 护甲配方(3×3 经典形状:帽 5 材料981形 / 甲 8 围形 / 裤 7 / 靴 4 两侧列)----
     // 皮革(牛掉皮革的下游)
@@ -136,6 +149,13 @@
     { name: '钻石胸甲', pattern: ['gem_diamond', null, 'gem_diamond', 'gem_diamond', 'gem_diamond', 'gem_diamond', 'gem_diamond', 'gem_diamond', 'gem_diamond'], result: { kind: 'tool', id: 'chestplate_diamond' }, shapeless: false },
     { name: '钻石护腿', pattern: ['gem_diamond', 'gem_diamond', 'gem_diamond', 'gem_diamond', null, 'gem_diamond', 'gem_diamond', null, 'gem_diamond'], result: { kind: 'tool', id: 'leggings_diamond' }, shapeless: false },
     { name: '钻石靴子', pattern: ['gem_diamond', null, 'gem_diamond', 'gem_diamond', null, 'gem_diamond', null, null, null], result: { kind: 'tool', id: 'boots_diamond' }, shapeless: false },
+    // ---- R55:铁/终局新增 ----
+    // 铁栏杆:6 铁锭 → 16 根(经典 6 铁锭 → 16 铁栏杆)
+    { name: '铁栏杆', pattern: ['iron_ingot', 'iron_ingot', 'iron_ingot', 'iron_ingot', 'iron_ingot', 'iron_ingot', null, null, null], result: { kind: 'block', id: 'iron_bars' }, count: 16, shapeless: true },
+    // 金苹果:8 金锭围 1 苹果(经典;提供 60 秒伤害吸收)
+    { name: '金苹果', pattern: ['gem_gold', 'gem_gold', 'gem_gold', 'gem_gold', 'apple', 'gem_gold', 'gem_gold', 'gem_gold', 'gem_gold'], result: { kind: 'item', id: 'gold_apple' }, count: 1, shapeless: false },
+    // 信标:4 铁块 + 地心核心 + 钻石(终局光环)
+    { name: '信标', pattern: ['iron_block', 'iron_block', 'iron_block', 'iron_block', 'golem_core', 'iron_block', 'iron_block', 'gem_diamond', 'iron_block'], result: { kind: 'block', id: 'beacon' }, count: 1, shapeless: false },
   ];
 
   // 匹配配方:grid 是长度 4 的数组(每格 null 或 {kind,id}),返回配方对象或 null
@@ -206,18 +226,93 @@
   // 返回破坏所需点击次数(至少 1)
   function breakCost(blockDef, toolDef) {
     const baseClicks = Math.max(1, Math.round(blockDef.hardness * 3));
+    let clicks = baseClicks;
     if (toolDef && toolDef.tool === blockDef.tool) {
-      return Math.max(1, Math.round(baseClicks / toolDef.speed));
+      clicks = Math.max(1, Math.round(baseClicks / toolDef.speed));
     }
-    return baseClicks;
+    // R55:层级不足可挖掉但更慢(×2.5),且不掉落(由 canHarvest 判定)
+    if (!canHarvest(blockDef, toolDef)) clicks = Math.ceil(clicks * 2.5);
+    return clicks;
+  }
+
+  // 采矿层级(R55):方块 tier 0 任何人都能收获;>0 必须手持同类工具且层级达标。
+  // 工具层级见 game-defs.js 的 TOOL_TYPES[].level;空手/非镐视为 0。
+  function canHarvest(blockDef, toolDef) {
+    const need = (blockDef && blockDef.tier) || 0;
+    if (need <= 0) return true;
+    if (!toolDef || toolDef.tool !== 'pickaxe') return false;
+    return (toolDef.level || 0) >= need;
+  }
+
+  // ---- 配方书(R55):分类/搜索/材料缺口(纯函数,可单测) ----
+  const FOOD_RESULTS = { bread: 1, cake: 1, gold_apple: 1, cooked_porkchop: 1, steak: 1, cooked_fish: 1, cooked_chicken: 1 };
+  function recipeCategory(r) {
+    if (!r || !r.result) return '杂项';
+    const id = r.result.id;
+    if (/^sword_|^bow$/.test(id)) return '武器';
+    if (/^(helmet|chestplate|leggings|boots)_/.test(id)) return '护甲';
+    if (/^(pickaxe|axe|shovel)_|^(fishing_rod|shears)$/.test(id)) return '工具';
+    if (r.result.kind === 'block') {
+      if (/^(redstone|lever|repeater|piston|torch)/.test(id)) return '红石';
+      if (id === 'cake') return '食物';
+      return '建材';
+    }
+    if (FOOD_RESULTS[id]) return '食物';
+    if (id === 'redstone_dust') return '红石';
+    return '杂项';
+  }
+
+  function recipeMaterials(r) {
+    const need = {};
+    if (!r || !r.pattern) return need;
+    for (const p of r.pattern) if (p) need[p] = (need[p] || 0) + 1;
+    return need;
+  }
+
+  // counts: {itemId: 持有数量};返回 [{id, need, have}] 缺口(空数组=可合成)
+  function recipeMissing(r, counts) {
+    const need = recipeMaterials(r);
+    const miss = [];
+    for (const id in need) {
+      const have = (counts && counts[id]) || 0;
+      if (have < need[id]) miss.push({ id, need: need[id], have });
+    }
+    return miss;
+  }
+
+  // 配方能否放进 size×size 网格(2 或 3):按图案包围盒判断
+  function recipeFits(r, size) {
+    if (!r || !r.pattern) return false;
+    const w = Math.sqrt(r.pattern.length) | 0;
+    let minR = 9, maxR = -1, minC = 9, maxC = -1;
+    for (let i = 0; i < r.pattern.length; i++) {
+      if (!r.pattern[i]) continue;
+      const rr = Math.floor(i / w), cc = i % w;
+      if (rr < minR) minR = rr;
+      if (rr > maxR) maxR = rr;
+      if (cc < minC) minC = cc;
+      if (cc > maxC) maxC = cc;
+    }
+    if (maxR < 0) return false;
+    return (maxR - minR + 1) <= size && (maxC - minC + 1) <= size;
+  }
+
+  function filterRecipes(recipes, query, cat) {
+    const q = (query || '').trim().toLowerCase();
+    return recipes.filter(r => {
+      if (cat && cat !== '全部' && recipeCategory(r) !== cat) return false;
+      if (!q) return true;
+      return (r.name || '').toLowerCase().indexOf(q) >= 0
+        || (r.result && String(r.result.id).toLowerCase().indexOf(q) >= 0);
+    });
   }
 
   // 导出(Node 环境)
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { RECIPES, matchRecipe, matchRecipeGrid, breakCost };
+    module.exports = { RECIPES, matchRecipe, matchRecipeGrid, breakCost, canHarvest, recipeCategory, recipeMaterials, recipeMissing, recipeFits, filterRecipes };
   }
   // 浏览器:挂到全局(CRAFTLIB 命名空间 + 裸函数,game.js 直接调用)
-  global.CRAFTLIB = { RECIPES, matchRecipe, matchRecipeGrid, breakCost };
+  global.CRAFTLIB = { RECIPES, matchRecipe, matchRecipeGrid, breakCost, canHarvest, recipeCategory, recipeMaterials, recipeMissing, recipeFits, filterRecipes };
   global.matchRecipeGrid = matchRecipeGrid;
 
 })(typeof window !== 'undefined' ? window : globalThis);

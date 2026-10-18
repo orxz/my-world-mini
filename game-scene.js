@@ -2,12 +2,14 @@
 // 第七部分:全局状态(玩家/物品/视角)
 // ============================================================
 let scene, camera, renderer;
-const PLAYER_HEIGHT = 1.8;
-const PLAYER_RADIUS = 0.3;
-const GRAVITY = 26;
-const JUMP_SPEED = 9;
-const WALK_SPEED = 5.5;
-const FLY_SPEED = 9;
+const PLAYER_HEIGHT = BALANCE.player.height;
+const PLAYER_RADIUS = BALANCE.player.radius;
+const GRAVITY = BALANCE.player.gravity;
+const JUMP_SPEED = BALANCE.player.jump;
+const WALK_SPEED = BALANCE.player.walk;
+const FLY_SPEED = BALANCE.player.fly;
+const SPRINT_SPEED = BALANCE.player.sprint;
+const SNEAK_SPEED = BALANCE.player.sneak;
 
 let selectedType = 'grass';
 
@@ -20,6 +22,38 @@ let isFlying = false;
 let onGround = false;
 let cameraMode = 0;
 let playerModel = null;
+
+// R55:移动状态机(冲刺/潜行)
+let isSprinting = false;
+let isSneaking = false;
+let lastWDown = 0;          // 双击 W 检测
+let sprintLock = false;     // 双击后保持冲刺,松开 W 取消
+let lastAttackTime = -99;   // 攻击冷却
+let lastDamageTime = -99;   // 受击方向指示
+let lastDamageDir = 0;      // 伤害来源相对玩家的水平角(弧度)
+
+// R55:模式/进度/统计
+let gameMode = 'survival';      // survival | creative
+let dayCount = 1;               // 第 N 天
+const stats = { playTime: 0, blocksMined: 0, blocksPlaced: 0, distance: 0, deaths: 0, kills: 0, fish: 0, trades: 0 };
+const goalClaimed = new Set();  // 已领取奖励的目标 id
+const discovered = new Set();   // 已发现物品(生存图鉴)
+const beacons = new Set();      // 已放置的信标坐标 key
+const vaults = new Set();       // 已开启的宝库坐标 key
+let absorption = 0;             // 金苹果伤害吸收点数
+let absorptionT = 0;            // 吸收剩余秒数
+let beaconAura = false;         // 信标光环(8 格内)
+let beaconRegenT = 0;
+let shakeT = 0, shakeAmp = 0;   // R55 视觉:受击/爆炸镜头震动
+let lastDeathCause = 'combat';
+let lastDeathPos = null;
+let lastRelockRequest = -1e9;   // R55:关面板后请求指针锁,抑制失败时的误暂停
+let playgroundRides = null;     // R55:出生地游乐场动态设施(旋转木马/摩天轮/秋千)
+
+// R55:按键映射(可在设置中重映射)
+const KEYMAP_DEFAULT = { forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD', jump: 'Space', sneak: 'ShiftLeft', sprint: 'KeyR', inventory: 'KeyE', drop: 'KeyQ', camera: 'F5' };
+let keymap = Object.assign({}, KEYMAP_DEFAULT);
+let touchSprint = false, touchSneak = false;
 
 let holdGroup = null;
 let holdSwingT = 0;

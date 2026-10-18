@@ -8,8 +8,7 @@
 
   const STACK_MAX = 64;   // 方块/材料最大堆叠数
   // 食物 → 恢复的饥饿值(右键进食)
-  const FOODS = { porkchop: 8, apple: 4, cooked_porkchop: 10, beef: 6, mutton: 6, steak: 8, bread: 5, raw_fish: 5, cooked_fish: 9, raw_chicken: 2, cooked_chicken: 6 };   // R43:熟猪排 12→10、牛排 10→8(经典收敛)
-  // 护甲减伤(经典):每点护甲 4% 减伤,上限 20 点(钻石全套)= 80%
+  const FOODS = { porkchop: 8, apple: 4, cooked_porkchop: 10, beef: 6, mutton: 6, steak: 8, bread: 5, raw_fish: 5, cooked_fish: 9, raw_chicken: 2, cooked_chicken: 6 };   // R43:熟猪排 12→10、牛排 10→8(经典收敛)  // 护甲减伤(经典):每点护甲 4% 减伤,上限 20 点(钻石全套)= 80%
   const ARMOR_MAX_POINTS = 20;
   const ARMOR_PCT_PER_POINT = 0.04;
   // 饥饿参数
@@ -108,7 +107,7 @@
   // ---- 村民交易(R33):经典绿宝石经济,物品均为可堆叠 item(无工具) ----
   // 卖(物资 → 绿宝石)前 4 条,买(绿宝石 → 物资)后 3 条;数值取经典区间中位
   const VILLAGER_TRADES = [
-    { give: { id: 'wheat',        n: 18 }, get: { id: 'gem_emerald', n: 1 } },   // 农夫:小麦
+    { give: { id: 'wheat',        n: 12 }, get: { id: 'gem_emerald', n: 1 } },   // 农夫:小麦(R55:18→12,与慢饥饿曲线对齐)
     { give: { id: 'coal',         n: 15 }, get: { id: 'gem_emerald', n: 1 } },   // 屠夫系:煤炭
     { give: { id: 'raw_fish',     n: 6  }, get: { id: 'gem_emerald', n: 1 } },   // 渔夫:生鱼
     { give: { id: 'leather',      n: 8  }, get: { id: 'gem_emerald', n: 1 } },   // 皮匠:皮革
@@ -176,11 +175,46 @@
     return slots;
   }
 
+  // ---- 容器批量(R55):整理/合并堆叠(纯函数,总数守恒) ----
+  // items 为 null 或 {kind,id,count,durability};工具不合并,按原顺序保留。
+  function mergeStacks(items, stackMax) {
+    stackMax = stackMax || STACK_MAX;
+    const out = [];
+    const byKey = new Map();
+    for (const it of items) {
+      if (!it) continue;
+      if (it.kind === 'tool') { out.push(it); continue; }
+      const key = (it.kind || 'block') + ':' + it.id;
+      const ex = byKey.get(key);
+      if (ex && (ex.count || 1) < stackMax) {
+        const take = Math.min(stackMax - (ex.count || 1), it.count || 1);
+        ex.count = (ex.count || 1) + take;
+        const left = (it.count || 1) - take;
+        if (left > 0) { const copy = { kind: it.kind, id: it.id, count: left }; out.push(copy); byKey.set(key, copy); }
+      } else {
+        const copy = { kind: it.kind, id: it.id, count: it.count || 1 };
+        if (it.durability !== undefined) copy.durability = it.durability;
+        out.push(copy);
+        byKey.set(key, copy);
+      }
+    }
+    return out;
+  }
+  // 快捷栏 → {id: 总数}(配方书缺口计算用;工具不计)
+  function hotbarCounts(hotbar) {
+    const out = {};
+    for (const it of hotbar) {
+      if (!it || it.kind === 'tool') continue;
+      out[it.id] = (out[it.id] || 0) + (it.count || 1);
+    }
+    return out;
+  }
+
   // 导出(Node 环境)
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { STACK_MAX, FOODS, ARMOR_MAX_POINTS, ARMOR_PCT_PER_POINT, armorReduce, pickupIntoInventory, normalizeHotbar, hungerTick, VILLAGER_TRADES, countInHotbar, consumeFromHotbar, canTrade, DUNGEON_LOOT_TABLE, rollDungeonLoot };
+    module.exports = { STACK_MAX, FOODS, ARMOR_MAX_POINTS, ARMOR_PCT_PER_POINT, armorReduce, pickupIntoInventory, normalizeHotbar, hungerTick, VILLAGER_TRADES, countInHotbar, consumeFromHotbar, canTrade, DUNGEON_LOOT_TABLE, rollDungeonLoot, mergeStacks, hotbarCounts };
   }
   // 浏览器:挂到全局
-  global.INVLIB = { STACK_MAX, FOODS, ARMOR_MAX_POINTS, ARMOR_PCT_PER_POINT, armorReduce, pickupIntoInventory, normalizeHotbar, hungerTick, VILLAGER_TRADES, countInHotbar, consumeFromHotbar, canTrade, DUNGEON_LOOT_TABLE, rollDungeonLoot };
+  global.INVLIB = { STACK_MAX, FOODS, ARMOR_MAX_POINTS, ARMOR_PCT_PER_POINT, armorReduce, pickupIntoInventory, normalizeHotbar, hungerTick, VILLAGER_TRADES, countInHotbar, consumeFromHotbar, canTrade, DUNGEON_LOOT_TABLE, rollDungeonLoot, mergeStacks, hotbarCounts };
 
 })(typeof window !== 'undefined' ? window : globalThis);

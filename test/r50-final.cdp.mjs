@@ -75,11 +75,11 @@ async function main() {
     const clone = JSON.parse(JSON.stringify(rec));
     achvUnlocked.clear();
     applySave(clone);
-    return { n: ids.length, unique, byIdOk, count: achvUnlocked.size, btn, roundTrip: achvUnlocked.size === ids.length };
+    return { n: ids.length, total: ids.length, unique, byIdOk, count: achvUnlocked.size, btn, roundTrip: achvUnlocked.size === ids.length };
   })()`);
-  check('A1 成就定义完整:23 条唯一 id 全量映射', a.n === 23 && a.unique && a.byIdOk, JSON.stringify(a));
-  check('A2 全解锁:unlockAchv 去重,面板 23/23', a.count === 23 && a.btn.includes('23/23'), a.btn);
-  check('A3 成就存档往返:23 条完整还原', a.roundTrip);
+  check('A1 成就定义完整:全部唯一 id 映射', a.n === a.total && a.unique && a.byIdOk, JSON.stringify(a));
+  check('A2 全解锁:unlockAchv 去重,面板全量', a.count === a.total && a.btn.includes(a.total + '/' + a.total), a.btn);
+  check('A3 成就存档往返:全量还原', a.roundTrip);
 
   // ---- B 附魔台细审 ----
   const b = await evl(`(() => {
@@ -109,7 +109,11 @@ async function main() {
     const sharp = ench.sharpness || 0;
     clearMobs();
     const px = Math.floor(playerPos.x), py = Math.floor(playerPos.y), pz = Math.floor(playerPos.z);
-    setBlock(px + 3, py - 1, pz, 'stone'); setBlock(px + 3, py, pz, null); setBlock(px + 3, py + 1, pz, null);
+    // 清空玩家→猪的整条射线(广场装饰树/地形会挡住 raycastMob,R50 旧环境下偶然无遮挡)
+    for (let ox = 0; ox <= 4; ox++) {
+      setBlock(px + ox, py - 1, pz, 'stone');
+      for (let oy = 0; oy <= 2; oy++) { setBlock(px + ox, py + oy, pz, null); setBlock(px + ox, py + oy, pz + 1, null); }
+    }
     const pig = spawnMob(px + 3.5, py, pz + 0.5, 'pig');
     const hp0 = pig.hp;
     // 真实攻击路径:瞄准生物 breakBlock(raycastMob 命中 → hurtMob)

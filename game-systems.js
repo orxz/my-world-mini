@@ -230,16 +230,18 @@ function openEnchantPanel() {
   }
   const item = hotbar[currentSlot];
   currentEnchantOptions = (item && item.kind === 'tool')
-    ? MACHINES.rollEnchants(TOOL_TYPES[item.id].tool, Math.random)
+    ? MACHINES.rollEnchants(TOOL_TYPES[item.id].tool, Math.random, TOOL_TYPES[item.id].tier === 'gold')
     : null;
   renderEnchantPanel();
   enchantOpen = true;
   enchantPanelEl.style.display = '';
+  if (typeof syncPanelDim === 'function') syncPanelDim();
   if (document.pointerLockElement) document.exitPointerLock();
 }
 function closeEnchantPanel() {
   enchantOpen = false;
   if (enchantPanelEl) enchantPanelEl.style.display = 'none';
+  if (typeof syncPanelDim === 'function') syncPanelDim();
   tryRelockPointer();
 }
 function renderEnchantPanel() {
@@ -274,7 +276,7 @@ function renderEnchantPanel() {
       audio.play('place');
       showToast('✨ 附魔成功:' + MACHINES.ENCHANT_NAMES[o.type] + ' ' + 'I'.repeat(o.level));
       unlockAchv('enchant');   // 成就:附魔师(R34)
-      currentEnchantOptions = MACHINES.rollEnchants(TOOL_TYPES[item2.id].tool, Math.random);
+      currentEnchantOptions = MACHINES.rollEnchants(TOOL_TYPES[item2.id].tool, Math.random, TOOL_TYPES[item2.id].tier === 'gold');
       renderEnchantPanel();
     };
   });
@@ -310,6 +312,7 @@ function catchFish(f) {
   const drop = r < 0.7 ? ['raw_fish', '钓到生鱼!'] : r < 0.85 ? ['string', '钓到一团蛛丝?'] : r < 0.95 ? ['leather', '钓到旧皮革'] : ['gem_emerald', '钓到宝石!'];
   spawnDroppedItem(f.x - 0.5, f.y - 0.6, f.z - 0.5, drop[0], 1, 'item');
   showToast('🐟 ' + drop[1]);
+  stats.fish++;
   audio.play('place');
   unlockAchv('fish');   // 成就:渔夫(R34)
   if (f.rodItem) consumeToolDurability(f.rodItem);
@@ -372,12 +375,43 @@ function feedVillager(m, item) {
   showToast('💗 村民进入求爱模式(手持面包再喂一位)');
 }
 
-// 夜间在距玩家 ≥12 格处生成敌对生物(僵尸 65% / 苦力怕 35%);关闭怪物或昼夜循环 = 和平模式
+// 夜间在距玩家 ≥12 格处生成敌对生物;难度按天数递进(R55)
+function hostileCapNow() { return BALANCE_LIB.nightCap(dayCount); }
+function isCaveHostile(m) { return m.mesh.position.y < SEA_LEVEL + 2; }
+function countCaveHostiles() {
+  let n = 0;
+  for (const m of mobs) if (MOB_DEFS[m.type].hostile && isCaveHostile(m)) n++;
+  return n;
+}
+// 地下生成:在已加载区块里找光级 <8 的洞穴空腔(与地表共享总 cap,地下最多 4)
+function trySpawnCaveHostile() {
+  if (countCaveHostiles() >= BALANCE.mobs.caveCap) return false;
+  const arr = Array.from(chunks.values());
+  if (!arr.length) return false;
+  for (let tries = 0; tries < 6; tries++) {
+    const ch = arr[(Math.random() * arr.length) | 0];
+    const wx = ch.cx * CHUNK_SIZE + ((Math.random() * CHUNK_SIZE) | 0) + 0.5;
+    const wz = ch.cz * CHUNK_SIZE + ((Math.random() * CHUNK_SIZE) | 0) + 0.5;
+    const dx = wx - playerPos.x, dz = wz - playerPos.z;
+    if (dx * dx + dz * dz < 144) continue;
+    const fx = Math.floor(wx), fz = Math.floor(wz);
+    for (let y = 3; y < 38; y++) {
+      if (isSolidAt(fx, y - 1, fz) && !isSolidAt(fx, y, fz) && !isSolidAt(fx, y + 1, fz)
+          && lightAtWorld(fx, y, fz) < 8) {
+        spawnMob(wx, y, fz, dayCount >= 4 && Math.random() < 0.3 ? 'skeleton' : 'zombie');
+        return true;
+      }
+    }
+  }
+  return false;
+}
 function trySpawnHostile() {
   if (!settings.hostiles || !settings.dayNightEnabled) return;
   if (tutorial.active) return;   // 新手教程期间不刷敌对生物(安全学习;跳过教程即恢复)
   if (sunHeight() > -0.05) return;   // 仅夜间
-  if (countHostiles() >= HOSTILE_CAP || chunks.size === 0) return;
+  if (countHostiles() >= hostileCapNow() || chunks.size === 0) return;
+  // 地下优先(35%):洞穴不再是零风险提款机
+  if (Math.random() < BALANCE.mobs.caveChance && trySpawnCaveHostile()) return;
   const arr = Array.from(chunks.values());
   const ch = arr[(Math.random() * arr.length) | 0];
   const wx = ch.cx * CHUNK_SIZE + ((Math.random() * CHUNK_SIZE) | 0) + 0.5;
@@ -389,16 +423,20 @@ function trySpawnHostile() {
     const b = getBlock(fx, y, fz);
     if (!b) continue;
     if (b !== 'water' && BLOCK_TYPES[b] && BLOCK_TYPES[b].solid && !getBlock(fx, y + 1, fz) && !getBlock(fx, y + 2, fz)) {
-      // 光照判定(经典,R23):生成点火把光级 ≥8 过亮 → 不刷(火把防刷怪;无光源区域光级 0 正常刷)
+      // 光照判定(经典):生成点火把光级 ≥8 过亮 → 不刷(火把防刷怪)
       if (lightAtWorld(fx, y + 1, fz) < 8) {
-        // 敌对生物池:僵尸 40% / 苦力怕 24% / 骷髅 19% / 蜘蛛 10% / 史莱姆 5% / 末影人 2%
-        const hr = Math.random();
-        if (hr < 0.4) spawnMob(wx, y + 1, fz, 'zombie');
-        else if (hr < 0.64) spawnMob(wx, y + 1, fz, 'creeper');
-        else if (hr < 0.83) spawnMob(wx, y + 1, fz, 'skeleton');
-        else if (hr < 0.93) spawnMob(wx, y + 1, fz, 'spider');
-        else if (hr < 0.98) spawnMob(wx, y + 1, fz, 'slime');
-        else spawnMob(wx, y + 1, fz, 'enderman');
+        const r = Math.random();
+        // 第 1 夜仅僵尸;第 2 夜解锁骷髅/苦力怕;第 4 夜蜘蛛/史莱姆;第 5 夜末影人
+        if (dayCount <= 1) spawnMob(wx, y + 1, fz, 'zombie');
+        else if (dayCount === 2) (r < 0.6 ? spawnMob(wx, y + 1, fz, 'zombie') : r < 0.8 ? spawnMob(wx, y + 1, fz, 'creeper') : spawnMob(wx, y + 1, fz, 'skeleton'));
+        else if (dayCount === 3) (r < 0.45 ? spawnMob(wx, y + 1, fz, 'zombie') : r < 0.68 ? spawnMob(wx, y + 1, fz, 'creeper') : r < 0.86 ? spawnMob(wx, y + 1, fz, 'skeleton') : spawnMob(wx, y + 1, fz, 'spider'));
+        else if (r < 0.36) spawnMob(wx, y + 1, fz, 'zombie');
+        else if (r < 0.58) spawnMob(wx, y + 1, fz, 'creeper');
+        else if (r < 0.76) spawnMob(wx, y + 1, fz, 'skeleton');
+        else if (r < 0.88) spawnMob(wx, y + 1, fz, 'spider');
+        else if (r < 0.96) spawnMob(wx, y + 1, fz, 'slime');
+        else if (dayCount >= 5) spawnMob(wx, y + 1, fz, 'enderman');
+        else spawnMob(wx, y + 1, fz, 'zombie');
       }
     }
     break;   // 只看地表第一个非空气方块
@@ -416,7 +454,7 @@ function updateMobs(dt) {
   mobSpawnTimer -= dt;
   if (mobSpawnTimer <= 0) { mobSpawnTimer = 1.5; trySpawnMob(); }
   hostileSpawnTimer -= dt;
-  if (hostileSpawnTimer <= 0) { hostileSpawnTimer = 3; trySpawnHostile(); }
+  if (hostileSpawnTimer <= 0) { hostileSpawnTimer = BALANCE.mobs.spawnInterval; trySpawnHostile(); }
   const maxDist = (RENDER_DISTANCE + 2) * CHUNK_SIZE;
   for (let i = mobs.length - 1; i >= 0; i--) {
     const m = mobs[i];
@@ -513,6 +551,8 @@ function updateMobs(dt) {
       if (skeletonAI(m, dt, distP)) continue;
     } else if (m.type === 'slime') {
       slimeAI(m, dt, distP);
+    } else if (m.type === 'golem_ancient') {
+      ancientGolemAI(m, dt, distP);
     } else if (m.type === 'golem') {
       golemAI(m, dt, distP);
     } else if (creeperAI(m, dt, distP)) {
@@ -663,9 +703,29 @@ function golemAI(m, dt, distP) {
   return false;
 }
 
+// ---- 远古铁傀儡(R55):核心地牢精英,始终敌对,重击 + 击飞 ----
+function ancientGolemAI(m, dt, distP) {
+  m.attackCd -= dt;
+  if (distP < 20) {
+    m.yaw = faceYaw(m);
+    m.speed = 1.7;
+    if (distP < 2.3 && m.attackCd <= 0) {
+      m.attackCd = 1.5;
+      damagePlayer(8, 'combat');
+      velocity.y = 5.5;
+      spawnParticles(m.mesh.position.x, m.mesh.position.y + 0.9, m.mesh.position.z, 0x8a7a5a, 8);
+    }
+  } else {
+    m.speed = 0.5;
+  }
+  return false;
+}
+
 function hurtMob(m, dmg, kx, kz, silent) {
+  if (!m || m.hp <= 0) return;
+  if (m.hurtT > 0.001) return;   // R55:受击无敌帧(0.30s),防多源/连击叠加
   m.hp -= dmg;
-  m.hurtT = 0.25;
+  m.hurtT = BALANCE.combat.invuln;
   // 末影人被攻击即激怒,并短暂延迟后瞬移(经典)
   if (m.type === 'enderman') { m.angered = true; m.tpT = 0.35; }
   // 村民被攻击 → 转身逃跑(经典:不还手)
@@ -677,6 +737,7 @@ function hurtMob(m, dmg, kx, kz, silent) {
   for (let k = 0; k < mats.length; k++) mats[k].color.setHex(0xd05a5a);
   if (!silent) audio.play(m.type === 'zombie' ? 'zombie' : m.type === 'creeper' ? 'hurt' : 'pig');
   if (m.hp <= 0) {
+    stats.kills++;   // R55:统计
     const p = m.mesh.position;
     spawnParticles(p.x - 0.5, p.y - 0.5, p.z - 0.5, m.type === 'pig' ? 0xeba3a9 : m.type === 'cow' ? 0x6b4a2f : m.type === 'sheep' ? 0xe8e8e4 : m.type === 'spider' ? 0x2a2a30 : m.type === 'enderman' ? 0x7a4a9a : m.type === 'villager' ? 0x7a5a3a : m.type === 'slime' ? 0x6fc05a : m.type === 'golem' ? 0xc8c8d2 : 0x7a9a7a, 12);
     // 经典掉落(按生物类型)
@@ -699,8 +760,9 @@ function hurtMob(m, dmg, kx, kz, silent) {
       } else if (Math.random() < 0.75) dropAt('slime_ball', 'item', Math.random() < 0.35 ? 2 : 1);
     }
     else if (m.type === 'golem') dropAt('iron_ingot', 'item', 3 + (Math.random() * 3 | 0));   // 铁傀儡:铁锭 3-5(经典,R39)
+    else if (m.type === 'golem_ancient') { dropAt('iron_block', 'block', 2); dropAt('gem_gold', 'item', 2); unlockAchv('ancient_golem'); }   // R55:远古铁卫
     // 经验球(R28):敌对 5(末影人 10)/被动 1-3;铁傀儡 0(经典,R39)
-    spawnXPOrbs(p.x, p.y, p.z, m.type === 'golem' ? 0 : MOB_DEFS[m.type].hostile ? (m.type === 'enderman' ? 10 : 5) : 1 + (Math.random() * 3 | 0));
+    spawnXPOrbs(p.x, p.y, p.z, m.type === 'golem' ? 0 : m.type === 'golem_ancient' ? 20 : MOB_DEFS[m.type].hostile ? (m.type === 'enderman' ? 10 : 5) : 1 + (Math.random() * 3 | 0));
     if (m.type === 'zombie') unlockAchv('kill_zombie');       // 成就:怪物猎人(R34)
     else if (m.type === 'creeper') unlockAchv('kill_creeper'); // 成就:拆弹专家
     else if (m.type === 'slime' && m.slimeSize === 0) unlockAchv('kill_slime');   // 成就:黏糊糊(R35)

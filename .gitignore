@@ -5,6 +5,7 @@
 
 # 会话/编辑器
 .zcode/
+.workbuddy/
 .DS_Store
 *.swp
 *.swo

@@ -38,14 +38,14 @@
 └─────────────────────────────────────────────────────────────────┘
                 ▲
 ┌───────────────┴─────────────────────────────────────────┐
-│  test/unit.test.js  ── Node 单元测试(143 项)          │  测试
+│  test/unit.test.js  ── Node 单元测试(160 项)          │  测试
 │    require(worldgen + craft + inventory + machines)    │
 └─────────────────────────────────────────────────────────┘
 
 three.min.js  ── Three.js r160(第三方渲染库,内置,离线)
 ```
 
-`worldgen.js` 与 `craft.js` 均为 UMD:浏览器里挂全局(`window.WORLDGEN` / `window.CRAFTLIB`),
+`worldgen.js`、`craft.js`、`balance.js` 均为 UMD(数值见 `balance.js`):浏览器里挂全局(`window.WORLDGEN` / `window.CRAFTLIB`),
 `game.js` 直接调用;Node 里通过 `module.exports` 导出供测试 require。
 这是"浏览器与测试共用单一数据源"的关键:所有可测的纯逻辑(地形、配方、破坏耗时)
 都不放在 `game.js` 里,避免 DOM/Three 依赖污染测试。

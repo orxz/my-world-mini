@@ -77,6 +77,15 @@ async function main() {
   const dimOff = await evl(`!document.body.classList.contains('panel-open') && getComputedStyle(document.getElementById('panel-dim')).opacity === '0'`);
   check('panel dim toggles with inventory', dimOn && dimOff, JSON.stringify({ dimOn, dimOff }));
 
+  // 2d. 生存背包名称始终可见(不再用 ??? 遮蔽)
+  const names = await evl(`(() => {
+    toggleInventory(true);
+    const labels = [...document.querySelectorAll('#inventory .inv-label')].map(e => e.textContent.trim());
+    toggleInventory(false);
+    return { n: labels.length, unknown: labels.filter(x => !x || x === '???').length, sample: labels.slice(0, 5) };
+  })()`);
+  check('inventory labels always show names', names.n > 50 && names.unknown === 0, JSON.stringify(names));
+
   // 3. 生存目录不发物品
   const surv = await evl(`(()=>{gameMode='survival';toggleInventory(true);const before=hotbar.map(x=>x?x.id+':'+(x.count||1):null).join('|');const c=document.querySelector('.inv-grid .inv-cell');if(c)c.click();const after=hotbar.map(x=>x?x.id+':'+(x.count||1):null).join('|');toggleInventory(false);return {same:before===after};})()`);
   check('survival catalog gives nothing', surv.same === true, JSON.stringify(surv));

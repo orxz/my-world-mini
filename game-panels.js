@@ -104,15 +104,15 @@ function buildInventoryPanel() {
     cell.appendChild(cv);
     const label = document.createElement('span');
     label.className = 'inv-label';
-    const known = gameMode === 'creative' || discovered.has(item.id);
-    label.textContent = known ? itemName(item) : '???';
+    // R55 修复:名称始终显示;是否已发现只影响「生存模式提示」,不再把名称替换成 ???
+    label.textContent = itemName(item);
     cell.dataset.search = (itemName(item) + ' ' + item.id).toLowerCase();
     cell.appendChild(label);
     cell.addEventListener('mouseenter', () => showItemTooltip(item, cell));
     cell.addEventListener('mouseleave', hideItemTooltip);
     cell.addEventListener('click', () => {
       if (gameMode !== 'creative') {
-        showToast(known ? '生存模式:通过采集/合成获得 ' + itemName(item) : '尚未发现:先采集或合成一次');
+        showToast('生存模式:通过采集/合成获得 ' + itemName(item));
         showItemTooltip(item, cell);
         return;
       }

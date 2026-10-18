@@ -454,9 +454,7 @@ function showItemTooltip(item, anchor) {
   if (!el || !item) return;
   const id = item.id;
   const lines = [];
-  let title = itemDisplayName(id);
-  if (gameMode === 'survival' && !discovered.has(id) && item.kind !== 'tool') title = '???';
-  lines.push('<b>' + title + '</b>');
+  lines.push('<b>' + itemDisplayName(id) + '</b>');
   if (item.kind === 'tool') {
     const d = TOOL_TYPES[id] || {};
     lines.push('<span class="tt-dim">' + (d.tool === 'armor' ? '护甲' : d.tool === 'sword' ? '武器' : '工具') + ' · ' + (d.tier || '') + '</span>');

@@ -86,9 +86,21 @@ async function main() {
   })()`);
   check('inventory labels always show names', names.n > 50 && names.unknown === 0, JSON.stringify(names));
 
-  // 3. 生存目录不发物品
-  const surv = await evl(`(()=>{gameMode='survival';toggleInventory(true);const before=hotbar.map(x=>x?x.id+':'+(x.count||1):null).join('|');const c=document.querySelector('.inv-grid .inv-cell');if(c)c.click();const after=hotbar.map(x=>x?x.id+':'+(x.count||1):null).join('|');toggleInventory(false);return {same:before===after};})()`);
-  check('survival catalog gives nothing', surv.same === true, JSON.stringify(surv));
+  // 3. 生存图鉴点击放入 1 个,且不覆盖当前手持
+  const surv = await evl(`(()=>{
+    gameMode='survival'; toggleInventory(true);
+    const saved=hotbar.slice();
+    const before=INVLIB.hotbarCounts(hotbar).dirt||0;
+    const c=[...document.querySelectorAll('#inventory .inv-cell')].find(e=>e.textContent.trim()==='泥土');
+    if(c)c.click();
+    const after=INVLIB.hotbarCounts(hotbar).dirt||0;
+    const pick=saved[0]&&saved[0].id;
+    const kept=hotbar.some(x=>x&&x.id===pick);
+    for(let i=0;i<hotbar.length;i++)hotbar[i]=saved[i]||null;
+    buildHotbar(); toggleInventory(false);
+    return {added:after-before,kept,pick};
+  })()`);
+  check('survival catalog adds 1 and does not overwrite held tool', surv.added === 1 && surv.kept === true, JSON.stringify(surv));
 
   // 4. 采矿层级
   const tier = await evl(`(()=>{hotbar[0]={kind:'tool',id:'pickaxe_wood',durability:60};currentSlot=0;selectSlot(0);const wood={can:canHarvestBlock('diamond_ore'),cost:breakCost('diamond_ore')};hotbar[0]={kind:'tool',id:'pickaxe_iron',durability:251};const iron={can:canHarvestBlock('diamond_ore'),cost:breakCost('diamond_ore')};return {wood,iron};})()`);

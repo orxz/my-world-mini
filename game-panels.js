@@ -69,8 +69,8 @@ function buildInventoryPanel() {
   grid.innerHTML = '';
   const hint = panel.querySelector('.inv-hint');
   hint.textContent = gameMode === 'creative'
-    ? `创造模式:点击物品放入快捷栏第 ${currentSlot + 1} 格;右键放入合成格`
-    : `生存模式:图鉴仅供查看,物品靠采集/合成获得;右键放入合成格,点「📖 配方书」查配方`;
+    ? `创造模式:点击物品放入物品栏(整组);右键放入合成格`
+    : `生存模式:点击物品放入物品栏(每次 1 个);右键放入合成格,点「📖 配方书」查配方`;
   const titleEl = document.getElementById('inv-title');
   if (titleEl) titleEl.textContent = '背包 · ' + (gameMode === 'creative' ? '创造' : '生存');
 
@@ -95,6 +95,21 @@ function buildInventoryPanel() {
   renderCraftGrid();
   refreshCraftResult();
 
+  const addCatalogItemToInventory = (item, count) => {
+    const copy = { kind: item.kind || 'block', id: item.id };
+    if (copy.kind === 'tool') copy.durability = TOOL_TYPES[item.id] ? TOOL_TYPES[item.id].durability : undefined;
+    const got = INVLIB.pickupIntoInventory(hotbar, copy.kind, copy.id, count, {
+      durability: copy.durability,
+      defaultDurability: TOOL_TYPES[item.id] ? TOOL_TYPES[item.id].durability : undefined,
+    });
+    if (got <= 0) { showToast('物品栏已满,先腾出一个格子'); return 0; }
+    discovered.add(item.id);
+    buildHotbar();
+    markDirtySave();
+    showToast('已放入物品栏:' + itemName(item) + ' ×' + got);
+    return got;
+  };
+
   const addCell = (item) => {
     const cell = document.createElement('div');
     cell.className = 'inv-cell';
@@ -111,21 +126,10 @@ function buildInventoryPanel() {
     cell.addEventListener('mouseenter', () => showItemTooltip(item, cell));
     cell.addEventListener('mouseleave', hideItemTooltip);
     cell.addEventListener('click', () => {
-      if (gameMode !== 'creative') {
-        showToast('生存模式:通过采集/合成获得 ' + itemName(item));
-        showItemTooltip(item, cell);
-        return;
-      }
-      let copy;
-      if (item.kind === 'tool') {
-        copy = { kind: 'tool', id: item.id, durability: TOOL_TYPES[item.id].durability };
-      } else if (item.kind === 'item') {
-        copy = { kind: 'item', id: item.id, count: 64 };
-      } else {
-        copy = { kind: 'block', id: item.id, count: 64 };   // 发放整组(放置按数量消耗)
-      }
-      putInSlot(currentSlot, copy);
-      showToast(`已放入快捷栏:${itemName(item)}`);
+      // R55 修复:不再替换当前手持格。优先叠加/放空格;
+      // 生存每次取 1 个,创造取整组(64),避免误覆盖已有工具。
+      addCatalogItemToInventory(item, item.kind === 'tool' ? 1 : (gameMode === 'creative' ? 64 : 1));
+      showItemTooltip(item, cell);
     });
     // 右键:放入合成格(找第一个空位)
     cell.addEventListener('contextmenu', (e) => {

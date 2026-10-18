@@ -431,14 +431,6 @@ function selectSlot(i) {
   updateHoldItem();
 }
 
-function putInSlot(i, item) {
-  if (i < 0 || i >= HOTBAR_SIZE || !Number.isInteger(i)) return;
-  hotbar[i] = item;
-  buildHotbar();
-  if (i === currentSlot) selectSlot(i);
-  markDirtySave();
-}
-
 // ============================================================
 // R55:物品提示 / 状态 HUD / 配方书 / 统计 / 按键重映射
 // ============================================================

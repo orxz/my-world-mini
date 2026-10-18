@@ -75,6 +75,8 @@
     { name: '红石线', pattern: ['redstone_dust', null, null, null], result: { kind: 'block', id: 'redstone' }, count: 1, shapeless: true },
     // 铁块:9 铁锭(经典压缩,R39;铁傀儡构造材料)
     { name: '铁块', pattern: ['iron_ingot', 'iron_ingot', 'iron_ingot', 'iron_ingot', 'iron_ingot', 'iron_ingot', 'iron_ingot', 'iron_ingot', 'iron_ingot'], result: { kind: 'block', id: 'iron_block' }, count: 1, shapeless: false },
+    // 南瓜灯(R57,经典):雕刻南瓜 + 火把 = 南瓜灯(无序,可当铁傀儡头部/发光光源)
+    { name: '南瓜灯', pattern: ['carved_pumpkin', 'torch', null, null], result: { kind: 'block', id: 'pumpkin_lantern' }, count: 1, shapeless: true },
     // 铁块分解:1 块 → 9 铁锭(经典,R39)
     { name: '铁锭(分解)', pattern: ['iron_block', null, null, null], result: { kind: 'item', id: 'iron_ingot' }, count: 9, shapeless: true },
     // 糖:1 甘蔗(R40)
@@ -307,12 +309,34 @@
     });
   }
 
+  // 把配方图案按包围盒左上角对齐铺进 size×size 网格(R57)
+  // 返回长度 size*size 的数组:id 或 null。2×2 配方 w=2、3×3 配方 w=3 —— 写死 w 会让 2×2 错位
+  function recipeFillGrid(r, size) {
+    const out = new Array(size * size).fill(null);
+    if (!r || !r.pattern) return out;
+    const w = Math.sqrt(r.pattern.length) | 0;
+    let minR = 9, minC = 9;
+    for (let i = 0; i < r.pattern.length; i++) {
+      if (!r.pattern[i]) continue;
+      minR = Math.min(minR, Math.floor(i / w));
+      minC = Math.min(minC, i % w);
+    }
+    for (let i = 0; i < r.pattern.length; i++) {
+      const id = r.pattern[i];
+      if (!id) continue;
+      const rr = Math.floor(i / w) - minR, cc = (i % w) - minC;
+      if (rr >= size || cc >= size) continue;
+      out[rr * size + cc] = id;
+    }
+    return out;
+  }
+
   // 导出(Node 环境)
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { RECIPES, matchRecipe, matchRecipeGrid, breakCost, canHarvest, recipeCategory, recipeMaterials, recipeMissing, recipeFits, filterRecipes };
+    module.exports = { RECIPES, matchRecipe, matchRecipeGrid, breakCost, canHarvest, recipeCategory, recipeMaterials, recipeMissing, recipeFits, filterRecipes, recipeFillGrid };
   }
   // 浏览器:挂到全局(CRAFTLIB 命名空间 + 裸函数,game.js 直接调用)
-  global.CRAFTLIB = { RECIPES, matchRecipe, matchRecipeGrid, breakCost, canHarvest, recipeCategory, recipeMaterials, recipeMissing, recipeFits, filterRecipes };
+  global.CRAFTLIB = { RECIPES, matchRecipe, matchRecipeGrid, breakCost, canHarvest, recipeCategory, recipeMaterials, recipeMissing, recipeFits, filterRecipes, recipeFillGrid };
   global.matchRecipeGrid = matchRecipeGrid;
 
 })(typeof window !== 'undefined' ? window : globalThis);

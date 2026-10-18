@@ -263,7 +263,7 @@ function animate() {
     if (playerModel && playerModel.visible) updateBlobShadow(playerShadow, playerPos.x, playerPos.z, playerPos.y - PLAYER_HEIGHT * 0.5);
     else playerShadow.visible = false;
   }
-  for (const m of mobs) updateBlobShadow(m.shadow, m.mesh.position.x, m.mesh.position.z, m.mesh.position.y - 0.45);
+  for (const m of mobs) updateBlobShadow(m.shadow, m.mesh.position.x, m.mesh.position.z, m.mesh.position.y - (m.footOff !== undefined ? m.footOff : 0.45));
   for (const d of droppedItems) updateBlobShadow(d.userData.shadow, d.position.x, d.position.z, d.position.y - 0.15);
 
   // 交互:按住左键(或长按移动端挖矿键)连续挖掘 —— 每 0.22 秒自动追加一次破坏点击
@@ -569,8 +569,11 @@ function applySave(rec) {
   if (rec.mobsData) {
     for (const md of rec.mobsData) {
       if (!md || !MOB_DEFS[md.t] || !Number.isFinite(md.x) || !Number.isFinite(md.y) || !Number.isFinite(md.z)) continue;
-      spawnMob(md.x, md.y - 0.45, md.z, md.t, md.t === 'slime' ? { size: md.s } : undefined);   // spawnMob 内部再 +0.45 回中心位;史莱姆带体型(R35)
+      // spawnMob 内部再按类型加脚底偏移(铁傀儡 0 / 其余 0.45);史莱姆带体型(R35)
+      const footOff = (md.t === 'golem' || md.t === 'golem_ancient') ? 0 : 0.45;
+      spawnMob(md.x, md.y - footOff, md.z, md.t, md.t === 'slime' ? { size: md.s } : undefined);
       const mm = mobs[mobs.length - 1];
+      if (md.pc) mm.playerCreated = true;   // R57:玩家建造的傀儡读档后仍不攻击玩家
       mm.hp = Math.max(1, Math.min(MOB_DEFS[md.t].hp, (typeof md.hp === 'number') ? md.hp : MOB_DEFS[md.t].hp));
       if (md.t === 'slime') mm.hp = Math.max(1, Math.min([1, 4, 16][mm.slimeSize], mm.hp));   // 体型上限
       if (md.baby) { mm.baby = true; mm.growT = 55; mm.mesh.scale.setScalar(0.55); }   // 幼崽(R29)

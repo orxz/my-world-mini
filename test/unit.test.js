@@ -12,7 +12,7 @@ const assert = require('assert');
 const { hash2, hash3, valueNoise2D, valueNoise3D, fbm2D, BIOMES, biomeAt, heightAt, caveAt, villageInCell, hutBlockAt, dungeonInCell, dungeonBlockAt } = require('../worldgen.js');
 
 // ---- 从 craft.js 模块加载(合成/破坏计算的单一数据源) ----
-const { RECIPES, matchRecipe, matchRecipeGrid, breakCost, canHarvest, recipeCategory, recipeMaterials, recipeMissing, recipeFits, filterRecipes } = require('../craft.js');
+const { RECIPES, matchRecipe, matchRecipeGrid, breakCost, canHarvest, recipeCategory, recipeMaterials, recipeMissing, recipeFits, filterRecipes, recipeFillGrid } = require('../craft.js');
 
 // ---- 从 balance.js 加载(R55:数值单一来源) ----
 const BALANCE_LIB = require('../balance.js');
@@ -1104,6 +1104,111 @@ test('goalState:完成第 1 章后推进到第 2 章', () => {
   const st = goalState(done, 3);
   assert.strictEqual(st.chapter, 2);
   assert.strictEqual(goalDoneCount(done), 3);
+});
+
+// ---- 从 golem.js 加载(R57:铁傀儡 T 形结构判定) ----
+const { golemTAt } = require('../golem.js');
+
+console.log('\n=== R57:铁傀儡 T 形召唤 ===');
+// 用 Map 模拟世界:[[x,y,z,type], ...] → getBlock(x,y,z)
+const mkWorld = (cells) => {
+  const m = new Map(cells.map(([x, y, z, t]) => [x + ',' + y + ',' + z, t]));
+  return (x, y, z) => m.get(x + ',' + y + ',' + z) || null;
+};
+
+test('正立 T:横 3 + 竖 1 + 南瓜在上 → 命中', () => {
+  const g = mkWorld([
+    [0, 0, 0, 'iron_block'], [1, 0, 0, 'iron_block'], [-1, 0, 0, 'iron_block'], [0, -1, 0, 'iron_block'],
+    [0, 1, 0, 'carved_pumpkin'],
+  ]);
+  const hit = golemTAt(g, 0, 1, 0);
+  assert.ok(hit, '应命中');
+  assert.deepStrictEqual(hit.center, [0, 0, 0]);
+  assert.strictEqual(hit.iron.length, 4);
+  assert.deepStrictEqual(hit.head, [0, 1, 0]);
+});
+
+test('倒立 T:南瓜在下 → 命中(朝向不限)', () => {
+  const g = mkWorld([
+    [0, -1, 0, 'iron_block'], [1, -1, 0, 'iron_block'], [-1, -1, 0, 'iron_block'], [0, 0, 0, 'iron_block'],
+    [0, -2, 0, 'carved_pumpkin'],
+  ]);
+  assert.ok(golemTAt(g, 0, -2, 0));
+});
+
+test('平躺 T:南瓜在水平侧 → 命中', () => {
+  const g = mkWorld([
+    [0, 0, 1, 'iron_block'], [1, 0, 1, 'iron_block'], [-1, 0, 1, 'iron_block'], [0, 0, 0, 'iron_block'],
+    [0, 0, 2, 'pumpkin_lantern'],
+  ]);
+  const hit = golemTAt(g, 0, 0, 2);
+  assert.ok(hit);
+  assert.deepStrictEqual(hit.center, [0, 0, 1]);
+});
+
+test('普通南瓜不触发(必须雕刻南瓜/南瓜灯)', () => {
+  const g = mkWorld([
+    [0, 0, 0, 'iron_block'], [1, 0, 0, 'iron_block'], [-1, 0, 0, 'iron_block'], [0, -1, 0, 'iron_block'],
+    [0, 1, 0, 'pumpkin'],
+  ]);
+  assert.strictEqual(golemTAt(g, 0, 1, 0), null);
+});
+
+test('缺一块铁块 / 直三连(不是 T)不触发', () => {
+  const miss = mkWorld([
+    [0, 0, 0, 'iron_block'], [1, 0, 0, 'iron_block'], [0, -1, 0, 'iron_block'], [0, 1, 0, 'carved_pumpkin'],
+  ]);
+  assert.strictEqual(golemTAt(miss, 0, 1, 0), null);
+  const line = mkWorld([
+    [0, 0, 0, 'iron_block'], [1, 0, 0, 'iron_block'], [-1, 0, 0, 'iron_block'], [0, 1, 0, 'carved_pumpkin'],
+  ]);
+  assert.strictEqual(golemTAt(line, 0, 1, 0), null);
+});
+
+test('双臂上下 4 格被堵 → 不触发(原版留空要求)', () => {
+  const g = mkWorld([
+    [0, 0, 0, 'iron_block'], [1, 0, 0, 'iron_block'], [-1, 0, 0, 'iron_block'], [0, -1, 0, 'iron_block'],
+    [0, 1, 0, 'carved_pumpkin'],
+    [1, 1, 0, 'stone'],   // 右臂上方被堵
+  ]);
+  assert.strictEqual(golemTAt(g, 0, 1, 0), null);
+});
+
+test('南瓜灯配方:雕刻南瓜 + 火把(无序)', () => {
+  const r = matchRecipe([{ kind: 'block', id: 'carved_pumpkin' }, { kind: 'block', id: 'torch' }, null, null], RECIPES);
+  assert.ok(r, '配方应命中');
+  assert.strictEqual(r.result.id, 'pumpkin_lantern');
+});
+
+test('铁块配方:9 铁锭 → 1 铁块(成本 36 锭 / 4 块)', () => {
+  const grid = Array.from({ length: 9 }, () => ({ kind: 'item', id: 'iron_ingot' }));
+  const r = matchRecipeGrid(grid, 3, RECIPES);
+  assert.ok(r && r.result.id === 'iron_block');
+  assert.strictEqual(r.pattern.filter((x) => x !== null).length, 9);
+});
+
+test('配方填充:3×3 铁块铺满 9 格', () => {
+  const iron = RECIPES.find(r => r.result.id === 'iron_block');
+  assert.deepStrictEqual(recipeFillGrid(iron, 3), Array(9).fill('iron_ingot'));
+});
+test('配方填充:2×2 配方不错位(木板 / 合成台 / 熔炉空中心)', () => {
+  const planks = RECIPES.find(r => r.name === '木板');
+  assert.deepStrictEqual(recipeFillGrid(planks, 2), ['wood', null, null, null]);
+  const bench = RECIPES.find(r => r.result.id === 'crafting_table');
+  assert.deepStrictEqual(recipeFillGrid(bench, 2), ['planks', 'planks', 'planks', 'planks']);
+  const f = recipeFillGrid(RECIPES.find(r => r.result.id === 'furnace'), 3);
+  assert.strictEqual(f.filter(Boolean).length, 8);
+  assert.strictEqual(f[4], null);
+});
+test('配方填充后可被 matchRecipeGrid 反向命中', () => {
+  for (const id of ['iron_block', 'crafting_table', 'furnace', 'pumpkin_lantern']) {
+    const r = RECIPES.find(x => x.result.id === id);
+    const size = recipeFits(r, 2) ? 2 : 3;
+    const grid = recipeFillGrid(r, size).map(x => (x ? { kind: 'block', id: x } : null));
+    const back = matchRecipeGrid(grid, size, RECIPES);
+    assert.ok(back, '回填应命中: ' + id);
+    assert.strictEqual(back.result.id, id);
+  }
 });
 
 console.log('\n=== 总结 ===');

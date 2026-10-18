@@ -680,6 +680,54 @@ function drawBlockFace(ctx, type, face, s, seedRand) {
       ctx.fillRect(Math.floor(s * 0.44), Math.floor(s * 0.44), Math.floor(s * 0.12), Math.floor(s * 0.12));
       break;
     }
+    case 'pumpkin':
+    case 'carved_pumpkin':
+    case 'pumpkin_lantern': {
+      // 南瓜系(R57):顶/底 = 瓜蒂 + 放射沟;侧面 = 竖瓜棱,雕刻款带脸(灯款发光)
+      const carved = type !== 'pumpkin';
+      const lantern = type === 'pumpkin_lantern';
+      if (face === 'top' || face === 'bottom') {
+        noise(18);
+        ctx.fillStyle = 'rgba(120,74,18,0.5)';
+        for (let k = 0; k < 8; k++) {
+          const a = k * Math.PI / 4;
+          ctx.fillRect(Math.round(s / 2 + Math.cos(a) * 6), Math.round(s / 2 + Math.sin(a) * 6), 1, 1);
+        }
+        ctx.fillStyle = 'rgba(96,60,16,0.85)';
+        ctx.fillRect(s / 2 - 2, s / 2 - 2, 4, 4);
+      } else {
+        noise(14);
+        // 瓜棱:深沟 + 紧邻高光,3px 一个循环
+        ctx.fillStyle = 'rgba(96,52,6,0.6)';
+        for (let x = 1; x < s; x += 3) ctx.fillRect(x, 0, 1, s);
+        ctx.fillStyle = 'rgba(255,214,140,0.35)';
+        for (let x = 2; x < s; x += 3) ctx.fillRect(x, 0, 1, s);
+        if (carved) {
+          ctx.fillStyle = lantern ? '#fff0b0' : '#2a1404';
+          // 三角眼(尖朝上)
+          const eye = (ox) => {
+            ctx.fillRect(ox + 1, 4, 2, 1);
+            ctx.fillRect(ox, 5, 4, 1);
+            ctx.fillRect(ox, 6, 4, 1);
+          };
+          eye(2); eye(9);
+          // 锯齿嘴
+          ctx.fillRect(3, 10, 10, 2);
+          ctx.fillStyle = col;
+          ctx.fillRect(5, 11, 1, 1);
+          ctx.fillRect(8, 11, 1, 1);
+          ctx.fillRect(11, 11, 1, 1);
+          if (lantern) {                // 灯:整面透出暖光
+            ctx.fillStyle = 'rgba(255,224,140,0.22)';
+            ctx.fillRect(0, 0, s, s);
+            ctx.fillStyle = 'rgba(255,236,170,0.4)';
+            ctx.fillRect(0, 0, s, 2);
+            ctx.fillRect(0, s - 2, s, 2);
+          }
+        }
+      }
+      break;
+    }
     default:
       noise(40);
   }

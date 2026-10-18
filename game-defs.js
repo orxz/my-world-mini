@@ -70,11 +70,15 @@ const BLOCK_TYPES = {
   repeater_on: { name: '中继器(开)', top: '#e05040', side: '#c04030', bottom: '#88887f', solid: false, tool: 'any', hardness: 0.5 },
   piston:      { name: '活塞',   top: '#b08243', side: '#96702f', bottom: '#8a6430', solid: true, tool: 'any', hardness: 1.5 },
   piston_ext:  { name: '活塞(伸出)', top: '#c8c8d2', side: '#a0763a', bottom: '#8a6430', solid: true, tool: 'any', hardness: 1.5 },
+  // 南瓜系(R57):原版铁傀儡召唤用 —— 南瓜自然生成,剪刀右键刻出脸,南瓜灯=发光光源
+  pumpkin:      { name: '南瓜',     top: '#c9770f', side: '#e08a1e', bottom: '#b06a10', solid: true, tool: 'axe', hardness: 1.0 },
+  carved_pumpkin:{ name: '雕刻南瓜', top: '#c9770f', side: '#e08a1e', bottom: '#b06a10', solid: true, tool: 'axe', hardness: 1.0 },
+  pumpkin_lantern:{ name: '南瓜灯',  top: '#d8871a', side: '#f0a52c', bottom: '#b06a10', solid: true, tool: 'axe', hardness: 1.0, light: 15 },
 };
 const HOTBAR_ORDER = ['grass', 'dirt', 'stone', 'wood', 'leaves', 'sand', 'planks', 'brick'];
 
 // 方块数字 id(用于紧凑的 Uint8Array 区块存储)
-const BLOCK_ID = { air: 0, grass: 1, dirt: 2, stone: 3, wood: 4, leaves: 5, sand: 6, planks: 7, brick: 8, water: 9, snow: 10, gravel: 11, wool_red: 12, wool_yellow: 13, wool_white: 14, wool_black: 15, door: 16, door_iron: 17, door_stone: 18, door_gold: 19, door_diamond: 20, crafting_table: 21, cobblestone: 22, coal_ore: 23, iron_ore: 24, diamond_ore: 25, tnt: 26, furnace: 27, glass: 28, bed: 29, chest: 30, ladder: 31, bookshelf: 32, torch: 33, rail: 34, enchanting_table: 35, slime: 36, spawner: 37, redstone: 38, redstone_torch: 39, lever_off: 40, lever_on: 41, redstone_ore: 42, iron_block: 43, sugarcane: 44, cake: 45, slab_planks: 46, slab_cobble: 47, stairs_planks: 48, stairs_cobble: 49, fence: 50, repeater_off: 51, repeater_on: 52, piston: 53, piston_ext: 54, gold_ore: 55, iron_bars: 56, obsidian: 57, vault: 58, beacon: 59 };
+const BLOCK_ID = { air: 0, grass: 1, dirt: 2, stone: 3, wood: 4, leaves: 5, sand: 6, planks: 7, brick: 8, water: 9, snow: 10, gravel: 11, wool_red: 12, wool_yellow: 13, wool_white: 14, wool_black: 15, door: 16, door_iron: 17, door_stone: 18, door_gold: 19, door_diamond: 20, crafting_table: 21, cobblestone: 22, coal_ore: 23, iron_ore: 24, diamond_ore: 25, tnt: 26, furnace: 27, glass: 28, bed: 29, chest: 30, ladder: 31, bookshelf: 32, torch: 33, rail: 34, enchanting_table: 35, slime: 36, spawner: 37, redstone: 38, redstone_torch: 39, lever_off: 40, lever_on: 41, redstone_ore: 42, iron_block: 43, sugarcane: 44, cake: 45, slab_planks: 46, slab_cobble: 47, stairs_planks: 48, stairs_cobble: 49, fence: 50, repeater_off: 51, repeater_on: 52, piston: 53, piston_ext: 54, gold_ore: 55, iron_bars: 56, obsidian: 57, vault: 58, beacon: 59, pumpkin: 60, carved_pumpkin: 61, pumpkin_lantern: 62 };
 const ID_TO_BLOCK = Object.keys(BLOCK_ID);
 
 // ============================================================

@@ -626,7 +626,7 @@ function renderRecipeBook() {
 }
 function fillRecipeToGrid(r) {
   const size = tableOpen ? 3 : 2;
-  if (!CRAFTLIB.recipeFits(r, size)) { showToast('这个配方需要合成台(3×3)'); return; }
+  if (!CRAFTLIB.recipeFits(r, size)) { showToast('这个配方需要合成台(3×3):4 木板合成,放下后右键打开'); return; }
   if (gameMode === 'survival' && CRAFTLIB.recipeMissing(r, INVLIB.hotbarCounts(hotbar)).length) {
     showToast('材料不足:' + CRAFTLIB.recipeMissing(r, INVLIB.hotbarCounts(hotbar)).map(m => itemDisplayName(m.id) + '×' + (m.need - m.have)).join('、'));
     return;
@@ -634,14 +634,10 @@ function fillRecipeToGrid(r) {
   if (!tableOpen && !inventoryOpen) toggleInventory(true);
   const grid = tableOpen ? tableGrid : craftGrid;
   for (let i = 0; i < grid.length; i++) grid[i] = null;
-  const w = 3, pat = r.pattern;
-  let minR = 9, minC = 9;
-  for (let i = 0; i < pat.length; i++) if (pat[i]) { minR = Math.min(minR, Math.floor(i / w)); minC = Math.min(minC, i % w); }
-  for (let i = 0; i < pat.length; i++) {
-    if (!pat[i]) continue;
-    const rr = Math.floor(i / w) - minR, cc = (i % w) - minC;
-    const gi = rr * size + cc;
-    grid[gi] = { kind: BLOCK_TYPES[pat[i]] ? 'block' : 'item', id: pat[i] };
+  const ids = CRAFTLIB.recipeFillGrid(r, size);   // 2×2/3×3 都按各自宽度换算,避免图案错位
+  for (let i = 0; i < ids.length; i++) {
+    if (!ids[i]) continue;
+    grid[i] = { kind: BLOCK_TYPES[ids[i]] ? 'block' : 'item', id: ids[i] };
   }
   if (tableOpen) { renderTableGrid(); refreshTableResult(); }
   else { renderCraftGrid(); refreshCraftResult(); }

@@ -138,7 +138,7 @@ function buildSaveRecord() {
     spawnPoint,
     armorSlotsData: ['head', 'chest', 'legs', 'feet'].map(s => armorSlots[s] ? [s, { id: armorSlots[s].id, durability: armorSlots[s].durability }] : [s, null]),
     minecartsData: minecarts.map(c => ({ x: c.cx, y: Math.round(c.y), z: c.cz })),
-    mobsData: mobs.map(mm => ({ t: mm.type, x: Math.round(mm.mesh.position.x * 100) / 100, y: Math.round(mm.mesh.position.y * 100) / 100, z: Math.round(mm.mesh.position.z * 100) / 100, hp: mm.hp, baby: !!mm.baby, s: mm.type === 'slime' ? mm.slimeSize : undefined })),
+    mobsData: mobs.map(mm => ({ t: mm.type, x: Math.round(mm.mesh.position.x * 100) / 100, y: Math.round(mm.mesh.position.y * 100) / 100, z: Math.round(mm.mesh.position.z * 100) / 100, hp: mm.hp, baby: !!mm.baby, s: mm.type === 'slime' ? mm.slimeSize : undefined, pc: mm.playerCreated ? 1 : undefined })),
     xpData: { level: xpState.level, points: xpState.points },
     mode: gameMode,
     dayCount,

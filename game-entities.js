@@ -275,7 +275,9 @@ function spawnMob(x, groundY, z, type, opts) {
     : t === 'golem_ancient' ? buildGolemMesh(true)
     : t === 'chicken' ? buildChickenMesh()
     : buildPigMesh();
-  mesh.position.set(x, groundY + 0.45, z);   // 身体中心离地 0.45
+  // R57:脚底偏移 —— 多数模型原点在身体中心(离地 0.45),铁傀儡模型原点在脚底(0)
+  const footOff = (t === 'golem' || t === 'golem_ancient') ? 0 : 0.45;
+  mesh.position.set(x, groundY + footOff, z);   // 模型原点离地偏移
   if (t === 'golem_ancient') mesh.scale.setScalar(1.25);   // R55:精英体型
   scene.add(mesh);
   mobs.push({
@@ -284,6 +286,7 @@ function spawnMob(x, groundY, z, type, opts) {
     turnT: 1 + Math.random() * 2, speed: 0,
     hp: MOB_DEFS[t].hp, hurtT: 0, walkPhase: Math.random() * 6, onGround: false,
     attackCd: 0, fuse: 0, burnT: 0, fireT: 0, groanT: 2 + Math.random() * 3,
+    footOff,
   });
   const m = mobs[mobs.length - 1];
   if (t === 'villager') m.home = villagerHomeFor(x, z);
@@ -804,38 +807,28 @@ function buildGolemMesh(ancient) {
   return g;
 }
 
-// 铁傀儡构造生成(R39,经典 T 形简化;放下铁块时检测两种完成形态):
-//  形态 A(头位收尾):下方竖 3 身体 + 臂已在第二格侧邻
-//  形态 B(臂位收尾):相邻柱已竖 4(身体 3+头),本次放下的是侧臂 ——
-//  玩家从侧面即可完成(从下方瞄不到顶面,B 是主路径)
+// 铁傀儡召唤(R57,还原原版):4 块铁块摆成 T 形,雕刻南瓜/南瓜灯放在 T 的缺口,
+// 南瓜**最后放**才算完成 —— 触发挂在南瓜放置上。结构判定见 golem.js(可单测)。
+//     [南瓜]        ← 必须最后放
+//  [铁][铁][铁]     ← 横杠(中块 = 判定锚点)
+//     [铁]         ← 竖杆(与南瓜反向)
+// T 形朝向不限(正立/倒立/平躺),双臂上下 4 格需为空气。
 function trySpawnGolem(x, y, z) {
-  if (getBlock(x, y, z) !== 'iron_block') return false;
-  const all = (cells) => cells.every(([cx, cy, cz]) => getBlock(cx, cy, cz) === 'iron_block');
-  const build = (cells) => {   // 移除结构 + 原地生成(首格为柱底)
-    for (const [cx, cy, cz] of cells) setBlock(cx, cy, cz, null);
-    spawnMob(cells[0][0] + 0.5, cells[0][1] + 1, cells[0][2] + 0.5, 'golem');
-    spawnParticles(cells[0][0] + 0.5, cells[0][1] + 1.5, cells[0][2] + 0.5, 0xd8d8e0, 16);
-    audio.play('place');
-    showToast('🤖 铁傀儡苏醒了!(村庄守护,攻击敌对生物)');
-    unlockAchv('golem');   // 成就:铁壁守护(R39)
-  };
-  // 形态 A:头位收尾
-  if (all([[x, y - 1, z], [x, y - 2, z], [x, y - 3, z]])) {
-    const arm = [[x - 1, y - 2, z], [x + 1, y - 2, z], [x, y - 2, z - 1], [x, y - 2, z + 1]].find(c => getBlock(c[0], c[1], c[2]) === 'iron_block');
-    if (arm) {
-      build([[x, y - 3, z], [x, y - 2, z], [x, y - 1, z], [x, y, z], arm]);
-      return true;
-    }
-  }
-  // 形态 B:臂位收尾(四向邻柱竖 4,本次为第二格侧臂)
-  for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-    const cx = x + dx, cz = z + dz;
-    if (all([[cx, y - 1, cz], [cx, y, cz], [cx, y + 1, cz], [cx, y + 2, cz]])) {
-      build([[cx, y - 1, cz], [cx, y, cz], [cx, y + 1, cz], [cx, y + 2, cz], [x, y, z]]);
-      return true;
-    }
-  }
-  return false;
+  const hit = golemTAt(getBlock, x, y, z);
+  if (!hit) return false;
+  for (const [px, py, pz] of hit.iron) setBlock(px, py, pz, null);
+  setBlock(hit.head[0], hit.head[1], hit.head[2], null);   // 南瓜一并消耗
+  const [cx, cy, cz] = hit.center;
+  // 结构可能搭在半空:向下找最近落脚面,避免傀儡从高空坠落
+  let sy = cy;
+  for (let k = 0; k < 64 && sy > 1 && !isSolidAt(cx, sy - 1, cz); k++) sy--;
+  const m = spawnMob(cx + 0.5, sy, cz + 0.5, 'golem');
+  m.playerCreated = true;   // 原版:玩家建造的铁傀儡永不攻击玩家
+  spawnParticles(cx + 0.5, cy + 1.5, cz + 0.5, 0xd8d8e0, 16);
+  audio.play('place');
+  showToast('🤖 铁傀儡苏醒了!(村庄守护,攻击敌对生物)');
+  unlockAchv('golem');   // 成就:铁壁守护
+  return true;
 }
 
 function removeMob(i) {

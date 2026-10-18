@@ -2,11 +2,12 @@
 // R39 村民繁殖+铁傀儡轮 实机验证(CDP,--remote-debugging-port=9333)
 // 覆盖:村民面包喂食(真实瞄准/求爱/幼崽拒绝/人满拒绝)、两只求爱产
 // 村民幼崽(0.55 缩放+home+60s 长大)、幼崽右键不开面板、空手交易不受
-// 影响;铁块配方;铁傀儡 T 形构造生成(真实放置顶块/结构消失/成就);
-// 守护 AI(追击+击杀敌对生物)、被玩家攻击反击 7 伤+15s 平息、
-// 死亡掉铁锭 3-5+XP 0;存档往返(村民幼崽/铁傀儡);0 报错。
+// 影响;铁块配方;铁傀儡 T 形构造生成(R57 还原原版:4 铁块 T + 雕刻南瓜
+// 最后放,普通南瓜不触发,结构 5 块消失);
+// 守护 AI(追击+击杀敌对生物)、仇恨(R57:建造的傀儡被误伤不还手,
+// 野外傀儡仍反击 7 伤+15s 平息)、死亡掉铁锭 3-5+XP 0;存档往返;
 // ============================================================
-const CDP = 'http://127.0.0.1:9333';
+const CDP = process.env.CDP || 'http://127.0.0.1:9333';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function main() {
@@ -151,27 +152,33 @@ async function main() {
   })()`);
   check('人满拒绝:村内 6 村民不再进食(面包不消耗)', cap.refused && cap.breadKept, JSON.stringify(cap));
 
-  // ---- 5. 铁傀儡构造:柱竖 4(身体3+头)setBlock,「臂」走真实 placeBlock
-  //        (瞄柱第二格西侧面 → 相邻格放臂 → 形态 B 触发)----
+  // ---- 5. 铁傀儡构造(还原原版,R57):4 铁块 T 形 + 雕刻南瓜最后放 ----
+  //   横杠 (px+4/5/6, gy+2) / 竖杆 (px+5, gy+1) / 南瓜 (px+5, gy+3)
+  //   先放普通南瓜 → 不触发;拆下换成雕刻南瓜(真实 placeBlock 从上方放)→ 生成
   const golem = await evl(`(() => {
     const px = window.__RS.px, gy = window.__RS.gy, pz = window.__RS.pz;
     clearMobs();
-    setBlock(px + 5, gy + 1, pz, 'iron_block');
-    setBlock(px + 5, gy + 2, pz, 'iron_block');
-    setBlock(px + 5, gy + 3, pz, 'iron_block');
-    setBlock(px + 5, gy + 4, pz, 'iron_block');   // 头(柱顶)
-    playerPos.set(px + 2.5, gy + 1.9, pz + 0.5); velocity.set(0, 0, 0);
+    for (const dx of [-1, 0, 1]) setBlock(px + 5 + dx, gy + 2, pz, 'iron_block');   // 横杠 3
+    setBlock(px + 5, gy + 1, pz, 'iron_block');                                     // 竖杆
+    setBlock(px + 5, gy + 3, pz, 'pumpkin');                                        // 普通南瓜
+    const noGolem = !mobs.some(m => m.type === 'golem');
+    setBlock(px + 5, gy + 3, pz, null);                                             // 拆下重放
+    playerPos.set(px + 5.5, gy + 4.6, pz + 3.5); velocity.set(0, 0, 0);
     for (let i = 0; i < 9; i++) hotbar[i] = null;
-    hotbar[0] = { kind: 'block', id: 'iron_block', count: 1 }; currentSlot = 0; selectSlot(0);
-    const dx = (px + 5.5) - playerPos.x, dy = (gy + 2.5) - playerPos.y, dz = (pz + 0.5) - playerPos.z;
+    hotbar[0] = { kind: 'block', id: 'carved_pumpkin', count: 1 }; currentSlot = 0; selectSlot(0);
+    const tx = px + 5.5, ty = gy + 3, tz = pz + 0.5;
+    const dx = tx - playerPos.x, dy = ty - playerPos.y, dz = tz - playerPos.z;
     yaw = Math.atan2(-dx, -dz); pitch = Math.asin(dy / Math.hypot(dx, dy, dz));
-    placeBlock();   // 铁块落在 (px+4, gy+2) = 臂位 → 形态 B
+    placeBlock();   // 南瓜落在横杠中块顶面 → 南瓜最后放 → 触发
     const g = mobs.find(m => m.type === 'golem');
-    return { golem: !!g, hp: g ? g.hp : null,
-             gone: getBlock(px + 5, gy + 4, pz) === null && getBlock(px + 5, gy + 1, pz) === null && getBlock(px + 4, gy + 2, pz) === null,
+    return { noGolem, golem: !!g, hp: g ? g.hp : null,
+             headLeft: getBlock(px + 5, gy + 3, pz),
+             gone: getBlock(px + 5, gy + 2, pz) === null && getBlock(px + 4, gy + 2, pz) === null
+                   && getBlock(px + 6, gy + 2, pz) === null && getBlock(px + 5, gy + 1, pz) === null,
              achv: achvUnlocked.has('golem') };
   })()`);
-  check('铁傀儡构造:顶块放置 → 生成(hp100)+ 结构 5 块消失 + 成就', golem.golem && golem.hp === 100 && golem.gone && golem.achv, JSON.stringify(golem));
+  check('铁傀儡构造:普通南瓜不触发 → 雕刻南瓜最后放 → 生成(hp100)+ 5 块消失 + 成就',
+    golem.noGolem && golem.golem && golem.hp === 100 && golem.gone && golem.headLeft === null && golem.achv, JSON.stringify(golem));
 
   // ---- 6. 守护 AI:追击并击杀 12 格内敌对生物 ----
   const guard = await evl(`(() => {
@@ -188,21 +195,28 @@ async function main() {
   })()`);
   check('守护 AI:4 格外僵尸被铁傀儡追击击杀', guard.dead && guard.stillThere, JSON.stringify(guard));
 
-  // ---- 7. 反击:玩家攻击 → angered 追击 7 伤;15s 平息 ----
+  // ---- 7. 仇恨(R57 原版):玩家建造的傀儡被误伤不还手;野外傀儡仍按 R39 反击 ----
   const anger = await evl(`(() => {
-    const g = mobs.find(m => m.type === 'golem');
-    g.mesh.position.set(playerPos.x + 3.5, playerPos.y - 0.9 + 1, playerPos.z);
+    const built = mobs.find(m => m.type === 'golem');
+    built.mesh.position.set(playerPos.x + 3.5, playerPos.y - 0.9, playerPos.z);
     playerHP = 20; updateHPBar();
-    hurtMob(g, 2, 0, 0, true);
-    const angered = g.angered === true && g.angerT > 14;
-    for (let i = 0; i < 30 && playerHP === 20; i++) updateMobs(0.05);
-    const hit = playerHP < 20;
-    g.angerT = 0.01;
+    hurtMob(built, 2, 0, 0, true);                    // 误伤建造的傀儡
+    for (let i = 0; i < 40; i++) updateMobs(0.05);    // 2 秒:期间不应攻击玩家
+    const builtCalm = !built.angered && playerHP === 20;
+    // 野外(无 playerCreated)傀儡:被攻击 → 激怒 15s → 近身 7 伤
+    const wild = spawnMob(playerPos.x + 3.5, Math.floor(playerPos.y) - 1, playerPos.z, 'golem');
+    hurtMob(wild, 2, 0, 0, true);
+    const wildAngered = wild.angered === true && wild.angerT > 14;
+    for (let i = 0; i < 40 && playerHP === 20; i++) updateMobs(0.05);
+    const wildHit = playerHP < 20;
+    wild.angerT = 0.01;
     for (let i = 0; i < 10; i++) updateMobs(0.05);
-    const calm = g.angered === false;
-    return { angered, hit, calm, hp: playerHP };
+    const wildCalm = wild.angered === false;
+    removeMob(mobs.indexOf(wild));                    // 收尾:避免影响后续存档断言
+    return { builtCalm, wildAngered, wildHit, wildCalm, hp: playerHP };
   })()`);
-  check('反击:被打激怒 → 玩家受 7 伤 → 15s 平息', anger.angered && anger.hit && anger.calm, JSON.stringify(anger));
+  check('仇恨:建造傀儡误伤不还手 / 野外傀儡反击 7 伤后平息',
+    anger.builtCalm && anger.wildAngered && anger.wildHit && anger.wildCalm, JSON.stringify(anger));
 
   // ---- 8. 死亡:掉铁锭 3-5、XP 0 ----
   const death = await evl(`(() => {

@@ -601,9 +601,10 @@
   <span class="inv-close" onclick="toggleInventory(false)">×</span>
   <h3 id="inv-title">背包</h3>
   <div class="inv-hint"></div>
-  <div style="display:flex;gap:8px;margin-bottom:8px;">
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
     <button class="craft-btn" id="inv-recipes" style="padding:5px 12px;font-size:12px;">📖 配方书</button>
     <button class="craft-btn" id="inv-goals" style="padding:5px 12px;font-size:12px;">📋 目标</button>
+    <button class="craft-btn" id="inv-golem-kit" style="padding:5px 12px;font-size:12px;">🤖 铁傀儡套件</button>
   </div>
   <input id="inv-search" type="text" placeholder="搜索物品 / 方块…" style="width:100%;margin-bottom:8px;padding:6px 9px;font-size:12px;background:#8B8B8B;color:#222;border:2px solid;border-color:#373737 #FFF #FFF #373737;">
   <div id="inv-empty" class="hidden" style="font-size:12px;color:#555;padding:6px 2px;">没有匹配的物品</div>
@@ -636,7 +637,10 @@
 <div id="craft-table-panel" class="hidden">
   <span class="inv-close" id="table-close">×</span>
   <h3>🛠️ 合成台 (3×3)</h3>
-  <div class="inv-hint">左键循环放入方块/材料,右键清空;支持全部 2×2 配方与 3×3 专属配方,合成消耗每格 1 个(格内为目录物品,关闭不退回)</div>
+  <div style="display:flex;gap:8px;margin-bottom:8px;">
+    <button class="craft-btn" id="table-recipes" style="padding:5px 12px;font-size:12px;">📖 配方书</button>
+  </div>
+  <div class="inv-hint">左键循环放入方块/材料,右键从快捷栏取材料(空格)或清空(已有);支持全部 2×2 配方与 3×3 专属配方,合成消耗快捷栏材料,格内为示意图(关闭不退回)</div>
   <div class="craft-materials" id="table-materials">材料:空</div>
   <div class="craft-row" style="margin-top:12px;">
     <div class="table-grid" id="table-grid">
@@ -887,28 +891,29 @@
 
 <!-- 经典 script 顺序加载:下方顺序 = 原 game.js 单文件的行序,不得调换。
      缓存版本号统一跟随 package.json 版本,发版时同步 bump(three.min.js 锁 r160 除外) -->
-<script src="balance.js?v=2.5.0"></script>
-<script src="worldgen.js?v=2.5.0"></script>
-<script src="craft.js?v=2.5.0"></script>
-<script src="inventory.js?v=2.5.0"></script>
-<script src="machines.js?v=2.5.0"></script>
+<script src="balance.js?v=2.6.0"></script>
+<script src="worldgen.js?v=2.6.0"></script>
+<script src="golem.js?v=2.6.0"></script>
+<script src="craft.js?v=2.6.0"></script>
+<script src="inventory.js?v=2.6.0"></script>
+<script src="machines.js?v=2.6.0"></script>
 <script src="three.min.js?v=r160"></script>
-<script src="game-defs.js?v=2.5.0"></script>
-<script src="game-atlas.js?v=2.5.0"></script>
-<script src="game-chunks.js?v=2.5.0"></script>
-<script src="game-scene.js?v=2.5.0"></script>
-<script src="game-init.js?v=2.5.0"></script>
-<script src="game-ui.js?v=2.5.0"></script>
-<script src="game-interact.js?v=2.5.0"></script>
-<script src="game-redstone.js?v=2.5.0"></script>
-<script src="game-entities.js?v=2.5.0"></script>
-<script src="game-systems.js?v=2.5.0"></script>
-<script src="game-block-entities.js?v=2.5.0"></script>
-<script src="game-physics.js?v=2.5.0"></script>
-<script src="game-render.js?v=2.5.0"></script>
-<script src="game-panels.js?v=2.5.0"></script>
-<script src="game-audio.js?v=2.5.0"></script>
-<script src="game-save.js?v=2.5.0"></script>
-<script src="game.js?v=2.5.0"></script>
+<script src="game-defs.js?v=2.6.0"></script>
+<script src="game-atlas.js?v=2.6.0"></script>
+<script src="game-chunks.js?v=2.6.0"></script>
+<script src="game-scene.js?v=2.6.0"></script>
+<script src="game-init.js?v=2.6.0"></script>
+<script src="game-ui.js?v=2.6.0"></script>
+<script src="game-interact.js?v=2.6.0"></script>
+<script src="game-redstone.js?v=2.6.0"></script>
+<script src="game-entities.js?v=2.6.0"></script>
+<script src="game-systems.js?v=2.6.0"></script>
+<script src="game-block-entities.js?v=2.6.0"></script>
+<script src="game-physics.js?v=2.6.0"></script>
+<script src="game-render.js?v=2.6.0"></script>
+<script src="game-panels.js?v=2.6.0"></script>
+<script src="game-audio.js?v=2.6.0"></script>
+<script src="game-save.js?v=2.6.0"></script>
+<script src="game.js?v=2.6.0"></script>
 </body>
 </html>

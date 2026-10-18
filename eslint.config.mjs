@@ -34,6 +34,8 @@ const WORLDGEN_GLOBALS = {
   hutBlockAt: 'readonly',
   dungeonInCell: 'readonly',
   dungeonBlockAt: 'readonly',
+  // golem.js(UMD,铁傀儡 T 形结构判定)
+  golemTAt: 'readonly',
 };
 
 // craft.js 在浏览器以 <script> 加载后挂到全局的命名空间(game.js 直接调用)
@@ -170,9 +172,9 @@ export default [
     },
   })),
 
-  // —— UMD 模块:worldgen.js(浏览器挂全局 + Node module.exports)——
+  // —— UMD 模块:worldgen.js / golem.js(浏览器挂全局 + Node module.exports)——
   {
-    files: ['worldgen.js'],
+    files: ['worldgen.js', 'golem.js'],
     languageOptions: {
       ecmaVersion: 2021,
       sourceType: 'script',

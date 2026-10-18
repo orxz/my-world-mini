@@ -45,6 +45,24 @@ window.delSaveFromMgr = function(id) {
   });
 };
 
+// R57:铁傀儡套件 —— 4 铁块 + 1 雕刻南瓜直接进快捷栏(省去 36 铁矿的挖矿/冶炼/合成)
+function giveGolemKit() {
+  const kit = [['iron_block', 4], ['carved_pumpkin', 1]];
+  const overflow = [];
+  for (const [id, count] of kit) {
+    const got = INVLIB.pickupIntoInventory(hotbar, 'block', id, count);
+    if (got < count) overflow.push([id, count - got]);
+    discovered.add(id);
+  }
+  buildHotbar();
+  selectSlot(currentSlot);
+  markDirtySave();
+  for (const [id, n] of overflow) {
+    spawnDroppedItem(playerPos.x - 0.5, playerPos.y - 0.2, playerPos.z - 0.5, id, n, 'block');
+  }
+  showToast(overflow.length ? '🤖 套件已放入,余量掉在脚下' : '🤖 铁傀儡套件:铁块 ×4 + 雕刻南瓜 ×1');
+}
+
 function toggleInventory(open) {
   inventoryOpen = open;
   if (open) tutEvent('inventory', 1);
@@ -79,6 +97,9 @@ function buildInventoryPanel() {
   if (craftBtn) craftBtn.onclick = performCraft;
   const craftClear = document.getElementById('craft-clear');
   if (craftClear) craftClear.onclick = clearCraftGrid;
+  // 铁傀儡套件(R57):一键发放 4 铁块 + 1 雕刻南瓜,省去挖 36 铁矿/合成
+  const kitBtn = document.getElementById('inv-golem-kit');
+  if (kitBtn) kitBtn.onclick = giveGolemKit;
   // 合成格:点击切换方块种类(HOTBAR_ORDER 循环),右键清空
   const craftBlockList = HOTBAR_ORDER.slice();
   document.querySelectorAll('#craft-grid .inv-cell').forEach((cell, i) => {
@@ -90,7 +111,19 @@ function buildInventoryPanel() {
       renderCraftGrid();
       refreshCraftResult();
     };
-    cell.oncontextmenu = (e) => { e.preventDefault(); craftGrid[i] = null; renderCraftGrid(); refreshCraftResult(); };
+    // 右键(R57):空槽 → 从快捷栏取材料;已有 → 清空
+    cell.oncontextmenu = (e) => {
+      e.preventDefault();
+      if (craftGrid[i]) craftGrid[i] = null;
+      else {
+        const usable = (s) => s && s.kind !== 'tool' && (s.count || 1) > 0;
+        const cur = hotbar[currentSlot];
+        const src = usable(cur) ? cur : hotbar.find(usable);
+        if (src) craftGrid[i] = { kind: src.kind, id: src.id, count: 1 };
+        else showToast('快捷栏没有可用材料');
+      }
+      renderCraftGrid(); refreshCraftResult();
+    };
   });
   renderCraftGrid();
   refreshCraftResult();
@@ -173,7 +206,7 @@ function buildInventoryPanel() {
   addSection(grid, '方块');
   HOTBAR_ORDER.forEach(id => addCell({ kind: 'block', id }));
   // 新增方块也可取用
-  ['water', 'snow', 'gravel', 'door', 'door_iron', 'door_stone', 'door_gold', 'door_diamond', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'gold_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'bed', 'chest', 'ladder', 'bookshelf', 'torch', 'rail', 'enchanting_table', 'slime', 'iron_bars', 'beacon'].forEach(id => addCell({ kind: 'block', id }));
+  ['water', 'snow', 'gravel', 'door', 'door_iron', 'door_stone', 'door_gold', 'door_diamond', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'gold_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'bed', 'chest', 'ladder', 'bookshelf', 'torch', 'rail', 'enchanting_table', 'slime', 'iron_bars', 'iron_block', 'pumpkin', 'carved_pumpkin', 'pumpkin_lantern', 'beacon'].forEach(id => addCell({ kind: 'block', id }));
   addSection(grid, '材料 · 宝石');
   ITEM_ORDER.forEach(id => addCell({ kind: 'item', id, count: 64 }));
 
@@ -359,11 +392,14 @@ function openTablePanel() {
   if (craftBtn) craftBtn.onclick = performTableCraft;
   const clearBtn = document.getElementById('table-clear');
   if (clearBtn) clearBtn.onclick = clearTableGrid;
+  // 配方书入口(R57):合成台开着时点配方卡片会直接填进 3×3(否则 3×3 配方只能靠循环点格子)
+  const recipeBtn = document.getElementById('table-recipes');
+  if (recipeBtn) recipeBtn.onclick = openRecipeBook;
   const closeBtn = document.getElementById('table-close');
   if (closeBtn) closeBtn.onclick = closeTablePanel;
   // 目录循环列表:方块 + 材料物品(矿石/圆石/木棍等,按 kind 区分图标)
   const catalog = HOTBAR_ORDER.map(id => ({ kind: 'block', id }))
-    .concat(['water', 'snow', 'gravel', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'gold_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'sand', 'bed', 'chest', 'ladder', 'bookshelf', 'wool_red', 'wool_white', 'torch', 'rail', 'enchanting_table', 'slime', 'redstone', 'redstone_torch', 'lever_off', 'iron_block', 'sugarcane', 'cake', 'slab_planks', 'slab_cobble', 'stairs_planks', 'stairs_cobble', 'fence', 'repeater_off', 'piston', 'iron_bars', 'beacon'].map(id => ({ kind: 'block', id })))
+    .concat(['water', 'snow', 'gravel', 'crafting_table', 'cobblestone', 'coal_ore', 'iron_ore', 'gold_ore', 'diamond_ore', 'tnt', 'furnace', 'glass', 'sand', 'bed', 'chest', 'ladder', 'bookshelf', 'wool_red', 'wool_white', 'torch', 'rail', 'enchanting_table', 'slime', 'redstone', 'redstone_torch', 'lever_off', 'iron_block', 'sugarcane', 'cake', 'slab_planks', 'slab_cobble', 'stairs_planks', 'stairs_cobble', 'fence', 'repeater_off', 'piston', 'iron_bars', 'beacon', 'pumpkin', 'carved_pumpkin', 'pumpkin_lantern'].map(id => ({ kind: 'block', id })))
     .concat(['leather', 'book'].map(id => ({ kind: 'item', id })))
     .concat(['gem_gold', 'gem_diamond', 'gem_emerald', 'arrow', 'stick', 'coal', 'iron_ingot'].map(id => ({ kind: 'item', id })));
   document.querySelectorAll('#table-grid .inv-cell').forEach((cell, i) => {
@@ -374,7 +410,19 @@ function openTablePanel() {
       tableGrid[i] = { kind: catalog[idx].kind, id: catalog[idx].id };
       renderTableGrid(); refreshTableResult();
     };
-    cell.oncontextmenu = (e) => { e.preventDefault(); tableGrid[i] = null; renderTableGrid(); refreshTableResult(); };
+    // 右键(R57):空槽 → 从快捷栏取材料(手持格优先);已有 → 清空。9 格快速摆料
+    cell.oncontextmenu = (e) => {
+      e.preventDefault();
+      if (tableGrid[i]) tableGrid[i] = null;
+      else {
+        const usable = (s) => s && s.kind !== 'tool' && (s.count || 1) > 0;
+        const cur = hotbar[currentSlot];
+        const src = usable(cur) ? cur : hotbar.find(usable);
+        if (src) tableGrid[i] = { kind: src.kind, id: src.id, count: 1 };
+        else showToast('快捷栏没有可用材料');
+      }
+      renderTableGrid(); refreshTableResult();
+    };
   });
   renderTableGrid();
   refreshTableResult();

@@ -125,6 +125,12 @@ function generateChunkData(cx, cz) {
         }
       }
 
+      // 南瓜(R57,经典):平原/森林草地零星生成(避开海岸变沙段与水下)
+      if (b.top === 'grass' && (biome === 'plains' || biome === 'forest') && height > SEA_LEVEL
+          && height + 1 < WORLD_HEIGHT && hash2(wx, wz, worldSeed + 907) < 0.005) {
+        data[chunkIdx(lx, height + 1, lz)] = BLOCK_ID.pumpkin;
+      }
+
       // 矿石(确定性):煤 1.2% / 铁 0.7% / 金 0.4%(y<20) /
       // 钻石 0.3%(y<12)/ 红石 0.4%(y<14)
       for (let y = 1; y < height - 3; y++) {
@@ -401,7 +407,8 @@ function isSolidAt(x, y, z) {
 }
 
 // 设置方块(玩家破坏/放置)
-function setBlock(x, y, z, type) {
+// opts.noGolem:R57 用 —— 雕刻南瓜属于"改造已有方块",不算重新放置,不触发召唤
+function setBlock(x, y, z, type, opts) {
   if (y < 0 || y >= WORLD_HEIGHT) return false;
   if (y === 0) return false;  // 基岩层(y=0)不可破坏/覆盖,防止挖穿掉入虚空
   const cx = Math.floor(x / CHUNK_SIZE), cz = Math.floor(z / CHUNK_SIZE);
@@ -420,8 +427,9 @@ function setBlock(x, y, z, type) {
   // 红石元件登记表实时更新(R38):放入/拉杆切换 upsert,清空则移除登记
   if (type && REDSTONE_FAMILY[type]) registerRedstone(x, y, z, type);
   else unregisterRedstone(x, y, z);   // 幂等:非红石格删除无副作用
-  // 铁傀儡构造检测(R39):放下铁块时若构成 T 形结构 → 生成(内部递归 setBlock 无害)
-  if (type === 'iron_block') trySpawnGolem(x, y, z);
+  // 铁傀儡构造检测(R57,还原原版):放下南瓜(雕刻南瓜/南瓜灯)时若构成 T 形 → 生成
+  // 铁块本身不再触发 —— 原版南瓜必须最后放,判定挂在这里天然满足放置顺序
+  if ((type === 'carved_pumpkin' || type === 'pumpkin_lantern') && !(opts && opts.noGolem)) trySpawnGolem(x, y, z);
   // 活塞朝向维护(R42):伸出/收回只是 id 切换,朝向存于 Map 天然保留;
   // 方块被彻底移除时清登记(被推动的活塞朝向重置为默认,边缘情况可接受)
   if (!type) pistons.delete(x + ',' + y + ',' + z);
@@ -432,7 +440,7 @@ function setBlock(x, y, z, type) {
   if (lz === CHUNK_SIZE - 1) markChunkDirty(cx, cz + 1);
   // 光照缓存失效(R22):火把增删 → 3×3 重算重绘;在火把照亮范围内的其他改动
   // (遮挡物增删)同样需要 —— 缓存中已有光照网格即说明半径内有光源
-  if (newId === TORCH_ID || oldId === TORCH_ID) {
+  if (LIGHT_SOURCE_IDS.has(newId) || LIGHT_SOURCE_IDS.has(oldId)) {
     for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
       lightGridCache.delete(chunkKey(cx + dx, cz + dz));
       markChunkDirty(cx + dx, cz + dz);
@@ -486,12 +494,13 @@ function getBlockId(x, y, z) {
 // ============================================================
 // 火把逐方块光照(R22):光源 BFS 光级 14→1,不透明方块挡光,跨区块传播
 // ============================================================
-const TORCH_ID = BLOCK_ID.torch;
 const TORCH_LIGHT_LEVEL = 14;                    // 火把光级(经典)
+// R57:发光方块 —— 火把 + 南瓜灯(原版亮度 15,与火把同级处理)
+const LIGHT_SOURCE_IDS = new Set([BLOCK_ID.torch, BLOCK_ID.pumpkin_lantern]);
 const LIGHT_MARGIN = TORCH_LIGHT_LEVEL;          // 光照网格外扩半径 = 最大传播距离(14 < 16,影响至多相邻区块)
 const DIR6 = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
 // 挡光表:不透明实体挡光;玻璃/树叶透光(经典近似);非固体(空气/水/梯子/火把)透光
-const LIGHT_BLOCK_BY_ID = new Uint8Array(64);
+const LIGHT_BLOCK_BY_ID = new Uint8Array(256);   // 覆盖全部方块 id(上限 255)
 for (const name in BLOCK_TYPES) {
   const d = BLOCK_TYPES[name];
   LIGHT_BLOCK_BY_ID[BLOCK_ID[name]] = (d.solid && name !== 'glass' && name !== 'leaves') ? 1 : 0;
@@ -515,7 +524,7 @@ function rebuildLightGrid(cx, cz) {
     const bucket = modsByChunk.get(chunkKey(cx + dx, cz + dz));
     if (bucket) {
       for (const [cidx, type] of bucket) {
-        if (type !== 'torch') continue;
+        if (!LIGHT_SOURCE_IDS.has(BLOCK_ID[type])) continue;
         const y = (cidx / (CHUNK_SIZE * CHUNK_SIZE)) | 0, rem = cidx % (CHUNK_SIZE * CHUNK_SIZE);
         const lz = (rem / CHUNK_SIZE) | 0, lx = rem % CHUNK_SIZE;
         sources.push((cx + dx) * CHUNK_SIZE + lx, y, (cz + dz) * CHUNK_SIZE + lz);

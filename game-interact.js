@@ -371,6 +371,17 @@ function placeBlock() {
     if (hitType === 'furnace') { openFurnacePanel(tHit.x, tHit.y, tHit.z); return; }
     if (hitType === 'bed') { trySleep(tHit.x, tHit.y, tHit.z); return; }
     if (hitType === 'chest') { openChestPanel(tHit.x, tHit.y, tHit.z); return; }
+    // 南瓜雕刻(R57,经典):手持剪刀右键南瓜 → 刻出脸;只有雕刻南瓜/南瓜灯能召唤铁傀儡
+    if (hitType === 'pumpkin' && item && item.kind === 'tool' && item.id === 'shears') {
+      setBlock(tHit.x, tHit.y, tHit.z, 'carved_pumpkin', { noGolem: true });   // 改造不算重放,原版不触发
+      discovered.add('carved_pumpkin');   // 解锁图鉴
+      spawnParticles(tHit.x, tHit.y, tHit.z, 0xd99632, 6);
+      audio.play('break');
+      consumeToolDurability(item);
+      markDirtySave();
+      showToast('✂️ 刻出南瓜脸 — 拆下重放,南瓜必须最后放才召唤');
+      return;
+    }
     if (hitType === 'vault') { tryOpenVault(tHit.x, tHit.y, tHit.z); return; }
     if (hitType === 'beacon') { showToast('🔆 信标:8 格内提供夜视与缓慢回血'); return; }
     if (hitType === 'cake') { eatCakeSlice(tHit.x, tHit.y, tHit.z); return; }

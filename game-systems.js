@@ -566,7 +566,9 @@ function updateMobs(dt) {
     if (inW) m.vy += (2.2 - m.vy) * Math.min(1, dt * 3);
     else m.vy -= GRAVITY * dt;
     // 前方阻挡检测(脚部+半高),撞墙:概率跳一格,否则转向
-    const footY = Math.floor(p.y - 0.35), midY = Math.floor(p.y + 0.1);
+    // R57:脚底偏移按类型取(铁傀儡原点在脚底,普通生物在身体中心)
+    const footOff = m.footOff !== undefined ? m.footOff : 0.45;
+    const footY = Math.floor(p.y - footOff + 0.1), midY = Math.floor(p.y + 0.1);
     const dlen = Math.hypot(dirx, dirz);
     if (dlen > 0.01 && m.onGround) {
       const ax = p.x + dirx / dlen * 0.5, az = p.z + dirz / dlen * 0.5;
@@ -601,8 +603,8 @@ function updateMobs(dt) {
     let ny = p.y + m.vy * dt;
     m.onGround = false;
     if (m.vy <= 0) {
-      const supportY = Math.floor(ny - 0.45);
-      if (isSolidAt(Math.floor(p.x), supportY, Math.floor(p.z))) { ny = supportY + 1 + 0.45; m.vy = 0; m.onGround = true; }
+      const supportY = Math.floor(ny - footOff - 0.05);
+      if (isSolidAt(Math.floor(p.x), supportY, Math.floor(p.z))) { ny = supportY + 1 + footOff; m.vy = 0; m.onGround = true; }
     } else if (isSolidAt(Math.floor(p.x), Math.floor(ny + 0.45), Math.floor(p.z))) {
       m.vy = 0; ny = p.y;
     }
@@ -666,6 +668,8 @@ function slimeAI(m, dt, distP) {
 //      无敌时慢逛守村;被玩家攻击后反击 15 秒(伤 7,经典) ----
 function golemAI(m, dt, distP) {
   m.attackCd -= dt;
+  // 原版(R57):玩家建造的铁傀儡永不攻击玩家 —— 被误伤也只掉血不还手
+  if (m.angered && m.playerCreated) m.angered = false;
   if (m.angered) {
     m.angerT -= dt;
     if (m.angerT <= 0) { m.angered = false; }
@@ -698,7 +702,24 @@ function golemAI(m, dt, distP) {
       spawnParticles(tgt.mesh.position.x, tgt.mesh.position.y + 0.5, tgt.mesh.position.z, 0xd8d8e0, 5);
     }
   } else {
-    wanderStep(m, dt, 0.8, 0.4);
+    // R57:守村巡逻 —— 以生成点为圆心选一个巡逻点走过去,到了再换;
+    // 不再用 wanderStep 的"随机停走"(方向随机 + 30% 站桩,10 秒只能挪 3 格,看着像不动)
+    const gx = m.mesh.position.x, gz = m.mesh.position.z;
+    if (m.homeX === undefined) { m.homeX = gx; m.homeZ = gz; }
+    if (m.patrolX === undefined || Math.hypot(m.patrolX - gx, m.patrolZ - gz) < 1.0) {
+      const ang = Math.random() * Math.PI * 2, r = 3 + Math.random() * 5;
+      m.patrolX = m.homeX + Math.cos(ang) * r;
+      m.patrolZ = m.homeZ + Math.sin(ang) * r;
+    }
+    m.yaw = Math.atan2(-(m.patrolX - gx), -(m.patrolZ - gz));
+    m.speed = 1.15;
+    // 卡住自救:1.2 秒内几乎没位移(墙角/半格卡位)→ 抬一格并重新选点
+    if (m.stuckT === undefined) { m.stuckT = 0; m.stuckX = gx; m.stuckZ = gz; }
+    m.stuckT += dt;
+    if (m.stuckT > 1.2) {
+      if (Math.hypot(gx - m.stuckX, gz - m.stuckZ) < 0.15) { m.vy = 6.5; m.patrolX = undefined; }
+      m.stuckT = 0; m.stuckX = gx; m.stuckZ = gz;
+    }
   }
   return false;
 }
@@ -732,7 +753,9 @@ function hurtMob(m, dmg, kx, kz, silent) {
   if (m.type === 'villager') m.fleeT = 5;
   // 铁傀儡被玩家攻击 → 反击 15 秒(经典,R39)
   if (m.type === 'golem') { m.angered = true; m.angerT = 15; }
-  m.kvx += kx * 6; m.kvz += kz * 6; m.vy = 4;
+  // 击退:R57 —— 铁傀儡体型大,受击只轻微上抬(原 4 会让 2.4 格高的傀儡看起来在飞)
+  const knockUp = (m.type === 'golem' || m.type === 'golem_ancient') ? 1.2 : 4;
+  m.kvx += kx * 6; m.kvz += kz * 6; m.vy = knockUp;
   const mats = m.mesh.userData.mats;
   for (let k = 0; k < mats.length; k++) mats[k].color.setHex(0xd05a5a);
   if (!silent) audio.play(m.type === 'zombie' ? 'zombie' : m.type === 'creeper' ? 'hurt' : 'pig');
@@ -777,11 +800,15 @@ function raycastMob(maxDist) {
   let best = null, bestT = maxDist;
   for (const m of mobs) {
     const p = m.mesh.position;
-    const tx = p.x - playerPos.x, ty = p.y - playerPos.y, tz = p.z - playerPos.z;
+    // R57:铁傀儡模型原点在脚底且高 2.4 格,用躯干中心(脚底 +1.2)当命中球心,
+    // 否则视线齐平看过去会从头顶掠过 —— 手持铁锭右键修复/左键攻击都打不中
+    const cy = p.y + ((m.type === 'golem' || m.type === 'golem_ancient') ? 1.2 : 0);
+    const tx = p.x - playerPos.x, ty = cy - playerPos.y, tz = p.z - playerPos.z;
     const proj = tx * dx + ty * dy + tz * dz;
     if (proj <= 0.3 || proj > bestT) continue;
     const perp2 = tx * tx + ty * ty + tz * tz - proj * proj;
-    if (perp2 < 0.55) {
+    const hitR2 = (m.type === 'golem' || m.type === 'golem_ancient') ? 1.15 : 0.55;   // 体型大,命中球也放大
+    if (perp2 < hitR2) {
       // 遮挡:命中最优目标前先采样视线穿过的体素,遇固体即被墙挡住
       let blocked = false;
       for (let t = 0.4; t < proj; t += 0.5) {

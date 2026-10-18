@@ -258,7 +258,7 @@ const PIXEL_ART = {
 
 // 出生广场:确定性生成(modifications 记录,存档保留,每次固定)
 function buildSpawnPlaza() {
-  const plazaR = 28;
+  const plazaR = 38;
   const platH = SEA_LEVEL + 6;
   const set = (x, y, z, t) => { if (y >= 0 && y < WORLD_HEIGHT) { addModification(x, y, z, t); plazaBlocks.set(blockKey(x, y, z), t); } };
   const fill = (x0, x1, y0, y1, z0, z1, t) => {
@@ -288,6 +288,10 @@ function buildSpawnPlaza() {
       }
     }
   }
+  // 内环石径(28):保留原广场边界视觉,同时区分内游乐场/外探索区
+  for (let a = 0; a < 360; a += 2) {
+    set(Math.round(Math.cos(a * Math.PI / 180) * 28), platH, Math.round(Math.sin(a * Math.PI / 180) * 28), 'stone');
+  }
 
   // 2. Owen 字样(木板底座 + 树叶字):整体北移,给出生点留出开阔视野
   const padR = 11, padZ = -12;
@@ -315,7 +319,10 @@ function buildSpawnPlaza() {
   }
 
   // 4. 环形树篱
+  const gateAngles = [0, 90, 180, 270];
   for (let a = 0; a < 360; a += 15) {
+    const nearGate = gateAngles.some(g => Math.min(Math.abs(a - g), 360 - Math.abs(a - g)) <= 15);
+    if (nearGate) continue;   // 四向留出通往外部探索区的门洞
     const tx = Math.round(Math.cos(a * Math.PI / 180) * plazaR);
     const tz = Math.round(Math.sin(a * Math.PI / 180) * plazaR);
     set(tx, platH + 1, tz, 'wood'); set(tx, platH + 2, tz, 'wood');
@@ -395,7 +402,7 @@ function buildSpawnPlaza() {
   }
 
   // 12. 起伏小山丘(广场南侧外围,地形层次):用 dirt/grass 堆几个圆丘
-  const hills = [[0, plazaR + 6], [10, plazaR + 8], [-10, plazaR + 8]];
+  const hills = [[24, plazaR + 6], [-24, plazaR + 6], [0, plazaR + 10]];
   for (const [hx, hz] of hills) {
     for (let dx = -3; dx <= 3; dx++) {
       for (let dz = -3; dz <= 3; dz++) {
@@ -497,14 +504,14 @@ function buildSpawnPlaza() {
   set(17, platH + 5, 12, 'sand'); set(17, platH + 5, 13, 'brick');
   set(13, platH + 2, 10, 'torch'); set(17, platH + 2, 14, 'torch');
   // 13.10 入口气球拱门(轨道外侧,不挡视野):砖柱 + 三色横梁 + 气球
-  const balloonArchZ = 22;
+  const balloonArchZ = 30;
   for (const px of [-4, 4]) {
-    for (let y = platH + 1; y <= platH + 5; y++) set(px, y, balloonArchZ, 'fence');
-    set(px, platH + 6, balloonArchZ, 'wool_white');
+    for (let y = platH + 1; y <= platH + 4; y++) set(px, y, balloonArchZ, 'brick');
+    set(px, platH + 5, balloonArchZ, 'wool_white');
+    set(px, platH + 6, balloonArchZ, 'torch');
+    set(px, platH + 7, balloonArchZ, px < 0 ? 'wool_red' : 'wool_yellow');
   }
   for (let x = -3; x <= 3; x++) set(x, platH + 5, balloonArchZ, x % 2 ? 'wool_yellow' : 'wool_red');
-  set(-4, platH + 6, balloonArchZ, 'wool_white'); set(4, platH + 6, balloonArchZ, 'wool_white');
-  set(-4, platH + 7, balloonArchZ, 'wool_white'); set(4, platH + 7, balloonArchZ, 'wool_yellow');
   // 13.11 长椅与路灯(休息区)
   for (const [bx, bz] of [[7, 10], [-11, 9], [6, 12]]) {
     set(bx, platH + 1, bz, 'stairs_planks');
@@ -512,9 +519,191 @@ function buildSpawnPlaza() {
     set(bx, platH + 2, bz, 'torch');
   }
 
+  buildOuterSpawn(set, fill, platH, plazaR);
+
   worldPlazaBuilt = true;   // 广场已知 diff 已登记(存档可瘦身)
 }
 
+// ============================================================
+// 出生地外环:四门 + 环形步道 + 瞭望塔/迷宫/池塘/野餐林/跳跳石
+// 内环 28 保留原游乐场边界;外环 38 扩大探索体积但不挡开场动线
+// ============================================================
+let spawnPOIs = [];
+function buildOuterSpawn(set, fill, platH, plazaR) {
+  spawnPOIs = [];
+  const reserved = [
+    { x0: -31, x1: -23, z0: -23, z1: -15 },   // 瞭望塔
+    { x0: 20, x1: 32, z0: -28, z1: -18 },    // 树篱迷宫
+    { x0: -32, x1: -20, z0: 12, z1: 22 },    // 池塘
+    { x0: 21, x1: 31, z0: 10, z1: 19 },      // 野餐林
+    { x0: 4, x1: 16, z0: -30, z1: -22 },     // 跳跳石
+  ];
+  const inReserved = (x, z) => reserved.some(r => x >= r.x0 && x <= r.x1 && z >= r.z0 && z <= r.z1);
+
+  // 0. 中央到四门的主轴步道(23..30),让开场视线有明确去处
+  for (let d = 23; d <= 30; d++) {
+    for (let w = -1; w <= 1; w++) {
+      set(w, platH, d, 'planks'); set(w, platH, -d, 'planks');
+      set(d, platH, w, 'planks'); set(-d, platH, w, 'planks');
+    }
+  }
+  // 1. 外环环形步道(半径 30/31),绕开五个探索区
+  for (let a = 0; a < 360; a += 2) {
+    for (const r of [30, 31]) {
+      const x = Math.round(Math.cos(a * Math.PI / 180) * r);
+      const z = Math.round(Math.sin(a * Math.PI / 180) * r);
+      if (!inReserved(x, z)) set(x, platH, z, 'planks');
+    }
+  }
+  // 1b. 主轴灯柱与花点:让 23..30 的通道有节奏
+  for (const [lx, lz] of [[4, 26], [-4, 26], [4, -26], [-4, -26], [26, 4], [26, -4], [-26, 4], [-26, -4]]) {
+    set(lx, platH + 1, lz, 'fence'); set(lx, platH + 2, lz, 'fence');
+    set(lx, platH + 3, lz, 'torch');
+    set(lx + (lx > 0 ? 1 : -1), platH + 1, lz, 'leaves');
+    set(lx + (lx > 0 ? 1 : -1), platH + 2, lz, 'wool_yellow');
+  }
+  // 2. 四向门洞 + 门外路径 + 彩球拱门
+  const gates = [
+    { x: 0, z: -plazaR, axis: 'z' }, { x: 0, z: plazaR, axis: 'z' },
+    { x: plazaR, z: 0, axis: 'x' }, { x: -plazaR, z: 0, axis: 'x' },
+  ];
+  for (const g of gates) {
+    for (let d = 31; d <= plazaR + 1; d++) {
+      if (g.axis === 'z') for (let w = -1; w <= 1; w++) set(w, platH, g.z < 0 ? -d : d, 'planks');
+      else for (let w = -1; w <= 1; w++) set(g.x < 0 ? -d : d, platH, w, 'planks');
+    }
+    const side = g.axis === 'z' ? 'x' : 'z';
+    for (const off of [-3, 3]) {
+      for (let y = platH + 1; y <= platH + 4; y++) {
+        if (side === 'x') set(g.x + off, y, g.z, 'brick');
+        else set(g.x, y, g.z + off, 'brick');
+      }
+      const bx = side === 'x' ? g.x + off : g.x;
+      const bz = side === 'x' ? g.z : g.z + off;
+      set(bx, platH + 5, bz, off < 0 ? 'wool_red' : 'wool_yellow');
+      set(bx, platH + 6, bz, 'torch');
+      set(bx, platH + 7, bz, off < 0 ? 'wool_white' : 'wool_red');
+    }
+    for (let t = -2; t <= 2; t++) {
+      const bx = side === 'x' ? g.x + t : g.x;
+      const bz = side === 'x' ? g.z : g.z + t;
+      set(bx, platH + 5, bz, t % 2 ? 'wool_yellow' : 'wool_red');
+    }
+  }
+  // 3. 内环灯柱(不压住探索区)
+  for (let a = 10; a < 360; a += 45) {
+    const x = Math.round(Math.cos(a * Math.PI / 180) * 29);
+    const z = Math.round(Math.sin(a * Math.PI / 180) * 29);
+    if (inReserved(x, z)) continue;
+    set(x, platH + 1, z, 'fence'); set(x, platH + 2, z, 'fence');
+    set(x, platH + 3, z, 'torch');
+  }
+  // 4. 外环花点(彩色羊毛 + 叶),与设施错开
+  const flowerColors = ['wool_red', 'wool_yellow', 'wool_white'];
+  for (let a = 20, i = 0; a < 360; a += 30, i++) {
+    const x = Math.round(Math.cos(a * Math.PI / 180) * 33);
+    const z = Math.round(Math.sin(a * Math.PI / 180) * 33);
+    if (inReserved(x, z)) continue;
+    set(x, platH + 1, z, 'leaves');
+    set(x, platH + 2, z, flowerColors[i % 3]);
+  }
+
+  // 5. 瞭望塔(西北):石塔 + 外挂梯 + 顶层平台
+  {
+    const lx = -27, lz = -20;
+    fill(lx - 2, lx + 2, platH, platH, lz - 2, lz + 2, 'stone');
+    for (let y = platH + 1; y <= platH + 7; y++) {
+      for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
+        if (dx === 0 && dz === 0) continue;
+        set(lx + dx, y, lz + dz, 'brick');
+      }
+    }
+    fill(lx - 2, lx + 2, platH + 8, platH + 8, lz - 2, lz + 2, 'planks');
+    for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) {
+      if (Math.abs(dx) === 2 || Math.abs(dz) === 2) set(lx + dx, platH + 9, lz + dz, 'fence');
+    }
+    for (let y = platH + 1; y <= platH + 7; y++) set(lx, y, lz + 2, 'ladder');
+    set(lx, platH + 8, lz, 'torch'); set(lx - 1, platH + 8, lz - 1, 'torch');
+    spawnPOIs.push({ x: lx, z: lz, label: '瞭望塔', radius: 7, tip: '爬梯子登顶,俯瞰整座游乐场' });
+  }
+
+  // 6. 树篱迷宫(东北):11×9,南/北入口,中心黏液蹦床
+  {
+    const ox = 21, oz = -27, w = 11, h = 9;
+    for (let dx = 0; dx < w; dx++) for (let dz = 0; dz < h; dz++) {
+      const x = ox + dx, z = oz + dz;
+      const border = dx === 0 || dx === w - 1 || dz === 0 || dz === h - 1;
+      const entrance = (dx === 5 && (dz === 0 || dz === h - 1));
+      if (border && !entrance) { set(x, platH + 1, z, 'leaves'); set(x, platH + 2, z, 'leaves'); }
+    }
+    for (let dz = 1; dz <= h - 2; dz++) {
+      if (dz === 4) continue;
+      set(ox + 3, platH + 1, oz + dz, 'leaves'); set(ox + 3, platH + 2, oz + dz, 'leaves');
+      if (dz !== 2) { set(ox + 7, platH + 1, oz + dz, 'leaves'); set(ox + 7, platH + 2, oz + dz, 'leaves'); }
+    }
+    for (let dx = 1; dx <= w - 2; dx++) {
+      if (dx === 5 || dx === 2) continue;
+      set(ox + dx, platH + 1, oz + 4, 'leaves'); set(ox + dx, platH + 2, oz + 4, 'leaves');
+    }
+    fill(ox + 4, ox + 6, platH, platH, oz + 3, oz + 5, 'slime');
+    set(ox + 5, platH + 1, oz + 4, 'torch');
+    spawnPOIs.push({ x: ox + 5, z: oz + 4, label: '树篱迷宫', radius: 9, tip: '从南/北入口进,中心是黏液蹦床' });
+  }
+
+  // 7. 池塘(西南):水面 + 沙岸 + 木栈道
+  {
+    const px = -26, pz = 17;
+    fill(px - 4, px + 4, platH, platH, pz - 2, pz + 2, 'water');
+    for (let dx = -5; dx <= 5; dx++) for (let dz = -3; dz <= 3; dz++) {
+      if (Math.abs(dx) === 5 || Math.abs(dz) === 3) set(px + dx, platH, pz + dz, 'sand');
+    }
+    fill(px - 2, px + 2, platH, platH, pz - 3, pz - 3, 'planks');
+    for (let dx = -1; dx <= 1; dx++) set(px + dx, platH + 1, pz - 3, 'fence');
+    set(px - 3, platH, pz - 1, 'wool_white'); set(px + 2, platH, pz + 1, 'wool_yellow');
+    set(px + 4, platH + 1, pz - 3, 'torch');
+    spawnPOIs.push({ x: px, z: pz, label: '池塘', radius: 8, tip: '在水边钓鱼,或沿木栈道散步' });
+  }
+
+  // 8. 野餐林(东南):小树 + 野餐桌 + 篝火
+  {
+    const ox = 26, oz = 15;
+    for (const [tx, tz] of [[-4, -2], [4, -2], [-4, 2], [4, 2]]) {
+      for (let y = platH + 1; y <= platH + 3; y++) set(ox + tx, y, oz + tz, 'wood');
+      for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) set(ox + tx + dx, platH + 4, oz + tz + dz, 'leaves');
+      set(ox + tx, platH + 5, oz + tz, 'leaves');
+    }
+    fill(ox - 1, ox + 1, platH + 1, platH + 1, oz, oz, 'planks');
+    set(ox, platH + 1, oz - 1, 'fence'); set(ox, platH + 1, oz + 1, 'fence');
+    set(ox - 2, platH + 1, oz, 'stairs_planks'); set(ox + 2, platH + 1, oz, 'stairs_planks');
+    set(ox, platH, oz + 3, 'wood'); set(ox, platH + 1, oz + 3, 'torch');
+    spawnPOIs.push({ x: ox, z: oz, label: '野餐林', radius: 8, tip: '在树荫下野餐,篝火旁休息' });
+  }
+
+  // 9. 跳跳石(北偏东):高低石块 + 终点黏液
+  {
+    const pads = [[6, -26, 21], [9, -26, 22], [12, -26, 23], [14, -25, 22], [16, -24, 21]];
+    for (const [x, z, y] of pads) fill(x, x + 1, y, y, z, z + 1, y >= 23 ? 'stone' : 'planks');
+    fill(17, 18, platH, platH, -24, -23, 'slime');
+    set(6, platH + 1, -25, 'torch');
+    spawnPOIs.push({ x: 11, z: -26, label: '跳跳石', radius: 7, tip: '踩着高低石块跳向终点黏液' });
+  }
+
+  // 10. 外环导览牌(四门内侧),给儿童一个方向锚点
+  for (const [sx, sz, label] of [[2, 31, '南门 · 野餐林/池塘'], [-2, -31, '北门 · 迷宫/跳跳石'], [31, 2, '东门 · 树篱迷宫'], [-31, -2, '西门 · 瞭望塔/池塘']]) {
+    set(sx, platH + 1, sz, 'fence'); set(sx, platH + 2, sz, 'fence');
+    set(sx, platH + 3, sz, 'wool_yellow');
+    spawnPOIs.push({ x: sx, z: sz, label: label, radius: 4, tip: '沿环形步道探索' });
+  }
+}
+
+function getNearbySpawnPOI() {
+  let best = null, bestD = Infinity;
+  for (const p of spawnPOIs) {
+    const d = Math.hypot(playerPos.x - p.x, playerPos.z - p.z);
+    if (d <= p.radius && d < bestD) { best = p; bestD = d; }
+  }
+  return best;
+}
 // ============================================================
 // R55 儿童游乐场:动态设施(方块风格 Three 组)与过山车矿车
 // ============================================================

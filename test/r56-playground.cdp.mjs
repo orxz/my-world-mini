@@ -111,7 +111,7 @@ async function main() {
     slide: getBlock(-8, 23, 14) === 'water' && getBlock(-8, 20, 10) === 'water',
     sandbox: getBlock(-14, 20, 13) === 'sand' && getBlock(-16, 21, 11) === 'fence',
     slime: getBlock(8, 20, 15) === 'slime',
-    arch: getBlock(-4, 26, 22) === 'wool_white' && getBlock(0, 25, 22) === 'wool_red'
+    arch: getBlock(-4, 25, 30) === 'wool_white' && getBlock(0, 25, 30) === 'wool_red'
   })`);
   check('水滑梯/沙坑/蹦床/气球拱门落地', Object.values(facilities).every(Boolean), JSON.stringify(facilities));
 

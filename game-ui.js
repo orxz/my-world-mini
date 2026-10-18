@@ -556,8 +556,12 @@ function updateStatusHUD(dt) {
   if (!info && !ridingRide && !ridingCart) {
     const nearRide = getNearbyRide();
     if (nearRide) info = { text: '🎠 右键乘坐' + nearRide.data.label, color: '#9dff6a' };
-    else if (Math.hypot(playerPos.x, playerPos.z - 20) < 7 && Math.abs(playerPos.y - 23) < 5) {
-      info = { text: '🎢 右键矿车乘坐过山车', color: '#9dff6a' };
+    else {
+      const poi = getNearbySpawnPOI();
+      if (poi) info = { text: '🧭 ' + poi.label + ' · ' + poi.tip, color: '#ffe66d' };
+      else if (Math.hypot(playerPos.x, playerPos.z - 20) < 7 && Math.abs(playerPos.y - 23) < 5) {
+        info = { text: '🎢 右键矿车乘坐过山车', color: '#9dff6a' };
+      }
     }
   }
   if (info) {

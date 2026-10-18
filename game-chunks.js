@@ -7,7 +7,7 @@ let RENDER_DISTANCE = 5;  // let:可被设置修改      // 加载半径(chunk �
 const FOG_NEAR = 30;
 let FOG_FAR = (RENDER_DISTANCE * CHUNK_SIZE) + 8;  // let:随 RENDER_DISTANCE 设置变化
 const SEA_LEVEL = 14;           // 海平面
-const PLAZA_RADIUS = 28;        // R55:出生广场半径(与 buildSpawnPlaza 一致)
+const PLAZA_RADIUS = 46;   // 广场外再留 8 格平坦草甸,避免门外直接是地形断崖        // R55:出生广场半径(与 buildSpawnPlaza 一致)
 const PLAZA_HEIGHT = SEA_LEVEL + 6;
 
 // 区块存储: key "cx,cz" -> chunk

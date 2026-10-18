@@ -225,17 +225,40 @@ function matchRecipe() {
   return CRAFTLIB.matchRecipe(craftGrid, CRAFTLIB.RECIPES);
 }
 
+function updateCraftMaterials(grid, elId) {
+  const counts = new Map();
+  for (const item of grid) {
+    if (!item) continue;
+    const name = itemName(item);
+    counts.set(name, (counts.get(name) || 0) + (item.count || 1));
+  }
+  const el = document.getElementById(elId);
+  if (!el) return;
+  el.textContent = counts.size
+    ? '材料:' + [...counts.entries()].map(([name, n]) => name + ' ×' + n).join(' · ')
+    : '材料:空(右键点击格子放入材料)';
+}
+
 function renderCraftGrid() {
   const cells = document.querySelectorAll('#craft-grid .inv-cell');
   cells.forEach((cell, i) => {
     const old = cell.querySelector('canvas'); if (old) old.remove();
     const badge = cell.querySelector('.cnt'); if (badge) badge.remove();
+    const oldLabel = cell.querySelector('.craft-label'); if (oldLabel) oldLabel.remove();
+    cell.onmouseenter = null; cell.onmouseleave = null;
     const item = craftGrid[i];
     if (item) {
       const cv = document.createElement('canvas');
       cv.width = cv.height = 48;
       drawItemIcon(item, cv);
       cell.appendChild(cv);
+      const label = document.createElement('span');
+      label.className = 'craft-label';
+      label.textContent = itemName(item);
+      label.title = itemName(item);
+      cell.appendChild(label);
+      cell.onmouseenter = () => showItemTooltip(item, cell);
+      cell.onmouseleave = hideItemTooltip;
       if ((item.count || 1) > 1) {
         const c = document.createElement('span');
         c.className = 'cnt';
@@ -244,6 +267,7 @@ function renderCraftGrid() {
       }
     }
   });
+  updateCraftMaterials(craftGrid, 'craft-materials');
 }
 
 function refreshCraftResult() {
@@ -377,12 +401,21 @@ function renderTableGrid() {
   document.querySelectorAll('#table-grid .inv-cell').forEach((cell, i) => {
     const old = cell.querySelector('canvas'); if (old) old.remove();
     const badge = cell.querySelector('.cnt'); if (badge) badge.remove();
+    const oldLabel = cell.querySelector('.craft-label'); if (oldLabel) oldLabel.remove();
+    cell.onmouseenter = null; cell.onmouseleave = null;
     const item = tableGrid[i];
     if (item) {
       const cv = document.createElement('canvas');
       cv.width = cv.height = 48;
       drawItemIcon(item, cv);
       cell.appendChild(cv);
+      const label = document.createElement('span');
+      label.className = 'craft-label';
+      label.textContent = itemName(item);
+      label.title = itemName(item);
+      cell.appendChild(label);
+      cell.onmouseenter = () => showItemTooltip(item, cell);
+      cell.onmouseleave = hideItemTooltip;
       if ((item.count || 1) > 1) {
         const c = document.createElement('span');
         c.className = 'cnt';
@@ -391,6 +424,7 @@ function renderTableGrid() {
       }
     }
   });
+  updateCraftMaterials(tableGrid, 'table-materials');
 }
 
 function refreshTableResult() {

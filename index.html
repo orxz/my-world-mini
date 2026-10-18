@@ -373,6 +373,9 @@
 .table-grid { display: grid; grid-template-columns: repeat(3, 56px); grid-template-rows: repeat(3, 56px); gap: 4px; }
 .table-grid .inv-cell { width: 56px; height: 56px; }
 .table-grid .inv-cell canvas { width: 36px; height: 36px; }
+.table-grid .inv-cell, .craft-grid .inv-cell { position: relative; padding-bottom: 13px; }
+.craft-label { position: absolute; left: 1px; right: 1px; bottom: 1px; font-size: 9px; line-height: 1.05; text-align: center; color: #fff; text-shadow: 1px 1px 1px #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+.craft-materials { font-size: 11px; color: #4a4a30; margin-top: 6px; line-height: 1.5; }
 
 /* 受击红屏渐晕 */
 #damage-vignette { position: fixed; inset: 0; pointer-events: none; z-index: 80;
@@ -625,6 +628,7 @@
       <button class="craft-btn" id="craft-clear" style="background:#666;border-color:#444;">清空</button>
     </div>
     <div class="inv-hint" style="margin-top:8px;" id="craft-hint">从下方物品点击放入合成格(创造模式:合成主要作演示)</div>
+    <div class="craft-materials" id="craft-materials">材料:空</div>
   </div>
 </div>
 
@@ -633,6 +637,7 @@
   <span class="inv-close" id="table-close">×</span>
   <h3>🛠️ 合成台 (3×3)</h3>
   <div class="inv-hint">左键循环放入方块/材料,右键清空;支持全部 2×2 配方与 3×3 专属配方,合成消耗每格 1 个(格内为目录物品,关闭不退回)</div>
+  <div class="craft-materials" id="table-materials">材料:空</div>
   <div class="craft-row" style="margin-top:12px;">
     <div class="table-grid" id="table-grid">
       <div class="inv-cell" data-table="0"></div>

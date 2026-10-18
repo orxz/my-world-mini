@@ -127,6 +127,21 @@ async function main() {
   const rec = await evl(`(()=>{gameMode='creative';recipeCat='全部';document.getElementById('recipe-search').value='';openRecipeBook();const total=document.querySelectorAll('#recipe-list .recipe-card').length;document.getElementById('recipe-search').value='镐';renderRecipeBook();const picks=document.querySelectorAll('#recipe-list .recipe-card').length;closeRecipeBook();return {total,picks};})()`);
   check('recipe book total>=80 / search 镐>=5', rec.total >= 80 && rec.picks >= 5, JSON.stringify(rec));
 
+  // 3b. 合成台格内材料名称/汇总(解决图标无法区分材料)
+  const tableLabels = await evl(`(() => {
+    openTablePanel();
+    tableGrid[0] = { kind: 'item', id: 'iron_ingot' };
+    tableGrid[1] = { kind: 'item', id: 'iron_ingot' };
+    tableGrid[3] = { kind: 'item', id: 'stick' };
+    tableGrid[4] = { kind: 'item', id: 'stick' };
+    renderTableGrid();
+    const labels = [...document.querySelectorAll('#table-grid .craft-label')].map(e => e.textContent);
+    const summary = document.getElementById('table-materials').textContent;
+    closeTablePanel();
+    return { labels, summary };
+  })()`);
+  check('craft table labels + material summary', tableLabels.labels.includes('铁锭') && tableLabels.labels.includes('木棍') && tableLabels.summary.includes('铁锭 ×2') && tableLabels.summary.includes('木棍 ×2'), JSON.stringify(tableLabels));
+
   // 9. 章节目标
   const goal = await evl(`(()=>{unlockAchv('get_wood');return {done:MACHINES.goalDoneCount(achvUnlocked),txt:document.getElementById('goals-hud').innerText};})()`);
   check('goal HUD updates after first achievement', goal.done >= 1 && goal.txt.indexOf('第 1 章') >= 0, JSON.stringify(goal));

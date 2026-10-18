@@ -364,7 +364,7 @@ function buildSpawnPlaza() {
   }
 
   // 9. 蘑菇装饰(广场内散布几个红白蘑菇):菌柄 wood + 菌盖 leaves/brick
-  const mushrooms = [[-10, 4], [12, -4], [-8, 0], [10, 12]];
+  const mushrooms = [[-17, 8], [12, -4], [-8, 0], [10, 12]];
   for (const [mx, mz] of mushrooms) {
     set(mx, platH + 1, mz, 'wood');        // 菌柄
     set(mx, platH + 2, mz, 'wood');
@@ -388,7 +388,7 @@ function buildSpawnPlaza() {
   }
 
   // 11. 旗杆(广场东西两侧):高木杆 + 顶部砖旗
-  for (const [gx, gz] of [[plazaR - 10, 0], [-(plazaR - 10), 0]]) {
+  for (const [gx, gz] of [[plazaR - 9, 0], [-(plazaR - 9), 0]]) {
     for (let h = 1; h <= 6; h++) set(gx, platH + h, gz, 'wood');   // 旗杆
     set(gx + 1, platH + 6, gz, 'brick');   // 旗帜(飘向东)
     set(gx + 1, platH + 5, gz, 'brick');
@@ -443,29 +443,27 @@ function buildSpawnPlaza() {
   for (let x = -3; x <= 3; x += 2) set(x, platH + 8, 18, x % 2 ? 'wool_white' : 'wool_yellow');
   // 13.3 旋转木马底座(东侧)
   const carX = 13, carZ = 2;
-  for (let dx = -4; dx <= 4; dx++) for (let dz = -4; dz <= 4; dz++) {
-    if (Math.hypot(dx, dz) <= 4.4) set(carX + dx, platH, carZ + dz, 'planks');
+  for (let dx = -5; dx <= 5; dx++) for (let dz = -5; dz <= 5; dz++) {
+    if (Math.hypot(dx, dz) <= 5.4) set(carX + dx, platH, carZ + dz, 'planks');
   }
   set(carX, platH + 1, carZ, 'brick'); set(carX, platH + 2, carZ, 'brick');
   set(carX, platH + 3, carZ, 'brick'); set(carX, platH + 4, carZ, 'brick');
-  for (const [ox, oz] of [[-3, -3], [3, -3], [-3, 3], [3, 3]]) {
+  for (const [ox, oz] of [[-4, -4], [4, -4], [-4, 4], [4, 4]]) {
     for (let y = platH + 1; y <= platH + 4; y++) set(carX + ox, y, carZ + oz, 'fence');
     set(carX + ox, platH + 5, carZ + oz, 'wool_yellow');
   }
   // 13.4 摩天轮支架(西北)
-  const ferX = 16, ferZ = -6;
-  fill(ferX - 3, ferX + 3, platH, platH, ferZ - 2, ferZ + 2, 'planks');
-  for (const ox of [-3, 3]) {
+  const ferX = 14.5, ferZ = -6;
+  fill(ferX - 4, ferX + 4, platH, platH, ferZ - 2, ferZ + 2, 'planks');
+  for (const ox of [-4, 4]) {
     for (let y = platH + 1; y <= platH + 6; y++) set(ferX + ox, y, ferZ, 'brick');
   }
-  set(ferX - 2, platH + 7, ferZ, 'brick'); set(ferX - 1, platH + 7, ferZ, 'brick');
-  set(ferX, platH + 7, ferZ, 'brick'); set(ferX + 1, platH + 7, ferZ, 'brick');
-  set(ferX + 2, platH + 7, ferZ, 'brick');
+  for (let x = ferX - 2; x <= ferX + 2; x++) set(x, platH + 7, ferZ, 'brick');
   // 13.5 秋千架(西侧)
   const swX = -13, swZ = 4;
   fill(swX - 2, swX + 2, platH, platH, swZ, swZ, 'sand');
-  for (const ox of [-2, 2]) for (let y = platH + 1; y <= platH + 4; y++) set(swX + ox, y, swZ, 'fence');
-  for (let x = swX - 1; x <= swX + 1; x++) set(x, platH + 4, swZ, 'brick');
+  for (const ox of [-3, 3]) for (let y = platH + 1; y <= platH + 4; y++) set(swX + ox, y, swZ, 'fence');
+  for (let x = swX - 2; x <= swX + 2; x++) set(x, platH + 4, swZ, 'planks');
   // 13.6 水滑梯(南偏西):石塔 + 台阶 + 四段水面 + 底部水池
   const slX = -8, slZ = 15;
   fill(slX - 1, slX + 1, platH, platH, slZ - 1, slZ + 1, 'stone');
@@ -508,7 +506,7 @@ function buildSpawnPlaza() {
   set(-4, platH + 6, balloonArchZ, 'wool_white'); set(4, platH + 6, balloonArchZ, 'wool_white');
   set(-4, platH + 7, balloonArchZ, 'wool_white'); set(4, platH + 7, balloonArchZ, 'wool_yellow');
   // 13.11 长椅与路灯(休息区)
-  for (const [bx, bz] of [[10, 7], [-11, 9], [6, 12]]) {
+  for (const [bx, bz] of [[7, 10], [-11, 9], [6, 12]]) {
     set(bx, platH + 1, bz, 'stairs_planks');
     set(bx + 1, platH + 1, bz, 'stairs_planks');
     set(bx, platH + 2, bz, 'torch');
@@ -546,20 +544,21 @@ function clearPlaygroundProps() {
     });
   }
   playgroundRides = null;
+  ridingRide = null;
 }
 
 function buildPlaygroundProps() {
   clearPlaygroundProps();
   const platH = SEA_LEVEL + 6;
 
-  // 旋转木马:彩色顶棚 + 中心柱 + 四匹方块小马(整体缓慢旋转)
+  // 旋转木马:放大到 1.3 倍,四匹小马可乘坐
   const carousel = new THREE.Group();
   carousel.position.set(13, platH + 1, 2);
-  playgroundBox(carousel, 8.6, 0.35, 8.6, 0, 4.1, 0, 0xd94b4b);
-  const stripeColors = [0xf1c40f, 0xecf0f1, 0x3498db, 0xe67e22];
+  carousel.scale.set(1.3, 1.15, 1.3);
+  const carouselSeats = [];
+  const roofColors = [0xd94b4b, 0xf1c40f, 0xecf0f1, 0x3498db];
   for (let i = 0; i < 4; i++) {
-    const a = i * Math.PI / 2;
-    playgroundBox(carousel, 8.4, 0.18, 1.05, Math.cos(a) * 1.8, 4.32, Math.sin(a) * 1.8, stripeColors[i]);
+    playgroundBox(carousel, 2.15, 0.35, 8.6, -3.225 + i * 2.15, 4.1, 0, roofColors[i]);
   }
   playgroundBox(carousel, 0.45, 4.1, 0.45, 0, 2.05, 0, 0xf1c40f);
   playgroundBox(carousel, 0.9, 0.5, 0.9, 0, 4.35, 0, 0xf1c40f);
@@ -575,46 +574,137 @@ function buildPlaygroundProps() {
     playgroundBox(pony, 0.18, 0.5, 0.18, -0.5, -0.25, -0.17, 0x8a6430);
     playgroundBox(pony, 0.18, 0.5, 0.18, 0.5, -0.25, 0.17, 0x8a6430);
     playgroundBox(pony, 0.18, 0.5, 0.18, 0.5, -0.25, -0.17, 0x8a6430);
-    playgroundBox(pony, 0.5, 0.2, 0.2, 0.9, 0.75, 0, 0x5a3a1a);   // 鬃毛
+    playgroundBox(pony, 0.5, 0.2, 0.2, 0.9, 0.75, 0, 0x5a3a1a);
     carousel.add(pony);
+    carouselSeats.push({ node: pony, offsetY: 1.35, label: '旋转木马' });
   }
+  carousel.userData.ride = {
+    type: 'carousel', label: '旋转木马', board: new THREE.Vector3(13, platH, 2), boardRadius: 7.5,
+    seats: carouselSeats, exit: { x: 13, z: 8 },
+  };
   scene.add(carousel);
 
-  // 摩天轮:12 段轮圈 + 6 个彩色座舱,绕 z 轴缓慢转
+  // 摩天轮:放大到 1.25 倍,6 个座舱可乘坐
   const ferris = new THREE.Group();
-  ferris.position.set(16, platH + 7, -6);
+  ferris.position.set(14.5, platH + 7, -6);
+  ferris.scale.set(1.25, 1.25, 1.25);
   const cabins = [];
+  const ferrisSeats = [];
+  const ferrisRim = new THREE.Mesh(
+    new THREE.TorusGeometry(4, 0.2, 6, 24),
+    new THREE.MeshLambertMaterial({ color: 0xecf0f1 })
+  );
+  ferris.add(ferrisRim);
   for (let i = 0; i < 12; i++) {
     const a = i / 12 * Math.PI * 2;
-    playgroundBox(ferris, 0.55, 0.55, 0.35, Math.cos(a) * 3.2, Math.sin(a) * 3.2, 0, i % 2 ? 0xf1c40f : 0xecf0f1);
+    playgroundBox(ferris, 0.72, 0.72, 0.4, Math.cos(a) * 4, Math.sin(a) * 4, 0, i % 2 ? 0xf1c40f : 0xd94b4b);
   }
   for (let i = 0; i < 6; i++) {
     const a = i / 6 * Math.PI * 2;
-    const spoke = playgroundBox(ferris, 3.2, 0.12, 0.12, Math.cos(a) * 1.6, Math.sin(a) * 1.6, 0, 0x95a5a6);
+    const spoke = playgroundBox(ferris, 4, 0.12, 0.12, Math.cos(a) * 2, Math.sin(a) * 2, 0, 0x95a5a6);
     spoke.rotation.z = a;
     const cabin = new THREE.Group();
-    cabin.position.set(Math.cos(a) * 3.2, Math.sin(a) * 3.2, 0);
-    cabin.rotation.z = -a;   // 座舱保持水平(父级旋转时由 update 反补)
+    cabin.position.set(Math.cos(a) * 4, Math.sin(a) * 4, 0);
+    cabin.rotation.z = -a;
     cabin.userData.baseRot = -a;
-    playgroundBox(cabin, 0.9, 0.75, 0.6, 0, -0.55, 0, [0xe74c3c, 0xf1c40f, 0x3498db, 0x2ecc71, 0xe67e22, 0x9b59b6][i]);
+    playgroundBox(cabin, 1.0, 0.85, 0.65, 0, -0.6, 0, [0xe74c3c, 0xf1c40f, 0x3498db, 0x2ecc71, 0xe67e22, 0x9b59b6][i]);
     ferris.add(cabin);
     cabins.push(cabin);
+    ferrisSeats.push({ node: cabin, offsetY: 0.35, label: '摩天轮' });
   }
   playgroundBox(ferris, 0.6, 0.6, 0.6, 0, 0, 0, 0x7f8c8d);
   ferris.userData.cabins = cabins;
+  ferris.userData.ride = {
+    type: 'ferris', label: '摩天轮', board: new THREE.Vector3(14.5, platH, -6), boardRadius: 7,
+    seats: ferrisSeats, exit: { x: 14.5, z: -10 },
+  };
   scene.add(ferris);
 
-  // 秋千:横梁上两组座椅,sin 摆动
+  // 秋千:放大到 1.3 倍,两组座椅可乘坐
   const swing = new THREE.Group();
   swing.position.set(-13, platH + 4, 4);
+  swing.scale.set(1.3, 1.15, 1.3);
+  const swingSeats = [];
   for (const ox of [-1.25, 1.25]) {
     playgroundBox(swing, 0.1, 1.8, 0.1, ox - 0.45, -1.0, 0, 0x7f8c8d);
     playgroundBox(swing, 0.1, 1.8, 0.1, ox + 0.45, -1.0, 0, 0x7f8c8d);
     playgroundBox(swing, 1.1, 0.18, 0.55, ox, -1.9, 0, ox < 0 ? 0xf1c40f : 0xe74c3c);
+    swingSeats.push({ local: new THREE.Vector3(ox, -0.8, 0), label: '秋千' });
   }
+  swing.userData.ride = {
+    type: 'swing', label: '秋千', board: new THREE.Vector3(-13, platH, 4), boardRadius: 6,
+    seats: swingSeats, exit: { x: -13, z: 8 },
+  };
   scene.add(swing);
 
   playgroundRides = { carousel, ferris, swing };
+}
+
+function getNearbyRide() {
+  if (!playgroundRides || ridingRide || ridingCart) return null;
+  let best = null, bestD = Infinity;
+  for (const root of [playgroundRides.carousel, playgroundRides.ferris, playgroundRides.swing]) {
+    const data = root && root.userData.ride;
+    if (!data) continue;
+    const dx = playerPos.x - data.board.x, dz = playerPos.z - data.board.z;
+    const d = Math.hypot(dx, dz);
+    const dy = Math.abs(playerPos.y - data.board.y);
+    if (d <= data.boardRadius && dy < 4 && d < bestD) {
+      best = { root, data, distance: d };
+      bestD = d;
+    }
+  }
+  return best;
+}
+
+function rideSeatWorld(ride, seat, out) {
+  if (seat.node) {
+    seat.node.getWorldPosition(out);
+    out.y += seat.offsetY || 0;
+  } else {
+    out.copy(seat.local);
+    ride.root.localToWorld(out);
+  }
+  return out;
+}
+
+function tryMountNearbyRide() {
+  if (ridingRide) return false;
+  const near = getNearbyRide();
+  if (!near) return false;
+  const seat = near.data.seats[0];
+  if (!seat) return false;
+  const world = new THREE.Vector3();
+  rideSeatWorld(near, seat, world);
+  ridingRide = { ride: near, seat, label: near.data.label };
+  playerPos.copy(world);
+  velocity.set(0, 0, 0);
+  isFlying = false;
+  // 坐下时朝设施外侧看,避免第一人称正对中心柱/座椅靠背
+  if (near.data.type === 'carousel' || near.data.type === 'ferris') {
+    const dx = world.x - near.root.position.x, dz = world.z - near.root.position.z;
+    yaw = Math.atan2(-dx, -dz);
+    pitch = 0;
+  }
+  showToast('坐上' + near.data.label + ' · 空格键下车');
+  return true;
+}
+
+function dismountRide() {
+  if (!ridingRide) return;
+  const exit = ridingRide.ride.data.exit;
+  ridingRide = null;
+  playerPos.set(exit.x, SEA_LEVEL + 6 + 1 + PLAYER_HEIGHT * 0.5, exit.z);
+  velocity.set(0, 0, 0);
+  showToast('下车');
+}
+
+function updateRidePlayer() {
+  if (!ridingRide) return;
+  const world = new THREE.Vector3();
+  rideSeatWorld(ridingRide.ride, ridingRide.seat, world);
+  playerPos.copy(world);
+  velocity.set(0, 0, 0);
 }
 
 function updatePlaygroundRides(dt, now) {

@@ -142,7 +142,12 @@ function animate() {
     active = pmHidden && ovHidden && !inventoryOpen && !tableOpen && !furnaceOpen && !chestOpen && !tradeOpen && !enchantOpen;
   }
   const prevVy = velocity.y;
-  if (active) updatePlayer(dt, prevVy);
+  if (active) {
+    // 先推进设施动画,再把乘坐者吸附到座位;避免先跑物理再被瞬移
+    if (typeof updatePlaygroundRides === 'function') updatePlaygroundRides(dt, now);
+    if (ridingRide) updateRidePlayer();
+    else updatePlayer(dt, prevVy);
+  }
   if (active) updateFallingBlocks(dt);           // 沙砾重力(暂停时冻结)
   if (active) updateTNT(dt);                     // 点燃的 TNT(暂停时冻结)
   if (active) updateMinecarts(dt);               // 矿车(暂停时冻结,R26)
@@ -167,7 +172,6 @@ function animate() {
   updateDamageVignette(dt);
   updateDeathOverlay(dt);
   updateClouds(dt);   // 云朵飘动(无论是否锁定都执行)
-  if (active && typeof updatePlaygroundRides === 'function') updatePlaygroundRides(dt, now);
 
   // 区块动态加载/卸载(无论是否锁定都执行,保证世界持续生成)
   updateChunks(playerPos.x, playerPos.z);
@@ -435,7 +439,7 @@ function applySave(rec) {
   // R25 存档瘦身:广场 diff 不在档里时先重建已知广场(用户 diff 随后覆盖);
   // 旧档(无标记)自带全量广场 diff,直接应用即可
   worldPlazaBuilt = !!rec.plazaBuilt;
-  if (worldPlazaBuilt) buildSpawnPlaza();
+  if (worldPlazaBuilt) { buildSpawnPlaza(); buildPlaygroundProps(); }
   // 重建全局 diff 表 + 区块桶(读档一次性解析 key,游戏期间按桶直接应用)
   if (rec.modifications) {
     for (const [k, v] of rec.modifications) {

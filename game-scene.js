@@ -49,6 +49,7 @@ let lastDeathCause = 'combat';
 let lastDeathPos = null;
 let lastRelockRequest = -1e9;   // R55:关面板后请求指针锁,抑制失败时的误暂停
 let playgroundRides = null;     // R55:出生地游乐场动态设施(旋转木马/摩天轮/秋千)
+let ridingRide = null;          // R55:正在乘坐的游乐设施
 
 // R55:按键映射(可在设置中重映射)
 const KEYMAP_DEFAULT = { forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD', jump: 'Space', sneak: 'ShiftLeft', sprint: 'KeyR', inventory: 'KeyE', drop: 'KeyQ', camera: 'F5' };

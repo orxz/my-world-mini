@@ -84,9 +84,27 @@ async function main() {
     const a0 = r.carousel.rotation.y, b0 = r.ferris.rotation.z, c0 = r.swing.rotation.x;
     updatePlaygroundRides(1.0, 1000);
     return { exists: true, carousel: r.carousel.rotation.y !== a0, ferris: r.ferris.rotation.z !== b0,
-             swing: r.swing.rotation.x !== c0, children: r.carousel.children.length + r.ferris.children.length };
+             swing: r.swing.rotation.x !== c0, children: r.carousel.children.length + r.ferris.children.length,
+             scale: [r.carousel.scale.x, r.ferris.scale.x, r.swing.scale.x] };
   })()`);
-  check('旋转木马/摩天轮/秋千存在且动画更新', rides.exists && rides.carousel && rides.ferris && rides.swing && rides.children > 20, JSON.stringify(rides));
+  check('旋转木马/摩天轮/秋千存在且动画更新', rides.exists && rides.carousel && rides.ferris && rides.swing && rides.children > 20 && rides.scale.every(v => v >= 1.2), JSON.stringify(rides));
+
+  // 3b. 三种设施真实乘坐/移动/下车
+  const mounts = await evl(`(() => {
+    const out = [];
+    for (const [x, z, want] of [[13, 7, '旋转木马'], [14.5, -6, '摩天轮'], [-13, 7, '秋千']]) {
+      playerPos.set(x, 21.9, z); velocity.set(0, 0, 0);
+      const ok = tryMountNearbyRide();
+      const label = ridingRide && ridingRide.label;
+      updatePlaygroundRides(1.2, 2000);
+      updateRidePlayer();
+      const moved = Math.abs(playerPos.x - x) + Math.abs(playerPos.z - z);
+      dismountRide();
+      out.push({ ok, label, want, moved, after: !!ridingRide });
+    }
+    return out;
+  })()`);
+  check('旋转木马/摩天轮/秋千可乘坐并移动/下车', mounts.length === 3 && mounts.every(m => m.ok && m.label === m.want && m.moved > 0.05 && !m.after), JSON.stringify(mounts));
 
   // 4. 水滑梯 / 沙坑 / 蹦床 / 气球拱门
   const facilities = await evl(`({

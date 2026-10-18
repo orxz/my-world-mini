@@ -551,9 +551,14 @@ function updateStatusHUD(dt) {
   const t = raycastTarget();
   const b = t ? getBlock(t.x, t.y, t.z) : null;
   let info = b ? interactHintFor(t, b) : null;
-  // R55:靠近南侧车站时提示过山车,降低儿童发现成本
-  if (!info && !ridingCart && Math.hypot(playerPos.x, playerPos.z - 20) < 7 && Math.abs(playerPos.y - 23) < 5) {
-    info = { text: '🎢 右键矿车乘坐过山车', color: '#9dff6a' };
+  // R55:游乐设施乘坐/下车提示,降低儿童发现成本
+  if (!info && ridingRide) info = { text: '空格 / ⬆ 下车', color: '#9dff6a' };
+  if (!info && !ridingRide && !ridingCart) {
+    const nearRide = getNearbyRide();
+    if (nearRide) info = { text: '🎠 右键乘坐' + nearRide.data.label, color: '#9dff6a' };
+    else if (Math.hypot(playerPos.x, playerPos.z - 20) < 7 && Math.abs(playerPos.y - 23) < 5) {
+      info = { text: '🎢 右键矿车乘坐过山车', color: '#9dff6a' };
+    }
   }
   if (info) {
     hint.textContent = info.text;
@@ -737,6 +742,7 @@ document.addEventListener('keydown', (e) => {
 function setupInput() {
   addEventListener('keydown', (e) => {
     if (e.repeat) return;
+    if (ridingRide && (e.code === 'Space' || e.code === keymap.jump)) { e.preventDefault(); dismountRide(); return; }
     if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')) return;
     // 门控:仅"游玩中"(已开始 且 暂停菜单/开始遮罩都隐藏)才响应游戏按键,
     // 否则标题屏按 Q 会把开局木镐丢出去、暂停中按 E 叠开面板等
@@ -1168,7 +1174,7 @@ function setupInput() {
       el.addEventListener('touchend', (e) => { e.preventDefault(); if (onUp) onUp(); }, { passive: false });
       el.addEventListener('touchcancel', () => { if (onUp) onUp(); });   // 手势被系统取消时同样复位(防「挖」卡在连挖)
     };
-    bindBtn('touch-jump', () => { keys['Space'] = true; }, () => { keys['Space'] = false; });
+    bindBtn('touch-jump', () => { if (ridingRide) { dismountRide(); return; } keys['Space'] = true; }, () => { keys['Space'] = false; });
   const tj = document.getElementById('touch-jump'); if (tj) tj.addEventListener('touchcancel', () => { keys['Space'] = false; });
   addEventListener('blur', () => { keys['Space'] = false; });
     bindBtn('touch-break', () => { breakBlock(); touchBreakHeld = true; }, () => { touchBreakHeld = false; });

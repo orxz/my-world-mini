@@ -119,10 +119,14 @@ function buildSaveRecord() {
   // 存档前固化瞬态实体:点燃的 TNT / 下落中的沙砾还原为方块
   // (否则 setBlock(null) 已写进 modifications,读档后实体凭空消失 = 物品损失)
   solidifyTransientEntities();
+  // 乘坐设施时存档:存地面出口,避免读档后悬在摩天轮/木马座位上空
+  const savePos = ridingRide && ridingRide.ride && ridingRide.ride.data.exit
+    ? { x: ridingRide.ride.data.exit.x, y: SEA_LEVEL + 7.9, z: ridingRide.ride.data.exit.z }
+    : { x: playerPos.x, y: playerPos.y, z: playerPos.z };
   return {
     seed: worldSeed,
     dayTime,   // 世界时间随档走(0..1,0=午夜):防跨存档时间串档、床跳夜成果入档
-    playerPos: { x: playerPos.x, y: playerPos.y, z: playerPos.z },
+    playerPos: savePos,
     yaw, pitch, cameraMode, isFlying,
     playerHP, breathTimer: 0, playerHunger: hungerState.hunger,
     hotbar, currentSlot,

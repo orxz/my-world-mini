@@ -308,6 +308,8 @@ function consumeSelected() {
 }
 
 function placeBlock() {
+  // R55:靠近游乐设施右击直接乘坐(优先于方块交互)
+  if (typeof tryMountNearbyRide === 'function' && tryMountNearbyRide()) return;
   const lookDoor = raycastDoor();
   const holdingDoor = selectedType && selectedType.indexOf('door') === 0;
   if (lookDoor && !holdingDoor) { toggleDoor(lookDoor.x, lookDoor.y, lookDoor.z); return; }

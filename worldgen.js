@@ -218,6 +218,30 @@
     const vault = tier === 'core' ? { x: lay.size - 1, z: Math.floor(lay.size / 2) } : null;
     return { cx, cz, floor, tier, size: lay.size, rooms: lay.rooms, corridors: lay.corridors, spawners, chestSpots, mob, chests, guard: tier === 'core', vault };
   }
+  // 快速旅行共用定位器:只查找自然地牢,不改变世界生成规则。
+  // 以 origin 所在的地牢格逐圈搜索;当前最近距离不超过下一圈的保守距离界时即可提前返回。
+  function findNearestDungeon(tier, seed, originX = 0, originZ = 0, maxRadius = 48) {
+    if (tier !== 'shallow' && tier !== 'deep' && tier !== 'core') return null;
+    if (!Number.isFinite(originX)) originX = 0;
+    if (!Number.isFinite(originZ)) originZ = 0;
+    const radius = Number.isFinite(maxRadius) ? Math.max(0, Math.min(64, Math.floor(maxRadius))) : 48;
+    const ocx = Math.floor(originX / DUNGEON_CELL), ocz = Math.floor(originZ / DUNGEON_CELL);
+    let best = null;
+    for (let r = 0; r <= radius; r++) {
+      for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) {
+        if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+        const dcx = ocx + dx, dcz = ocz + dz;
+        const dg = dungeonInCell(dcx, dcz, seed);
+        if (!dg || dg.tier !== tier) continue;
+        const d2 = (dg.cx - originX) ** 2 + (dg.cz - originZ) ** 2;
+        if (!best || d2 < best.d2 || (d2 === best.d2 && (dcx < best.dcx || (dcx === best.dcx && dcz < best.dcz))))
+          best = { dg, dcx, dcz, d2 };
+      }
+      // 尚未扫描的外圈与原点至少相隔 r*64(保守界),当前结果已不可能被超过。
+      if (best && best.d2 <= (r * DUNGEON_CELL) ** 2) break;
+    }
+    return best ? Object.assign({}, best.dg, { dcx: best.dcx, dcz: best.dcz }) : null;
+  }
   // 石室局部方块(lx/lz ∈ 0..size-1;rel ∈ 0..4 = 地板..顶)。
   // 房间/走廊内为空;房间之间是墙;核心档后墙嵌 3×3 黑曜石封印框 + 中央宝库。
   function dungeonBlockAt(lx, lz, rel, dg, seed) {
@@ -254,10 +278,10 @@
 
   // 导出(Node 环境)
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { hash2, hash3, valueNoise2D, valueNoise3D, fbm2D, BIOMES, biomeAt, heightAt, caveAt, villageInCell, hutBlockAt, dungeonInCell, dungeonBlockAt };
+    module.exports = { hash2, hash3, valueNoise2D, valueNoise3D, fbm2D, BIOMES, biomeAt, heightAt, caveAt, villageInCell, hutBlockAt, dungeonInCell, findNearestDungeon, dungeonBlockAt };
   }
   // 浏览器:挂到全局
-  global.WORLDGEN = { hash2, hash3, valueNoise2D, valueNoise3D, fbm2D, BIOMES, biomeAt, heightAt, caveAt, villageInCell, hutBlockAt, dungeonInCell, dungeonBlockAt };
+  global.WORLDGEN = { hash2, hash3, valueNoise2D, valueNoise3D, fbm2D, BIOMES, biomeAt, heightAt, caveAt, villageInCell, hutBlockAt, dungeonInCell, findNearestDungeon, dungeonBlockAt };
   // 同时保持全局函数名(game.js 直接调用)
   global.hash2 = hash2;
   global.hash3 = hash3;
@@ -271,6 +295,7 @@
   global.villageInCell = villageInCell;
   global.hutBlockAt = hutBlockAt;
   global.dungeonInCell = dungeonInCell;
+  global.findNearestDungeon = findNearestDungeon;
   global.dungeonBlockAt = dungeonBlockAt;
 
 })(typeof window !== 'undefined' ? window : globalThis);

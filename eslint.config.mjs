@@ -33,6 +33,7 @@ const WORLDGEN_GLOBALS = {
   villageInCell: 'readonly',
   hutBlockAt: 'readonly',
   dungeonInCell: 'readonly',
+  findNearestDungeon: 'readonly',
   dungeonBlockAt: 'readonly',
   // golem.js(UMD,铁傀儡 T 形结构判定)
   golemTAt: 'readonly',

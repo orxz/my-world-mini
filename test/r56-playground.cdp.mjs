@@ -115,6 +115,75 @@ async function main() {
   })`);
   check('水滑梯/沙坑/蹦床/气球拱门落地', Object.values(facilities).every(Boolean), JSON.stringify(facilities));
 
+  // 4c. 出生点冒险入口:结构/净空/真实右键传送/回城/统计与重复进入
+  const portals = await evl(`(() => ({
+    gates: DUNGEON_PORTALS.every(p => getBlock(p.x, 21, p.z) === p.block
+      && getBlock(p.x - 1, 22, p.z) === 'obsidian' && getBlock(p.x, 24, p.z) === p.accent),
+    spawnClear: !getBlock(0, 21, 0) && !getBlock(0, 22, 0) && !getBlock(0, 23, 0),
+    hints: DUNGEON_PORTALS.every(p => (interactHintFor(null, p.block) || {}).text.includes(p.label))
+      && interactHintFor(null, 'portal_home').text.includes('出生广场')
+  }))()`);
+  check('三档传送门结构/出生点净空/交互提示', portals.gates && portals.spawnClear && portals.hints, JSON.stringify(portals));
+
+  const travel = await evl(`(() => {
+    const out = [];
+    hotbar[currentSlot] = null; cameraMode = 0;
+    const aim = (tx, ty, tz) => {
+      const dx = tx - playerPos.x, dy = ty - playerPos.y, dz = tz - playerPos.z;
+      yaw = Math.atan2(-dx, -dz); pitch = Math.atan2(dy, Math.hypot(dx, dz));
+    };
+    const homeCount = (dg) => {
+      let n = 0;
+      const half = dg.size >> 1;
+      for (let x = dg.cx - half; x < dg.cx - half + dg.size; x++)
+        for (let z = dg.cz - half; z < dg.cz - half + dg.size; z++)
+          if (getBlock(x, dg.floor + 1, z) === 'portal_home') n++;
+      return n;
+    };
+    for (const p of DUNGEON_PORTALS) {
+      const dg = findNearestDungeon(p.tier, worldSeed, SPAWN_X, SPAWN_Z);
+      const distance0 = stats.distance;
+      playerPos.set(p.x + 0.5, PLAZA_HEIGHT + 1 + PLAYER_HEIGHT * 0.5, p.z + 3.5);
+      velocity.set(0, 0, 0);
+      aim(p.x + 0.5, PLAZA_HEIGHT + 1.5, p.z + 0.5);
+      const hit = raycastTarget();
+      const hitType = hit && getBlock(hit.x, hit.y, hit.z);
+      placeBlock();
+      const px = Math.floor(playerPos.x), pz = Math.floor(playerPos.z), half = dg.size >> 1;
+      const inside = px >= dg.cx - half && px < dg.cx - half + dg.size && pz >= dg.cz - half && pz < dg.cz - half + dg.size;
+      const clear = !getBlock(px, dg.floor + 1, pz) && !getBlock(px, dg.floor + 2, pz);
+      const loaded = chunks.has(chunkKey(Math.floor(px / CHUNK_SIZE), Math.floor(pz / CHUNK_SIZE)));
+      const homes1 = homeCount(dg);
+      let saveRestored = true;
+      if (p.tier === 'shallow') {
+        const rec = buildSaveRecord();
+        applySave(rec);
+        saveRestored = homeCount(dg) === 1;
+      }
+      let home = null;
+      for (let x = dg.cx - half; x < dg.cx - half + dg.size; x++)
+        for (let z = dg.cz - half; z < dg.cz - half + dg.size; z++)
+          if (getBlock(x, dg.floor + 1, z) === 'portal_home') home = { x, z };
+      const statsClean = stats.distance === distance0 && stats._lx === undefined && stats._lz === undefined;
+      if (home) { aim(home.x + 0.5, dg.floor + 1.5, home.z + 0.5); placeBlock(); }
+      const returned = Math.abs(playerPos.x - SPAWN_X) < 0.01 && Math.abs(playerPos.z - SPAWN_Z) < 0.01;
+      let repeatSafe = true;
+      if (p.tier === 'shallow') {
+        teleportToDungeon('shallow');
+        repeatSafe = homes1 === 1 && homeCount(dg) === 1;
+        teleportToSpawn();
+      }
+      out.push({ tier: p.tier, hit: hitType === p.block, inside, clear, loaded, home: !!home,
+        returned, statsClean, repeatSafe, saveRestored, homes1, distance0, distance1: stats.distance,
+        pos: [playerPos.x, playerPos.y, playerPos.z], expected: [dg.cx, dg.floor, dg.cz],
+        toast: document.getElementById('toast').textContent });
+    }
+    yaw = 0; pitch = 0; velocity.set(0, 0, 0);
+    return out;
+  })()`);
+  check('真实右键进入三档地牢并回城(安全落点/区块加载/统计不突增/回城石存档且不重复)',
+    travel.length === 3 && travel.every(t => t.hit && t.inside && t.clear && t.loaded && t.home && t.returned && t.statsClean && t.repeatSafe && t.saveRestored && t.distance0 === t.distance1), JSON.stringify(travel));
+
   // 5. 矿车真实环线:南侧→东侧→北侧→西侧
   const ride = await evl(`(() => {
     const c = minecarts.find(c2 => c2.cx === 0 && c2.cz === 20);
@@ -138,9 +207,10 @@ async function main() {
     resetWorld();
     const rails = getBlock(0, 23, 20) === 'rail' && getBlock(20, 23, 0) === 'rail';
     const cart = minecarts.filter(c => c.cx === 0 && c.cz === 20 && c.y === 23).length;
-    return { rails, cart, props: !!playgroundRides, totalCarts: minecarts.length };
+    const portals = DUNGEON_PORTALS.every(p => getBlock(p.x, 21, p.z) === p.block);
+    return { rails, cart, props: !!playgroundRides, totalCarts: minecarts.length, portals };
   })()`);
-  check('重置后游乐场/轨道重建,矿车不重复', rebuilt.rails && rebuilt.cart === 1 && rebuilt.props && rebuilt.totalCarts === 1, JSON.stringify(rebuilt));
+  check('重置后游乐场/轨道/传送门重建,矿车不重复', rebuilt.rails && rebuilt.cart === 1 && rebuilt.props && rebuilt.totalCarts === 1 && rebuilt.portals, JSON.stringify(rebuilt));
 
   await sleep(600);
   check('页面 0 JS error(全程真实路径)', jsErrors.length === 0, jsErrors.slice(0, 3).join(' || '));

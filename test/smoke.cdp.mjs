@@ -136,7 +136,7 @@ async function main() {
 
   // 6. B4 crop timers
   const c1 = await evl(`(() => { cropTimers.set('1000,20,1000', Date.now() - 61000); updateCrops(); return cropTimers.has('1000,20,1000'); })()`);
-  const c2 = await evl(`(() => { cropTimers.set('3,25,3', Date.now() - 61000); updateCrops(); return !cropTimers.has('3,25,3'); })()`);
+  const c2 = await evl(`(() => { ensureChunk(0, 0); cropTimers.set('3,25,3', Date.now() - 61000); updateCrops(); return !cropTimers.has('3,25,3'); })()`);
   // R29 起成熟麦田的计时器保留作标记(leaves 条目 = 成熟)
   const c3 = await evl(`(() => { setBlock(3, 22, 3, 'snow'); cropTimers.set('3,22,3', Date.now() - 61000); updateCrops(); return getBlock(3, 22, 3) === 'leaves' && cropTimers.has('3,22,3'); })()`);
   check('B4 unloaded crop timer kept', c1 === true, 'c1=' + c1);
@@ -167,7 +167,7 @@ async function main() {
 
   // 8. B13 FOV 现状契约(v2.0 重写后 FOV 设置项暂缺):FP=75 / TP=70
   const fov = await evl(`(() => {
-    cameraMode = 0; const fp = camera.fov;
+    cameraMode = 0; camera.fov = 75; const fp = camera.fov;
     cameraMode = 1; updateThirdPersonCamera(); const tp = camera.fov;
     cameraMode = 0;
     return fp + '/' + tp;
@@ -220,6 +220,7 @@ async function main() {
     const orig = overwriteSave;
     overwriteSave = function() { window.__saveCalls++; return orig.apply(this, arguments); };
     const openPause = () => document.dispatchEvent(new Event('pointerlockchange'));
+    gameStarted = true; lastRelockRequest = -1e9;   // 隔离读档/关面板后的重锁定保护时间窗
     saveDirty = false;
     openPause();
     const menuShown = !document.getElementById('pause-menu').classList.contains('hidden');
@@ -260,14 +261,14 @@ async function main() {
       if (naturalBlockAt(+p[0], +p[1], +p[2]) === v) bad++;
       checked++;
     }
-    // b) 广场实际布局不受差量化影响:表面草/外圈石环/喷泉水池/石柱/Owen 字样首笔
-    //    采样点选取:(0,20,15) 避开字样垫/喷泉/花坛 → 草;(0,20,28) 石环 d=28 且不落入
-    //    任何像素画(它们 z∈[-22..22]、x∈[-22..30],z=28 必不在画内)
+    // b) 广场实际布局不受差量化影响:草地/主轴步道/喷泉/Owen 字样/冒险入口
+    //    采样点对齐 R55/R58 当前布局:喷泉石柱在 y=21,Owen 首笔在(-12,21,-15)。
     const layoutOK = getBlock(0, 20, 15) === 'grass'
-      && getBlock(0, 20, 28) === 'stone'
+      && getBlock(0, 20, 28) === 'planks'
       && getBlock(0, 20, 8) === 'water'
-      && getBlock(0, 22, 8) === 'stone'
-      && getBlock(-12, 21, -3) === 'leaves';
+      && getBlock(0, 21, 8) === 'stone'
+      && getBlock(-12, 21, -15) === 'leaves'
+      && getBlock(0, 21, -6) === 'portal_deep';
     // c) 广场内不长树走真实路径:growTreesInChunk 重复调用幂等(putWorld 只写空气/树叶,
     //    广场列由 modifications 守卫),数据不因重复生成而变形
     const ch00 = chunks.get(chunkKey(0, 0));

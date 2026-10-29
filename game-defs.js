@@ -74,11 +74,16 @@ const BLOCK_TYPES = {
   pumpkin:      { name: '南瓜',     top: '#c9770f', side: '#e08a1e', bottom: '#b06a10', solid: true, tool: 'axe', hardness: 1.0 },
   carved_pumpkin:{ name: '雕刻南瓜', top: '#c9770f', side: '#e08a1e', bottom: '#b06a10', solid: true, tool: 'axe', hardness: 1.0 },
   pumpkin_lantern:{ name: '南瓜灯',  top: '#d8871a', side: '#f0a52c', bottom: '#b06a10', solid: true, tool: 'axe', hardness: 1.0, light: 15 },
+  // 出生广场快速旅行(R58):独立方块 id 让交互与存档无需额外坐标表
+  portal_shallow:{ name: '浅层地牢传送石', top: '#76e4bc', side: '#43b993', bottom: '#287a68', solid: true, tool: 'pickaxe', hardness: 8.0, tier: 4, light: 15 },
+  portal_deep:   { name: '深层地牢传送石', top: '#b08ae8', side: '#7952b8', bottom: '#493274', solid: true, tool: 'pickaxe', hardness: 8.0, tier: 4, light: 15 },
+  portal_core:   { name: '远古核心传送石', top: '#ff9a68', side: '#d95f45', bottom: '#87372f', solid: true, tool: 'pickaxe', hardness: 8.0, tier: 4, light: 15 },
+  portal_home:   { name: '回城传送石',     top: '#9df2ff', side: '#4fc6df', bottom: '#287c9c', solid: true, tool: 'pickaxe', hardness: 8.0, tier: 4, light: 15 },
 };
 const HOTBAR_ORDER = ['grass', 'dirt', 'stone', 'wood', 'leaves', 'sand', 'planks', 'brick'];
 
 // 方块数字 id(用于紧凑的 Uint8Array 区块存储)
-const BLOCK_ID = { air: 0, grass: 1, dirt: 2, stone: 3, wood: 4, leaves: 5, sand: 6, planks: 7, brick: 8, water: 9, snow: 10, gravel: 11, wool_red: 12, wool_yellow: 13, wool_white: 14, wool_black: 15, door: 16, door_iron: 17, door_stone: 18, door_gold: 19, door_diamond: 20, crafting_table: 21, cobblestone: 22, coal_ore: 23, iron_ore: 24, diamond_ore: 25, tnt: 26, furnace: 27, glass: 28, bed: 29, chest: 30, ladder: 31, bookshelf: 32, torch: 33, rail: 34, enchanting_table: 35, slime: 36, spawner: 37, redstone: 38, redstone_torch: 39, lever_off: 40, lever_on: 41, redstone_ore: 42, iron_block: 43, sugarcane: 44, cake: 45, slab_planks: 46, slab_cobble: 47, stairs_planks: 48, stairs_cobble: 49, fence: 50, repeater_off: 51, repeater_on: 52, piston: 53, piston_ext: 54, gold_ore: 55, iron_bars: 56, obsidian: 57, vault: 58, beacon: 59, pumpkin: 60, carved_pumpkin: 61, pumpkin_lantern: 62 };
+const BLOCK_ID = { air: 0, grass: 1, dirt: 2, stone: 3, wood: 4, leaves: 5, sand: 6, planks: 7, brick: 8, water: 9, snow: 10, gravel: 11, wool_red: 12, wool_yellow: 13, wool_white: 14, wool_black: 15, door: 16, door_iron: 17, door_stone: 18, door_gold: 19, door_diamond: 20, crafting_table: 21, cobblestone: 22, coal_ore: 23, iron_ore: 24, diamond_ore: 25, tnt: 26, furnace: 27, glass: 28, bed: 29, chest: 30, ladder: 31, bookshelf: 32, torch: 33, rail: 34, enchanting_table: 35, slime: 36, spawner: 37, redstone: 38, redstone_torch: 39, lever_off: 40, lever_on: 41, redstone_ore: 42, iron_block: 43, sugarcane: 44, cake: 45, slab_planks: 46, slab_cobble: 47, stairs_planks: 48, stairs_cobble: 49, fence: 50, repeater_off: 51, repeater_on: 52, piston: 53, piston_ext: 54, gold_ore: 55, iron_bars: 56, obsidian: 57, vault: 58, beacon: 59, pumpkin: 60, carved_pumpkin: 61, pumpkin_lantern: 62, portal_shallow: 63, portal_deep: 64, portal_core: 65, portal_home: 66 };
 const ID_TO_BLOCK = Object.keys(BLOCK_ID);
 
 // ============================================================

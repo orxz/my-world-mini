@@ -9,7 +9,7 @@
 const assert = require('assert');
 
 // ---- 从 worldgen.js 模块加载(单一数据源,不再手抄) ----
-const { hash2, hash3, valueNoise2D, valueNoise3D, fbm2D, BIOMES, biomeAt, heightAt, caveAt, villageInCell, hutBlockAt, dungeonInCell, dungeonBlockAt } = require('../worldgen.js');
+const { hash2, hash3, valueNoise2D, valueNoise3D, fbm2D, BIOMES, biomeAt, heightAt, caveAt, villageInCell, hutBlockAt, dungeonInCell, findNearestDungeon, dungeonBlockAt } = require('../worldgen.js');
 
 // ---- 从 craft.js 模块加载(合成/破坏计算的单一数据源) ----
 const { RECIPES, matchRecipe, matchRecipeGrid, breakCost, canHarvest, recipeCategory, recipeMaterials, recipeMissing, recipeFits, filterRecipes, recipeFillGrid } = require('../craft.js');
@@ -865,6 +865,28 @@ test('dungeonInCell 保护区:中心 ±44 内不生成', () => {
     const d = dungeonInCell(x, z, 999);
     if (d) assert.ok(d.cx <= -44 || d.cx >= 44 || d.cz <= -44 || d.cz >= 44, '不在保护区内');
   }
+});
+test('findNearestDungeon:三档可达/确定性/非法档位防御', () => {
+  for (const tier of ['shallow', 'deep', 'core']) {
+    const d = findNearestDungeon(tier, 12345);
+    assert.ok(d, '搜索范围内应找到 ' + tier);
+    assert.strictEqual(d.tier, tier);
+    assert.deepStrictEqual(findNearestDungeon(tier, 12345), d, '同种子同原点结果一致');
+  }
+  assert.strictEqual(findNearestDungeon('unknown', 12345), null);
+});
+test('findNearestDungeon:返回扫描范围内世界距离最近者', () => {
+  const actual = findNearestDungeon('shallow', 999, 20, -30, 8);
+  let expected = null, best = Infinity;
+  for (let x = -8; x <= 8; x++) for (let z = -8; z <= 8; z++) {
+    const d = dungeonInCell(x, z, 999);
+    if (!d || d.tier !== 'shallow') continue;
+    const d2 = (d.cx - 20) ** 2 + (d.cz + 30) ** 2;
+    if (d2 < best) { best = d2; expected = d; }
+  }
+  assert.ok(actual && expected);
+  assert.strictEqual(actual.cx, expected.cx);
+  assert.strictEqual(actual.cz, expected.cz);
 });
 test('dungeonBlockAt 布局:地板/顶/墙/笼/箱/室内', () => {
   const dg = { cx: 100, cz: -200, floor: 10, mob: 'zombie', chests: 2 };

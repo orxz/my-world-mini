@@ -9,6 +9,15 @@
 const TUTORIAL_STEPS = MACHINES.TUTORIAL_STEPS;
 // R55 视觉:出生点移到广场中轴南侧(避开中央 Owen 字样/喷泉柱,开场即是开阔视角)
 const SPAWN_X = 0.5, SPAWN_Z = 0.5;
+// 出生点正前方的冒险入口:颜色区分难度,右键传送石直达最近的自然地牢。
+const DUNGEON_PORTALS = [
+  { block: 'portal_shallow', tier: 'shallow', x: -6, z: -6, accent: 'wool_white', label: '浅层地牢', hint: '新手探索' },
+  { block: 'portal_deep', tier: 'deep', x: 0, z: -6, accent: 'wool_yellow', label: '深层地牢', hint: '建议铁装' },
+  { block: 'portal_core', tier: 'core', x: 6, z: -6, accent: 'wool_red', label: '远古核心', hint: '高危宝库' },
+];
+const PORTAL_TIER_BY_BLOCK = {
+  portal_shallow: 'shallow', portal_deep: 'deep', portal_core: 'core',
+};
 
 const tutorial = {
   active: false,
@@ -371,7 +380,7 @@ function buildSpawnPlaza() {
   }
 
   // 9. 蘑菇装饰(广场内散布几个红白蘑菇):菌柄 wood + 菌盖 leaves/brick
-  const mushrooms = [[-17, 8], [12, -4], [-8, 0], [10, 12]];
+  const mushrooms = [[-17, 8], [12, -4], [-12, 0], [10, 12]];
   for (const [mx, mz] of mushrooms) {
     set(mx, platH + 1, mz, 'wood');        // 菌柄
     set(mx, platH + 2, mz, 'wood');
@@ -520,6 +529,7 @@ function buildSpawnPlaza() {
   }
 
   buildOuterSpawn(set, fill, platH, plazaR);
+  buildSpawnTravelHub(set, fill, platH);
 
   worldPlazaBuilt = true;   // 广场已知 diff 已登记(存档可瘦身)
 }
@@ -696,6 +706,27 @@ function buildOuterSpawn(set, fill, platH, plazaR) {
   }
 }
 
+// 出生点冒险传送广场:开场正前方可见,中央步道直达,不挤占喷泉与游乐设施。
+function buildSpawnTravelHub(set, fill, platH) {
+  fill(-8, 8, platH, platH, -7, 0, 'cobblestone');
+  for (let x = -8; x <= 8; x++) for (let z = -7; z <= -1; z++)
+    for (let y = platH + 1; y <= platH + 3; y++) set(x, y, z, null);
+  fill(-1, 1, platH, platH, -5, 0, 'planks');
+  spawnPOIs.push({ x: 0, z: -1, label: '冒险传送广场', radius: 9, tip: '正前方三座门,右键彩色传送石前往地牢' });
+  for (const p of DUNGEON_PORTALS) {
+    set(p.x, platH, p.z, p.accent);
+    for (const ox of [-1, 1]) {
+      for (let h = 1; h <= 4; h++) set(p.x + ox, platH + h, p.z, 'obsidian');
+      set(p.x + ox, platH + 5, p.z, 'torch');
+    }
+    set(p.x, platH + 4, p.z, p.accent);
+    set(p.x, platH + 1, p.z, p.block);
+    set(p.x, platH + 2, p.z, null);
+    set(p.x, platH + 3, p.z, null);
+    spawnPOIs.push({ x: p.x, z: p.z, label: p.label, radius: 2.8, tip: p.hint + ' · 右键传送石进入' });
+  }
+}
+
 function getNearbySpawnPOI() {
   let best = null, bestD = Infinity;
   for (const p of spawnPOIs) {
@@ -703,6 +734,106 @@ function getNearbySpawnPOI() {
     if (d <= p.radius && d < bestD) { best = p; bestD = d; }
   }
   return best;
+}
+
+// ============================================================
+// 快速旅行:自然地牢定位 + 安全落点 + 持久化回城石
+// ============================================================
+function findDungeonSafeEntry(dg) {
+  const half = dg.size >> 1, gx0 = dg.cx - half, gz0 = dg.cz - half;
+  // 地牢最大 11 格;一次预热完整结构与相邻区块,避免 getBlock 把未加载区当空气。
+  for (let cx = Math.floor((gx0 - 1) / CHUNK_SIZE); cx <= Math.floor((gx0 + dg.size) / CHUNK_SIZE); cx++)
+    for (let cz = Math.floor((gz0 - 1) / CHUNK_SIZE); cz <= Math.floor((gz0 + dg.size) / CHUNK_SIZE); cz++) ensureChunk(cx, cz);
+  const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  const validLanding = (x, z) => {
+    const floor = getBlock(x, dg.floor, z);
+    return floor && BLOCK_TYPES[floor] && BLOCK_TYPES[floor].solid
+      && !getBlock(x, dg.floor + 1, z) && !getBlock(x, dg.floor + 2, z);
+  };
+  const validHome = (x, z) => {
+    const floor = getBlock(x, dg.floor, z), b = getBlock(x, dg.floor + 1, z);
+    return floor && BLOCK_TYPES[floor] && BLOCK_TYPES[floor].solid && (!b || b === 'portal_home');
+  };
+  const world = (lx, lz) => ({ x: gx0 + lx, z: gz0 + lz });
+  // 再次来访优先复用已有回城石,避免每次传送都在房里新增一块。
+  for (const r of dg.rooms) for (let lz = r.z0; lz <= r.z1; lz++) for (let lx = r.x0; lx <= r.x1; lx++) {
+    const h = world(lx, lz);
+    if (getBlock(h.x, dg.floor + 1, h.z) !== 'portal_home') continue;
+    for (const [dx, dz] of dirs) {
+      const l = world(lx + dx, lz + dz);
+      if (validLanding(l.x, l.z)) return { landing: l, home: h, created: false };
+    }
+  }
+  // 首选离刷怪笼较远的相邻双格:一格落地,一格放回城石;不破坏箱子与刷怪笼。
+  let best = null, bestScore = -Infinity;
+  for (let ri = 0; ri < dg.rooms.length; ri++) {
+    const r = dg.rooms[ri];
+    for (let lz = r.z0; lz <= r.z1; lz++) for (let lx = r.x0; lx <= r.x1; lx++) {
+      const l = world(lx, lz);
+      if (!validLanding(l.x, l.z)) continue;
+      for (const [dx, dz] of dirs) {
+        const nx = lx + dx, nz = lz + dz;
+        if (nx < r.x0 || nx > r.x1 || nz < r.z0 || nz > r.z1) continue;
+        const h = world(nx, nz);
+        if (!validHome(h.x, h.z)) continue;
+        let mobD2 = Infinity;
+        for (const s of dg.spawners) mobD2 = Math.min(mobD2, (lx - s.x) ** 2 + (lz - s.z) ** 2);
+        const score = mobD2 - ri * 0.25;
+        if (score > bestScore) { bestScore = score; best = { landing: l, home: h, created: true }; }
+      }
+    }
+  }
+  return best;
+}
+
+function commitFastTravel(x, y, z) {
+  if (ridingCart) dismountCart();
+  if (ridingRide) dismountRide();
+  playerPos.set(x, y, z);
+  velocity.set(0, 0, 0);
+  isFlying = false; isSprinting = false; isSneaking = false; sprintLock = false;
+  onGround = false; wasOnGround = false; wasInWater = false; breathTimer = 0;
+  lastSafePos.copy(playerPos);
+  stats._lx = undefined; stats._lz = undefined;
+  delete tutorial._lx; delete tutorial._lz;
+  updateChunks(x, z);
+  // 传送是单次操作,立即构建脚边 3×3 区块,不等分帧预算造成黑屏或碰撞空窗。
+  const pcx = Math.floor(x / CHUNK_SIZE), pcz = Math.floor(z / CHUNK_SIZE);
+  for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
+    const ch = ensureChunk(pcx + dx, pcz + dz);
+    if (ch) buildChunkMesh(ch);
+  }
+  spawnParticles(x, y, z, 0x8fdcff, 18);
+  audio.play('levelup');
+  markDirtySave();
+}
+
+function teleportToDungeon(tier) {
+  const def = DUNGEON_PORTALS.find(p => p.tier === tier);
+  if (!def) return null;
+  const dg = findNearestDungeon(tier, worldSeed, SPAWN_X, SPAWN_Z);
+  if (!dg) { showToast('附近没有找到' + def.label + ',请换个世界种子再试'); return null; }
+  const entry = findDungeonSafeEntry(dg);
+  if (!entry) { showToast(def.label + '入口被方块堵住了,清理地牢后再试'); return null; }
+  if (entry.created) {
+    setBlock(entry.home.x, dg.floor, entry.home.z, 'obsidian');
+    setBlock(entry.home.x, dg.floor + 1, entry.home.z, 'portal_home');
+  }
+  commitFastTravel(entry.landing.x + 0.5, dg.floor + 1 + PLAYER_HEIGHT * 0.5, entry.landing.z + 0.5);
+  showToast('已到达' + def.label + ' · 右键房内发光回城石返回出生广场');
+  return { dungeon: dg, entry };
+}
+
+function teleportToSpawn() {
+  commitFastTravel(SPAWN_X, PLAZA_HEIGHT + 1 + PLAYER_HEIGHT * 0.5, SPAWN_Z);
+  showToast('已返回出生广场');
+  return true;
+}
+
+function activateTravelPortal(type) {
+  if (type === 'portal_home') return teleportToSpawn();
+  const tier = PORTAL_TIER_BY_BLOCK[type];
+  return tier ? teleportToDungeon(tier) : null;
 }
 // ============================================================
 // R55 儿童游乐场:动态设施(方块风格 Three 组)与过山车矿车

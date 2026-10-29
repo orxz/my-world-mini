@@ -308,7 +308,12 @@ function consumeSelected() {
 }
 
 function placeBlock() {
-  // R55:靠近游乐设施右击直接乘坐(优先于方块交互)
+  // 传送石优先于附近设施/生物:核心门靠近旋转木马,也必须按准星目标触发。
+  // 非传送目标在下方重新射线,避免门/实体射线改写共享法线后影响原逻辑。
+  const portalHit = raycastTarget();
+  const portalType = portalHit && getBlock(portalHit.x, portalHit.y, portalHit.z);
+  if (portalType === 'portal_home' || PORTAL_TIER_BY_BLOCK[portalType]) { activateTravelPortal(portalType); return; }
+  // R55:靠近游乐设施右击直接乘坐(优先于普通方块交互)
   if (typeof tryMountNearbyRide === 'function' && tryMountNearbyRide()) return;
   const lookDoor = raycastDoor();
   const holdingDoor = selectedType && selectedType.indexOf('door') === 0;

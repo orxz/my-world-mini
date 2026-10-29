@@ -506,6 +506,9 @@ function flashHitMarker(crit) {
 let _statusT = 0;
 function interactHintFor(target, b) {
   if (!b) return null;
+  if (b === 'portal_home') return { text: '右键 返回出生广场', color: '#9df2ff' };
+  const portal = DUNGEON_PORTALS.find(p => p.block === b);
+  if (portal) return { text: '右键 前往' + portal.label + ' · ' + portal.hint, color: '#ffe66d' };
   if (b === 'vault') return { text: '右键 开启封印宝库(12 末影珍珠)' };
   if (b === 'beacon') return { text: '右键 查看信标' };
   if (b === 'chest' || b === 'furnace' || b === 'crafting_table' || b === 'enchanting_table') return { text: '右键 打开' + (BLOCK_TYPES[b] ? BLOCK_TYPES[b].name : '') };
